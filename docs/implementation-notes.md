@@ -95,3 +95,4 @@
 - 外部調査結果を受けて、重要論点を `docs/agent/v3-availability-research.md` に整理した。
 - 特に重要なのは、Agents 側の正式な conversational v3 model id が `eleven_v3_conversational` であり、general TTS の `eleven_v3` と別である点。
 - ただし plan / entitlement / rollout のどれが拒否要因かは、公開 docs だけでは最終確定できないため、サポート問い合わせ前提の論点整理も併記した。
+- ElevenLabs 公式窓口 `team@elevenlabs.io` へ、`feature_not_available / expressive_tts_not_allowed`、`agent_2301knc096q9fg5bcq3gj1gmrp4z`、`request_id=6e9fa91dbd6d59768a35907d9a500ace` を添えて問い合わせを送信した。
