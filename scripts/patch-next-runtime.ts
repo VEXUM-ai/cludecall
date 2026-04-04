@@ -3,19 +3,29 @@ import { resolve } from "node:path";
 
 const runtimePath = resolve(process.cwd(), ".next", "server", "webpack-runtime.js");
 
-const alreadyPatchedPatterns = [
-  'require("./chunks/"+c.u(d))',
-  'require("./chunks/" + __webpack_require__.u(chunkId))',
+const targetPatterns = [
+  'require(("number"==typeof d?"./chunks/":"./")+c.u(d))',
+  'require((typeof chunkId === "number" ? "./chunks/" : "./") + __webpack_require__.u(chunkId))',
 ];
 
 const patchCandidates = [
   {
     broken: 'require("./"+c.u(d))',
-    fixed: 'require("./chunks/"+c.u(d))',
+    fixed: 'require(("number"==typeof d?"./chunks/":"./")+c.u(d))',
+  },
+  {
+    broken: 'require("./chunks/"+c.u(d))',
+    fixed: 'require(("number"==typeof d?"./chunks/":"./")+c.u(d))',
   },
   {
     broken: 'require("./" + __webpack_require__.u(chunkId))',
-    fixed: 'require("./chunks/" + __webpack_require__.u(chunkId))',
+    fixed:
+      'require((typeof chunkId === "number" ? "./chunks/" : "./") + __webpack_require__.u(chunkId))',
+  },
+  {
+    broken: 'require("./chunks/" + __webpack_require__.u(chunkId))',
+    fixed:
+      'require((typeof chunkId === "number" ? "./chunks/" : "./") + __webpack_require__.u(chunkId))',
   },
 ];
 
@@ -27,7 +37,7 @@ function main() {
 
   const current = readFileSync(runtimePath, "utf8");
 
-  if (alreadyPatchedPatterns.some((pattern) => current.includes(pattern))) {
+  if (targetPatterns.some((pattern) => current.includes(pattern))) {
     console.log("Next runtime chunk path is already patched.");
     return;
   }
