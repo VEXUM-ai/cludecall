@@ -13,6 +13,8 @@ export type DemoEvaluationCriterion = {
 export const DENTAL_DEMO_LANGUAGE = "ja";
 export const DENTAL_DEMO_TIMEZONE = "Asia/Tokyo";
 export const DENTAL_DEMO_TTS_MODEL_ID = "eleven_flash_v2_5";
+export const DENTAL_DEMO_VOICE_ID = "hpp4J3VqNfWAUOO0d1Us";
+export const DENTAL_DEMO_VOICE_NAME = "Bella - Professional, Bright, Warm";
 
 export const DENTAL_DEMO_FIRST_MESSAGE =
   "お電話ありがとうございます。こちらは歯科医院のAI受付です。本日はどのようなご用件でしょうか。";

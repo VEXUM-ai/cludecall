@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getServerConfig } from "@/lib/env";
 import { writeDemoRunArtifacts } from "@/lib/demo-runs";
+import { buildLatencySample, writeLatencySample } from "@/lib/latency";
 import {
   maskPhoneNumber,
   normalizeConversationAnalysis,
@@ -226,6 +227,12 @@ function normalizeDemoRun(details: ConversationDetails): DemoRun {
         typeof phoneCall?.direction === "string" ? phoneCall.direction : null,
     },
     cost: typeof metadata.cost === "number" ? metadata.cost : null,
+    latency: buildLatencySample({
+      conversationId: details.conversation_id,
+      channel: phoneCall ? "phone" : "web",
+      transport: phoneCall ? "telephony" : "unknown",
+      transcript: base.transcript,
+    }),
   };
 }
 
@@ -338,7 +345,12 @@ export async function importLatestPhoneCall(conversationId?: string): Promise<De
     details = await getConversationDetails(targetConversationId);
   }
 
-  return normalizeDemoRun(details);
+  const run = normalizeDemoRun(details);
+  if (run.latency) {
+    await writeLatencySample(run.latency);
+  }
+
+  return run;
 }
 
 export async function persistLatestPhoneCall(conversationId?: string) {

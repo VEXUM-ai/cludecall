@@ -1,4 +1,5 @@
 export type ConversationChannel = "web" | "phone";
+export type ConversationTransport = "webrtc" | "websocket" | "telephony" | "unknown";
 
 export type ConversationLifecycleStatus =
   | "idle"
@@ -55,6 +56,20 @@ export type AnalyzeConversationResponse = {
   memo: ReservationMemo;
 };
 
+export type LatencySample = {
+  sampleId: string;
+  recordedAt: string;
+  conversationId: string;
+  channel: ConversationChannel;
+  transport: ConversationTransport;
+  connectMs: number | null;
+  firstAgentResponseMs: number | null;
+  firstAgentReplyAfterUserMs: number | null;
+  averageAgentReplyAfterUserMs: number | null;
+  measuredTurns: number;
+  analysisMs: number | null;
+};
+
 export type DemoRun = AnalyzeConversationResponse & {
   channel: ConversationChannel;
   importedAt: string;
@@ -63,7 +78,8 @@ export type DemoRun = AnalyzeConversationResponse & {
     durationSecs: number | null;
     maskedCaller: string | null;
     agentNumber: string | null;
-    direction: string | null;
-  };
+      direction: string | null;
+    };
   cost: number | null;
+  latency: LatencySample | null;
 };

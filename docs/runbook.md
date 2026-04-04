@@ -7,6 +7,7 @@
 4. `npm run dev`
 5. ブラウザで開始し、会話後に memo を確認する。
 6. `could not establish pc connection` が出る端末では、アプリが自動で WebSocket fallback を試す。失敗する場合はページを再読み込みしてから再度 `開始` を押す。
+7. 会話終了後の analysis 成功時に、Web の接続時間と初回応答時間が `docs/latency-report.md` に自動集計される。
 
 ## 即日電話デモ
 1. `npm run agent:apply-demo-config` を実行し、歯科受付用の prompt と Data Collection を live agent に再適用する。
@@ -15,7 +16,8 @@
 4. ElevenLabs ダッシュボードの `発信コール` から、対象 agent を選んであなたの電話番号へ outbound call を送る。
 5. 通話終了後、アプリの「最新の電話会話を取り込む」か `npm run demo:import-last-call` を実行する。
 6. 生成された `docs/demo-runs/*.md` を証跡として確認する。
-7. inbound デモが必要になったら、Twilio の購入番号か SIP trunk を別途用意する。
+7. transcript に時刻情報があれば、電話の応答間隔も `docs/latency-report.md` に自動集計される。
+8. inbound デモが必要になったら、Twilio の購入番号か SIP trunk を別途用意する。
 
 ## 将来の inbound 移行
 1. Twilio 日本 `national number` の規制申請を通す。
@@ -30,5 +32,6 @@
 - analysis が遅い: 数秒待って再試行する。
 - WebRTC でマイク権限が拒否された: ブラウザ設定からマイク権限を許可する。
 - WebRTC の PeerConnection が張れない: アプリは `/api/eleven/signed-url` を使う WebSocket fallback に自動で切り替える。
+- `eleven_v3` を使いたいのに反映されない: 現アカウントでは ElevenLabs API が `feature_not_available / expressive_tts_not_allowed` を返し、Conversational AI への v3 適用が拒否される。
 - `next start` で `Cannot find module './331.js'` が出る: 最新コードで `npm run build` をやり直す。build の最後に runtime patch が自動で入る。
 - `npm start` は毎回 runtime patch を先に実行するので、古い `.next` を持ったままでも `./331.js` に戻りにくい。

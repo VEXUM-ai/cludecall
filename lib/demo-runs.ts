@@ -82,6 +82,15 @@ ${run.analysis.evaluationCriteriaResults.length > 0 ? run.analysis.evaluationCri
     `- ${item.criteriaId}: ${item.result ?? "unknown"}${item.rationale ? ` / ${item.rationale}` : ""}`
 ).join("\n") : "- 評価基準なし"}
 
+## レイテンシ
+- transport: ${run.latency?.transport ?? "unknown"}
+- connect_ms: ${run.latency?.connectMs ?? "n/a"}
+- first_agent_response_ms: ${run.latency?.firstAgentResponseMs ?? "n/a"}
+- first_reply_after_user_ms: ${run.latency?.firstAgentReplyAfterUserMs ?? "n/a"}
+- average_reply_after_user_ms: ${run.latency?.averageAgentReplyAfterUserMs ?? "n/a"}
+- analysis_ms: ${run.latency?.analysisMs ?? "n/a"}
+- measured_turns: ${run.latency?.measuredTurns ?? 0}
+
 ## 未取得項目
 ${missingFields.length > 0 ? missingFields.map((field) => `- ${field}`).join("\n") : "- なし"}
 

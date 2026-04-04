@@ -68,3 +68,10 @@
 - `components/conversation-provider.tsx` は WebRTC 開始失敗時に PeerConnection 系エラーだけを検知し、その場合だけ WebSocket 接続へ自動フォールバックする。
 - サーバー側では `lib/elevenlabs/api.ts` に `getSignedUrl()` を追加し、ElevenLabs の `convai/conversation/get-signed-url` を使うようにした。
 - これでブラウザの WebRTC が不安定でも、電話デモとは別に Web デモを継続しやすくした。
+
+## 2026-04-05 voice と latency 計測
+- live agent の現設定を確認したところ、LLM は `gemini-3-flash-preview` だが、音声モデルは `eleven_flash_v2_5`、voice は男性 voice `Eric` だった。
+- `eleven_v3` への切り替えを live agent へ直接試したが、ElevenLabs API は `feature_not_available / expressive_tts_not_allowed` を返し、このアカウントでは Conversational AI に v3 を適用できなかった。
+- デモ設定コードは女性 voice `Bella` を使うように更新し、v3 が解放されていない間は `eleven_flash_v2_5 + Bella` を既定値にする。
+- `lib/latency.ts` と `POST /api/demo/latency` を追加し、Web 会話の接続時間、初回応答時間、分析時間、電話 transcript ベースの応答間隔を `artifacts/latency/latency-samples.json` に蓄積し、`docs/latency-report.md` を自動更新するようにした。
+- `components/conversation-provider.tsx` は analysis 完了後に Web latency を送信するようにし、`components/home-page.tsx` は最新の Web / 電話 latency を表示するようにした。

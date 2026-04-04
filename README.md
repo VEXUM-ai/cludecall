@@ -9,6 +9,7 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 - ライブ transcript 表示
 - 終話後に `analysis/run` で仮受付メモを抽出
 - 最新の電話会話を import
+- Web と電話のレイテンシを計測して `docs/latency-report.md` に集計
 - `docs/demo-runs/*.md` にデモ証跡を保存
 
 ## セットアップ
@@ -30,10 +31,12 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 - `app/api/eleven/conversation-token/route.ts`
 - `app/api/eleven/signed-url/route.ts`
 - `app/api/eleven/analyze/route.ts`
+- `app/api/demo/latency/route.ts`
 - `app/api/demo/import-last-call/route.ts`
 - `components/conversation-provider.tsx`
 - `components/home-page.tsx`
 - `lib/elevenlabs/api.ts`
+- `lib/latency.ts`
 - `scripts/import-last-call.ts`
 
 ## 補足
@@ -43,3 +46,4 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 - デモ用の agent 文面は `docs/agent/dental-demo-config.md`
 - 運用手順は `docs/runbook.md`
 - 証跡フォーマットは `docs/demo-runs/README.md`
+- レイテンシ集計は `docs/latency-report.md`

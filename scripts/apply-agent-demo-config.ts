@@ -8,6 +8,8 @@ import {
   DENTAL_DEMO_PROMPT,
   DENTAL_DEMO_TIMEZONE,
   DENTAL_DEMO_TTS_MODEL_ID,
+  DENTAL_DEMO_VOICE_ID,
+  DENTAL_DEMO_VOICE_NAME,
 } from "../lib/agent-demo-config";
 import { getServerConfig } from "../lib/env";
 import { loadDotenvFile } from "./load-dotenv";
@@ -112,6 +114,7 @@ async function main() {
       tts: {
         ...currentTtsConfig,
         model_id: DENTAL_DEMO_TTS_MODEL_ID,
+        voice_id: DENTAL_DEMO_VOICE_ID,
       },
       agent: {
         ...currentAgentConfig,
@@ -174,6 +177,8 @@ async function main() {
   console.log(`language: ${String(updatedAgentConfig.language ?? "")}`);
   console.log(`llm: ${String(updatedPromptConfig.llm ?? "")}`);
   console.log(`ttsModel: ${String(updatedTtsConfig.model_id ?? "")}`);
+  console.log(`voiceId: ${String(updatedTtsConfig.voice_id ?? "")}`);
+  console.log(`voiceName: ${DENTAL_DEMO_VOICE_NAME}`);
   console.log(`dataCollectionItems: ${Object.keys(updatedDataCollection).length}`);
   console.log(`evaluationCriteria: ${updatedCriteria.length}`);
 }

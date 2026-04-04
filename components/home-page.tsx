@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { useConversationController } from "@/components/conversation-provider";
-import type { DemoRun } from "@/lib/types";
+import type { DemoRun, LatencySample } from "@/lib/types";
 
 function StatusBadge({ status }: { status: string }) {
   return <span className={`status-badge status-${status}`}>{status}</span>;
@@ -51,11 +51,50 @@ function MemoTable({
   );
 }
 
+function LatencyTable({
+  title,
+  sample,
+}: {
+  title: string;
+  sample: LatencySample | null;
+}) {
+  if (!sample) {
+    return null;
+  }
+
+  const rows = [
+    ["transport", sample.transport],
+    ["connect_ms", sample.connectMs],
+    ["first_agent_response_ms", sample.firstAgentResponseMs],
+    ["first_reply_after_user_ms", sample.firstAgentReplyAfterUserMs],
+    ["average_reply_after_user_ms", sample.averageAgentReplyAfterUserMs],
+    ["analysis_ms", sample.analysisMs],
+    ["measured_turns", sample.measuredTurns],
+  ] as const;
+
+  return (
+    <section className="card">
+      <div className="section-heading">
+        <h3>{title}</h3>
+      </div>
+      <dl className="memo-grid">
+        {rows.map(([label, value]) => (
+          <div key={label} className="memo-row">
+            <dt>{label}</dt>
+            <dd>{value ?? "未取得"}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
 export function HomePage() {
   const {
     conversationId,
     transcript,
     analysisResult,
+    latencySample,
     error,
     isStarting,
     isAnalyzing,
@@ -200,6 +239,8 @@ export function HomePage() {
           {analysisResult ? (
             <MemoTable title="Web 会話の仮受付メモ" memo={analysisResult.memo} />
           ) : null}
+
+          <LatencyTable title="Web 会話のレイテンシ" sample={latencySample} />
         </div>
 
         <div className="stack">
@@ -271,6 +312,7 @@ export function HomePage() {
                 </dl>
               </section>
               <MemoTable title="電話会話の仮受付メモ" memo={phoneDemoRun.memo} />
+              <LatencyTable title="電話会話のレイテンシ" sample={phoneDemoRun.latency} />
             </>
           ) : null}
         </div>

@@ -14,13 +14,16 @@ import {
 import type {
   AnalyzeConversationResponse,
   ConversationLifecycleStatus,
+  LatencySample,
   TranscriptEntry,
+  ConversationTransport,
 } from "@/lib/types";
 
 type ConversationContextValue = {
   conversationId: string | null;
   transcript: TranscriptEntry[];
   analysisResult: AnalyzeConversationResponse | null;
+  latencySample: LatencySample | null;
   error: string | null;
   isStarting: boolean;
   isAnalyzing: boolean;
@@ -34,6 +37,13 @@ type ConversationContextValue = {
 type ConversationEvent = {
   source: "user" | "ai";
   message: unknown;
+};
+
+type SessionTimingState = {
+  startedAtMs: number;
+  transport: ConversationTransport;
+  connectMs: number | null;
+  firstAgentResponseMs: number | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -88,10 +98,22 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [analysisResult, setAnalysisResult] =
     useState<AnalyzeConversationResponse | null>(null);
+  const [latencySample, setLatencySample] = useState<LatencySample | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const nextTranscriptId = useRef(0);
+  const sessionTiming = useRef<SessionTimingState | null>(null);
+
+  function recordFirstAgentResponse() {
+    if (!sessionTiming.current || sessionTiming.current.firstAgentResponseMs !== null) {
+      return;
+    }
+
+    sessionTiming.current.firstAgentResponseMs = Math.round(
+      performance.now() - sessionTiming.current.startedAtMs
+    );
+  }
 
   const conversation = useConversation({
     onMessage: (event) => {
@@ -105,6 +127,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       }
 
       const role = event.source === "ai" ? "agent" : "user";
+      if (role === "agent") {
+        recordFirstAgentResponse();
+      }
       setTranscript((current) => {
         const last = current[current.length - 1];
         if (last && last.role === role && last.text === text) {
@@ -144,6 +169,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      recordFirstAgentResponse();
       setTranscript((current) => {
         const last = current[current.length - 1];
         if (last?.role === "agent" && last.tentative) {
@@ -199,6 +225,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   async function analyzeByConversationId(targetConversationId: string) {
     setIsAnalyzing(true);
     setError(null);
+    const analysisStartedAtMs = performance.now();
 
     try {
       const response = await fetch("/api/eleven/analyze", {
@@ -221,6 +248,29 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       startTransition(() => {
         setAnalysisResult(payload as AnalyzeConversationResponse);
       });
+
+      const latencyResponse = await fetch("/api/demo/latency", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: targetConversationId,
+          channel: "web",
+          transport: sessionTiming.current?.transport ?? "unknown",
+          connectMs: sessionTiming.current?.connectMs ?? null,
+          firstAgentResponseMs: sessionTiming.current?.firstAgentResponseMs ?? null,
+          analysisMs: Math.round(performance.now() - analysisStartedAtMs),
+          transcript: (payload as AnalyzeConversationResponse).transcript,
+        }),
+      });
+
+      if (latencyResponse.ok) {
+        const latencyPayload = (await latencyResponse.json()) as {
+          sample?: LatencySample;
+        };
+        if (latencyPayload.sample) {
+          setLatencySample(latencyPayload.sample);
+        }
+      }
     } catch (analysisError) {
       setError(
         analysisError instanceof Error
@@ -235,9 +285,16 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   async function startConversation() {
     setError(null);
     setAnalysisResult(null);
+    setLatencySample(null);
     setConversationId(null);
     setTranscript([]);
     nextTranscriptId.current = 0;
+    sessionTiming.current = {
+      startedAtMs: performance.now(),
+      transport: "webrtc",
+      connectMs: null,
+      firstAgentResponseMs: null,
+    };
     setIsStarting(true);
 
     try {
@@ -263,10 +320,19 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           conversationToken: payload.token,
         });
 
+        if (sessionTiming.current) {
+          sessionTiming.current.connectMs = Math.round(
+            performance.now() - sessionTiming.current.startedAtMs
+          );
+        }
         setConversationId(startedConversationId);
       } catch (webRtcError) {
         if (!isPeerConnectionError(webRtcError)) {
           throw webRtcError;
+        }
+
+        if (sessionTiming.current) {
+          sessionTiming.current.transport = "websocket";
         }
 
         const response = await fetch("/api/eleven/signed-url", {
@@ -289,6 +355,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           signedUrl: payload.signedUrl,
         });
 
+        if (sessionTiming.current) {
+          sessionTiming.current.connectMs = Math.round(
+            performance.now() - sessionTiming.current.startedAtMs
+          );
+        }
         setConversationId(startedConversationId);
       }
     } catch (startError) {
@@ -330,6 +401,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         conversationId,
         transcript,
         analysisResult,
+        latencySample,
         error,
         isStarting,
         isAnalyzing,
