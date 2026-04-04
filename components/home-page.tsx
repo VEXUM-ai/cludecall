@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { useConversationController } from "@/components/conversation-provider";
-import type { DemoRun, LatencySample } from "@/lib/types";
+import type { DemoRun, LatencySample, OutboundCallResult } from "@/lib/types";
 
 function StatusBadge({ status }: { status: string }) {
   return <span className={`status-badge status-${status}`}>{status}</span>;
@@ -89,7 +89,11 @@ function LatencyTable({
   );
 }
 
-export function HomePage() {
+export function HomePage({
+  defaultOutboundNumber,
+}: {
+  defaultOutboundNumber: string;
+}) {
   const {
     conversationId,
     transcript,
@@ -108,6 +112,10 @@ export function HomePage() {
   const [isImportingPhoneCall, setIsImportingPhoneCall] = useState(false);
   const [phoneDemoRun, setPhoneDemoRun] = useState<DemoRun | null>(null);
   const [phoneImportError, setPhoneImportError] = useState<string | null>(null);
+  const [outboundNumber, setOutboundNumber] = useState(defaultOutboundNumber);
+  const [isPlacingCall, setIsPlacingCall] = useState(false);
+  const [outboundCallError, setOutboundCallError] = useState<string | null>(null);
+  const [outboundCallResult, setOutboundCallResult] = useState<OutboundCallResult | null>(null);
 
   const canStart = lifecycleStatus === "idle" || lifecycleStatus === "error";
   const canStop =
@@ -149,6 +157,35 @@ export function HomePage() {
       );
     } finally {
       setIsImportingPhoneCall(false);
+    }
+  }
+
+  async function handlePlaceOutboundCall() {
+    setOutboundCallError(null);
+    setOutboundCallResult(null);
+    setIsPlacingCall(true);
+
+    try {
+      const response = await fetch("/api/demo/outbound-call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toNumber: outboundNumber }),
+      });
+      const payload = (await response.json()) as OutboundCallResult | { error?: string };
+      if (!response.ok) {
+        throw new Error(
+          "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "Failed to place the outbound call."
+        );
+      }
+      setOutboundCallResult(payload as OutboundCallResult);
+    } catch (callError) {
+      setOutboundCallError(
+        callError instanceof Error ? callError.message : "Failed to place the outbound call."
+      );
+    } finally {
+      setIsPlacingCall(false);
     }
   }
 
@@ -246,6 +283,60 @@ export function HomePage() {
         <div className="stack">
           <section className="card">
             <div className="section-heading">
+              <h2>AI から電話をかける</h2>
+              <p>アプリから ElevenLabs の outbound call API を呼び出して、指定した番号へテスト架電します。</p>
+            </div>
+            <div className="field-stack">
+              <label className="field-label" htmlFor="outbound-number">
+                発信先電話番号
+              </label>
+              <input
+                id="outbound-number"
+                className="text-input"
+                type="tel"
+                value={outboundNumber}
+                onChange={(event) => setOutboundNumber(event.target.value)}
+                placeholder="+819012345678"
+              />
+              <p className="helper-text">
+                E.164 形式推奨。既定値には `.env` の電話番号を入れています。
+              </p>
+            </div>
+            <div className="button-row">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handlePlaceOutboundCall}
+                disabled={isPlacingCall || outboundNumber.trim().length === 0}
+              >
+                {isPlacingCall ? "発信中..." : "AI から電話をかける"}
+              </button>
+            </div>
+            {outboundCallError ? <p className="error-text">{outboundCallError}</p> : null}
+            {outboundCallResult ? (
+              <dl className="meta-grid">
+                <div>
+                  <dt>message</dt>
+                  <dd>{outboundCallResult.message}</dd>
+                </div>
+                <div>
+                  <dt>conversation_id</dt>
+                  <dd>{outboundCallResult.conversationId ?? "未取得"}</dd>
+                </div>
+                <div>
+                  <dt>callSid</dt>
+                  <dd>{outboundCallResult.callSid ?? "未取得"}</dd>
+                </div>
+                <div>
+                  <dt>agent phone</dt>
+                  <dd>{outboundCallResult.agentPhoneNumber ?? "未取得"}</dd>
+                </div>
+              </dl>
+            ) : null}
+          </section>
+
+          <section className="card">
+            <div className="section-heading">
               <h2>最新の電話会話を取り込む</h2>
               <p>
                 outbound-only 電話デモまたは将来の inbound デモ後に、最新 completed conversation を回収します。
@@ -272,7 +363,7 @@ export function HomePage() {
             <ol className="ordered-list">
               <li>`.env` を設定し、`npm run agent:apply-demo-config` で歯科受付用 prompt を反映する。</li>
               <li>Twilio Verified Caller ID または既存番号を ElevenLabs に import する。</li>
-              <li>ElevenLabs ダッシュボードからあなたの電話へ outbound call を送る。</li>
+              <li>この画面の `AI から電話をかける` か、ElevenLabs ダッシュボードから outbound call を送る。</li>
               <li>終話後にこの画面か CLI で最新通話を回収する。</li>
               <li>`npm run demo:import-last-call` で Markdown 証跡を保存する。</li>
             </ol>

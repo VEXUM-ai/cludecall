@@ -14,7 +14,7 @@
 1. `npm run agent:apply-demo-config` を実行し、歯科受付用の prompt と Data Collection を live agent に再適用する。
 2. ElevenLabs の Phone Numbers で Twilio 連携を行い、Verified Caller ID を import する。
 3. Verified Caller ID は `outbound-only` のため agent には割り当てられない。電話番号詳細画面に `この電話番号は着信通話をサポートしておらず、エージェントに割り当てることはできません` と表示されたら想定どおり。
-4. ElevenLabs ダッシュボードの `発信コール` から、対象 agent を選んであなたの電話番号へ outbound call を送る。
+4. アプリの `AI から電話をかける` から発信先番号を入力して outbound call を送る。ダッシュボードの `発信コール` を使ってもよい。
 5. 通話終了後、アプリの「最新の電話会話を取り込む」か `npm run demo:import-last-call` を実行する。
 6. 生成された `docs/demo-runs/*.md` を証跡として確認する。
 7. transcript に時刻情報があれば、電話の応答間隔も `docs/latency-report.md` に自動集計される。

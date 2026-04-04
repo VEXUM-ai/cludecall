@@ -102,3 +102,8 @@
 - 保存後に live agent を再取得しても、`ttsModel=eleven_v3_conversational`、`expressiveMode=true` を保持していることを確認した。
 - `npm run agent:apply-demo-config` を再実行しても同じ設定を維持できたため、現時点ではデモ本番でも `Eleven v3 Conversational + Bella` を使える状態になった。
 - ここからの注意点は、Agents 側では `eleven_v3` ではなく `eleven_v3_conversational` を使うこと。
+
+## 2026-04-05 アプリからの outbound call 起動
+- `POST /api/demo/outbound-call` を追加し、ElevenLabs の `convai/twilio/outbound-call` をアプリから直接呼べるようにした。
+- `lib/elevenlabs/api.ts` に電話番号一覧取得と outbound-capable な `phone_number_id` 解決処理を追加し、`ELEVENLABS_AGENT_PHONE_NUMBER` に一致する imported number を優先して使う。
+- `components/home-page.tsx` には `AI から電話をかける` セクションを追加し、番号入力からテスト架電、続けて `最新の電話会話を取り込む` まで一画面で完結できるようにした。

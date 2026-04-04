@@ -11,7 +11,7 @@ import {
   normalizeReservationMemo,
   normalizeTranscript,
 } from "@/lib/elevenlabs/memo";
-import type { AnalyzeConversationResponse, DemoRun } from "@/lib/types";
+import type { AnalyzeConversationResponse, DemoRun, OutboundCallResult } from "@/lib/types";
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
 
@@ -41,6 +41,25 @@ const conversationDetailsSchema = z
     metadata: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .passthrough();
+
+const phoneNumbersSchema = z.array(
+  z.object({
+    phone_number: z.string(),
+    label: z.string().nullable().optional(),
+    supports_inbound: z.boolean().optional(),
+    supports_outbound: z.boolean().optional(),
+    phone_number_id: z.string(),
+    assigned_agent: z.string().nullable().optional(),
+    provider: z.string().optional(),
+  })
+);
+
+const outboundCallSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  conversation_id: z.string().nullable().optional(),
+  callSid: z.string().nullable().optional(),
+});
 
 type ConversationDetails = z.infer<typeof conversationDetailsSchema>;
 
@@ -183,6 +202,10 @@ function toIsoFromUnix(value: unknown): string | null {
   return new Date(value * 1000).toISOString();
 }
 
+function normalizePhoneNumber(value: string): string {
+  return value.replace(/[^\d+]/g, "");
+}
+
 function normalizeAnalyzeResponse(details: ConversationDetails): AnalyzeConversationResponse {
   const transcript = normalizeTranscript(details.transcript);
   const analysis = normalizeConversationAnalysis(details.analysis);
@@ -272,6 +295,70 @@ export async function listConversations(pageSize = 20) {
     { method: "GET" },
     listConversationsSchema
   );
+}
+
+export async function listPhoneNumbers() {
+  return elevenLabsFetch(
+    buildApiUrl("convai/phone-numbers"),
+    { method: "GET" },
+    phoneNumbersSchema
+  );
+}
+
+async function resolveAgentPhoneNumber() {
+  const config = getServerConfig();
+  const phoneNumbers = await listPhoneNumbers();
+  const outboundCapable = phoneNumbers.filter(
+    (item) => item.supports_outbound !== false
+  );
+
+  const configuredNumber = config.agentPhoneNumber
+    ? normalizePhoneNumber(config.agentPhoneNumber)
+    : null;
+
+  if (configuredNumber) {
+    const matched = outboundCapable.find(
+      (item) => normalizePhoneNumber(item.phone_number) === configuredNumber
+    );
+    if (matched) {
+      return matched;
+    }
+  }
+
+  if (outboundCapable.length === 1) {
+    return outboundCapable[0];
+  }
+
+  throw new Error(
+    "Could not resolve an outbound-capable ElevenLabs phone number. Set ELEVENLABS_AGENT_PHONE_NUMBER to an imported Twilio number."
+  );
+}
+
+export async function startOutboundCall(toNumber: string): Promise<OutboundCallResult> {
+  const config = getServerConfig();
+  const phoneNumber = await resolveAgentPhoneNumber();
+  const response = await elevenLabsFetch(
+    buildApiUrl("convai/twilio/outbound-call"),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        agent_id: config.agentId,
+        agent_phone_number_id: phoneNumber.phone_number_id,
+        to_number: toNumber,
+      }),
+    },
+    outboundCallSchema
+  );
+
+  return {
+    success: response.success,
+    message: response.message,
+    conversationId: response.conversation_id ?? null,
+    callSid: response.callSid ?? null,
+    agentPhoneNumberId: phoneNumber.phone_number_id,
+    agentPhoneNumber: phoneNumber.phone_number,
+    toNumber,
+  };
 }
 
 export async function getConversationDetails(conversationId: string) {

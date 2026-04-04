@@ -83,3 +83,13 @@ export type DemoRun = AnalyzeConversationResponse & {
   cost: number | null;
   latency: LatencySample | null;
 };
+
+export type OutboundCallResult = {
+  success: boolean;
+  message: string;
+  conversationId: string | null;
+  callSid: string | null;
+  agentPhoneNumberId: string;
+  agentPhoneNumber: string | null;
+  toNumber: string;
+};
