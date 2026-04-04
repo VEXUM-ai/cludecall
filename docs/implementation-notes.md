@@ -85,3 +85,5 @@
 - tags は `[slow]` を氏名、電話番号、日時、重要確認事項の復唱に限定し、`[laughs]` `\[giggles]` `\[whispers]` `\[sighs]` は通常の受付では使わない方針を明文化した。
 - pronunciation dictionary は `Eleven v3 Conversational` を前提に alias ベースで設計し、初期サンプルとして `VEXUMデンタルクリニック` `AI受付` `LINE` `SMS` `CT` `CAD/CAM` `PMTC` `GBT` を含む PLS を `docs/agent/pronunciation-dictionary-ja-demo.pls` に追加した。
 - `npm run agent:apply-demo-config` を再実行し、prompt / first message / data collection / evaluation criteria の live 再適用までは完了した。再取得された live TTS はこの時点でも `eleven_flash_v2_5` で、UI 上で v3 が見えていても published live config と一致するかは API で確認する運用に改めた。
+- あわせて `scripts/apply-agent-demo-config.ts` に `ELEVENLABS_EXPRESSIVE_MODE` と `ELEVENLABS_SUGGESTED_AUDIO_TAGS` の上書き処理を追加した。将来 account 側で v3 expressive が解放されたら、`.env` だけで反映できる。
+- 実検証では `/v1/models` には `eleven_v3` が見えている一方で、agent PATCH で `model_id=eleven_v3` を送ると `feature_not_available / expressive_tts_not_allowed` が返った。`eleven_flash_v2_5 + expressive_mode=true` は 200 だが、保存結果は `expressive_mode=false` に戻されることも確認した。

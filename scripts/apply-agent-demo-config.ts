@@ -3,9 +3,11 @@ import { request as httpsRequest } from "node:https";
 import {
   DENTAL_DEMO_DATA_COLLECTION,
   DENTAL_DEMO_EVALUATION_CRITERIA,
+  DENTAL_DEMO_EXPRESSIVE_MODE,
   DENTAL_DEMO_FIRST_MESSAGE,
   DENTAL_DEMO_LANGUAGE,
   DENTAL_DEMO_PROMPT,
+  DENTAL_DEMO_SUGGESTED_AUDIO_TAGS,
   DENTAL_DEMO_TIMEZONE,
   DENTAL_DEMO_TTS_MODEL_ID,
   DENTAL_DEMO_VOICE_ID,
@@ -94,6 +96,36 @@ function readOptionalEnv(name: string): string | null {
   return value ? value : null;
 }
 
+function readOptionalBooleanEnv(name: string): boolean | null {
+  const value = readOptionalEnv(name);
+  if (value === null) {
+    return null;
+  }
+
+  const normalized = value.toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["false", "0", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  throw new Error(`${name} must be a boolean-like value.`);
+}
+
+function readOptionalStringArrayEnv(name: string): string[] | null {
+  const value = readOptionalEnv(name);
+  if (value === null) {
+    return null;
+  }
+
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
 async function main() {
   loadDotenvFile();
   const { apiKey, agentId } = getServerConfig();
@@ -122,6 +154,20 @@ async function main() {
     (typeof currentTtsConfig.voice_id === "string" && currentTtsConfig.voice_id.length > 0
       ? currentTtsConfig.voice_id
       : DENTAL_DEMO_VOICE_ID);
+  const resolvedExpressiveMode =
+    readOptionalBooleanEnv("ELEVENLABS_EXPRESSIVE_MODE") ??
+    (resolvedTtsModelId.includes("v3")
+      ? DENTAL_DEMO_EXPRESSIVE_MODE
+      : typeof currentTtsConfig.expressive_mode === "boolean"
+        ? currentTtsConfig.expressive_mode
+        : false);
+  const resolvedSuggestedAudioTags =
+    readOptionalStringArrayEnv("ELEVENLABS_SUGGESTED_AUDIO_TAGS") ??
+    (Array.isArray(currentTtsConfig.suggested_audio_tags)
+      ? currentTtsConfig.suggested_audio_tags.filter(
+          (item): item is string => typeof item === "string" && item.length > 0
+        )
+      : DENTAL_DEMO_SUGGESTED_AUDIO_TAGS);
 
   const patchBody: JsonObject = {
     conversation_config: {
@@ -130,6 +176,8 @@ async function main() {
         ...currentTtsConfig,
         model_id: resolvedTtsModelId,
         voice_id: resolvedVoiceId,
+        expressive_mode: resolvedExpressiveMode,
+        suggested_audio_tags: resolvedSuggestedAudioTags,
       },
       agent: {
         ...currentAgentConfig,
@@ -193,6 +241,14 @@ async function main() {
   console.log(`llm: ${String(updatedPromptConfig.llm ?? "")}`);
   console.log(`ttsModel: ${String(updatedTtsConfig.model_id ?? "")}`);
   console.log(`voiceId: ${String(updatedTtsConfig.voice_id ?? "")}`);
+  console.log(`expressiveMode: ${String(updatedTtsConfig.expressive_mode ?? "")}`);
+  console.log(
+    `suggestedAudioTags: ${
+      Array.isArray(updatedTtsConfig.suggested_audio_tags)
+        ? updatedTtsConfig.suggested_audio_tags.join(",")
+        : ""
+    }`
+  );
   console.log(`defaultVoiceName: ${DENTAL_DEMO_VOICE_NAME}`);
   console.log(`dataCollectionItems: ${Object.keys(updatedDataCollection).length}`);
   console.log(`evaluationCriteria: ${updatedCriteria.length}`);
