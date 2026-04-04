@@ -13,3 +13,8 @@
 - `components/conversation-provider.tsx` で WebRTC 会話の状態、transcript、終話後 analysis を管理するようにした。
 - `components/home-page.tsx` で Web デモと電話会話の取り込み UI を分けて表示するようにした。
 - `docs/agent/README.md`、`docs/runbook.md`、`docs/demo-runs/README.md` を追加し、設定・運用・証跡の見方を残した。
+
+## 2026-04-04 検証
+- `npm run lint`: 成功
+- `npm run build`: 成功
+- `npm run demo:import-last-call`: `.env` 未設定時に `Missing ELEVENLABS_API_KEY` で停止することを確認。設定不足の検知としては期待どおり。
