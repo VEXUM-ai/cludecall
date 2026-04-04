@@ -242,6 +242,19 @@ export async function getConversationToken(agentId?: string): Promise<string> {
   return response.token;
 }
 
+export async function getSignedUrl(agentId?: string): Promise<string> {
+  const config = getServerConfig();
+  const response = await elevenLabsFetch(
+    buildApiUrl("convai/conversation/get-signed-url", {
+      agent_id: agentId ?? config.agentId,
+    }),
+    { method: "GET" },
+    z.object({ signed_url: z.string().url() })
+  );
+
+  return response.signed_url;
+}
+
 export async function listConversations(pageSize = 20) {
   const config = getServerConfig();
   return elevenLabsFetch(

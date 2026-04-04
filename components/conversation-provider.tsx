@@ -70,6 +70,17 @@ function isConversationEvent(value: unknown): value is ConversationEvent {
   );
 }
 
+function isPeerConnectionError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+
+  return /pc connection|peer.?connection|rtcpeerconnection/i.test(message);
+}
+
 const ConversationContext = createContext<ConversationContextValue | null>(null);
 
 export function ConversationProvider({ children }: { children: ReactNode }) {
@@ -231,27 +242,55 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
 
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
-      const response = await fetch("/api/eleven/conversation-token", {
-        method: "GET",
-      });
-      const payload = (await response.json()) as
-        | { token: string }
-        | { error?: string };
+      try {
+        const response = await fetch("/api/eleven/conversation-token", {
+          method: "GET",
+        });
+        const payload = (await response.json()) as
+          | { token: string }
+          | { error?: string };
 
-      if (!response.ok || !("token" in payload)) {
-        throw new Error(
-          "error" in payload && typeof payload.error === "string"
-            ? payload.error
-            : "Failed to get conversation token."
-        );
+        if (!response.ok || !("token" in payload)) {
+          throw new Error(
+            "error" in payload && typeof payload.error === "string"
+              ? payload.error
+              : "Failed to get conversation token."
+          );
+        }
+
+        const startedConversationId = await conversation.startSession({
+          connectionType: "webrtc",
+          conversationToken: payload.token,
+        });
+
+        setConversationId(startedConversationId);
+      } catch (webRtcError) {
+        if (!isPeerConnectionError(webRtcError)) {
+          throw webRtcError;
+        }
+
+        const response = await fetch("/api/eleven/signed-url", {
+          method: "GET",
+        });
+        const payload = (await response.json()) as
+          | { signedUrl: string }
+          | { error?: string };
+
+        if (!response.ok || !("signedUrl" in payload)) {
+          throw new Error(
+            "error" in payload && typeof payload.error === "string"
+              ? payload.error
+              : "Failed to get signed URL for websocket fallback."
+          );
+        }
+
+        const startedConversationId = await conversation.startSession({
+          connectionType: "websocket",
+          signedUrl: payload.signedUrl,
+        });
+
+        setConversationId(startedConversationId);
       }
-
-      const startedConversationId = await conversation.startSession({
-        connectionType: "webrtc",
-        conversationToken: payload.token,
-      });
-
-      setConversationId(startedConversationId);
     } catch (startError) {
       setError(
         startError instanceof Error

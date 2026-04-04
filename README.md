@@ -5,6 +5,7 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 
 ## 主な機能
 - WebRTC で agent と会話
+- WebRTC が張れない環境では WebSocket fallback で会話を継続
 - ライブ transcript 表示
 - 終話後に `analysis/run` で仮受付メモを抽出
 - 最新の電話会話を import
@@ -27,6 +28,7 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 
 ## 主要なファイル
 - `app/api/eleven/conversation-token/route.ts`
+- `app/api/eleven/signed-url/route.ts`
 - `app/api/eleven/analyze/route.ts`
 - `app/api/demo/import-last-call/route.ts`
 - `components/conversation-provider.tsx`

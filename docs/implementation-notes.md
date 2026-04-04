@@ -62,3 +62,9 @@
 - その後も stale build で再発しにくいよう、`start` でも先に `tsx scripts/patch-next-runtime.ts` を実行するようにした。
 - 追加検証で `vendor-chunks/*` まで `./chunks/` に寄せると API route だけ 500 になることが分かったため、patch は numeric chunk のみ `./chunks/` を使い、`vendor-chunks/*` は従来どおり `./` 配下を参照する形に修正した。
 - 修正後に `npm start` を別ポートで起動し、トップ画面 `200`、`/api/eleven/conversation-token` `200`、`npm run demo:import-last-call` が `No completed phone conversation was found for the configured agent.` を返すところまで確認した。
+
+## 2026-04-05 WebRTC fallback の追加
+- ブラウザで `could not establish pc connection` が出る環境向けに、private agent 用 signed URL を返す `GET /api/eleven/signed-url` を追加した。
+- `components/conversation-provider.tsx` は WebRTC 開始失敗時に PeerConnection 系エラーだけを検知し、その場合だけ WebSocket 接続へ自動フォールバックする。
+- サーバー側では `lib/elevenlabs/api.ts` に `getSignedUrl()` を追加し、ElevenLabs の `convai/conversation/get-signed-url` を使うようにした。
+- これでブラウザの WebRTC が不安定でも、電話デモとは別に Web デモを継続しやすくした。

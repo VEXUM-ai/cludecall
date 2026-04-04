@@ -6,6 +6,7 @@
 3. `npm run agent:apply-demo-config`
 4. `npm run dev`
 5. ブラウザで開始し、会話後に memo を確認する。
+6. `could not establish pc connection` が出る端末では、アプリが自動で WebSocket fallback を試す。失敗する場合はページを再読み込みしてから再度 `開始` を押す。
 
 ## 即日電話デモ
 1. `npm run agent:apply-demo-config` を実行し、歯科受付用の prompt と Data Collection を live agent に再適用する。
@@ -28,5 +29,6 @@
 - phone conversation が拾えない: `conversationId` を指定して `npm run demo:import-last-call -- --conversationId=<id>` を使う。
 - analysis が遅い: 数秒待って再試行する。
 - WebRTC でマイク権限が拒否された: ブラウザ設定からマイク権限を許可する。
+- WebRTC の PeerConnection が張れない: アプリは `/api/eleven/signed-url` を使う WebSocket fallback に自動で切り替える。
 - `next start` で `Cannot find module './331.js'` が出る: 最新コードで `npm run build` をやり直す。build の最後に runtime patch が自動で入る。
 - `npm start` は毎回 runtime patch を先に実行するので、古い `.next` を持ったままでも `./331.js` に戻りにくい。
