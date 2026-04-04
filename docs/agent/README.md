@@ -24,6 +24,7 @@
 voice / prompt / 発音辞書の詳細設計は [docs/agent/japanese-phone-voice-design.md](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/japanese-phone-voice-design.md) にまとめてある。
 発音辞書のアップロード用サンプルは [docs/agent/pronunciation-dictionary-ja-demo.pls](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/pronunciation-dictionary-ja-demo.pls) を使う。
 API から voice 系を明示上書きしたい場合は `.env` の `ELEVENLABS_TTS_MODEL_ID` `ELEVENLABS_VOICE_ID` `ELEVENLABS_EXPRESSIVE_MODE` `ELEVENLABS_SUGGESTED_AUDIO_TAGS` を使う。
+v3 の利用可否と `eleven_v3` / `eleven_v3_conversational` の違いは [docs/agent/v3-availability-research.md](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/v3-availability-research.md) にまとめてある。
 
 ## Prompt
 ```text

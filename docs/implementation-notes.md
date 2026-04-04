@@ -90,3 +90,8 @@
 - ElevenLabs の公式 docs では、`Expressive mode` は `V3 Conversational` を選ぶと有効化され、追加料金も不要とされている。一方、公式 errors docs では `feature_not_available` は「現在の plan では使えない機能」と定義されている。
 - そのため、現状の最も整合的な解釈は「公開 docs 上は self-serve でも使える前提だが、この workspace には Agents 向け expressive TTS の entitlement がまだ付与されていない」というもの。公開 docs だけからは、明示的に `Free` / `Starter` / `Creator` のどこで解放されるかは確認できなかった。
 - `GET /v1/user/subscription` などで正確な契約 tier も確認しようとしたが、API key では 401 となり、この repo からは workspace の契約情報までは取得できなかった。
+
+## 2026-04-05 v3 利用可否の外部調査メモ
+- 外部調査結果を受けて、重要論点を `docs/agent/v3-availability-research.md` に整理した。
+- 特に重要なのは、Agents 側の正式な conversational v3 model id が `eleven_v3_conversational` であり、general TTS の `eleven_v3` と別である点。
+- ただし plan / entitlement / rollout のどれが拒否要因かは、公開 docs だけでは最終確定できないため、サポート問い合わせ前提の論点整理も併記した。
