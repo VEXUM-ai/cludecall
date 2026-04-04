@@ -29,3 +29,4 @@
 - analysis が遅い: 数秒待って再試行する。
 - WebRTC でマイク権限が拒否された: ブラウザ設定からマイク権限を許可する。
 - `next start` で `Cannot find module './331.js'` が出る: 最新コードで `npm run build` をやり直す。build の最後に runtime patch が自動で入る。
+- `npm start` は毎回 runtime patch を先に実行するので、古い `.next` を持ったままでも `./331.js` に戻りにくい。

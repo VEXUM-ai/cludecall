@@ -59,4 +59,5 @@
 - エラーは production build の server chunk 解決だけで発生し、`npm run dev` と API route の疎通には影響しなかった。
 - `scripts/patch-next-runtime.ts` を追加し、`webpack-runtime.js` の numeric chunk 解決を `./chunks/*.js` に向ける post-build workaround を実装した。
 - `package.json` の `build` を `next build && tsx scripts/patch-next-runtime.ts` に変更し、Windows の非 ASCII パス配下でも `next start` が通るようにした。
+- その後も stale build で再発しにくいよう、`start` でも先に `tsx scripts/patch-next-runtime.ts` を実行するようにした。
 - 修正後に `npm start` を別ポートで起動し、トップ画面 `200`、`/api/eleven/conversation-token` `200`、`npm run demo:import-last-call` が `No completed phone conversation was found for the configured agent.` を返すところまで確認した。

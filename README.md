@@ -16,7 +16,7 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 3. `npm install`
 4. `npm run dev`
 
-`npm run build` は Windows の非 ASCII パス配下で `next start` が `Cannot find module './331.js'` になるケースを避けるため、build 後に `.next/server/webpack-runtime.js` の chunk 解決を自動補正する。
+`npm run build` と `npm start` は、Windows の非 ASCII パス配下で `next start` が `Cannot find module './331.js'` になるケースを避けるため、`.next/server/webpack-runtime.js` の chunk 解決を自動補正する。
 
 ## よく使うコマンド
 - `npm run dev`

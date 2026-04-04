@@ -21,9 +21,8 @@ const patchCandidates = [
 
 function main() {
   if (!existsSync(runtimePath)) {
-    throw new Error(
-      "Cannot find .next/server/webpack-runtime.js. Run `next build` before patching the runtime."
-    );
+    console.log("Skipping Next runtime patch because no production build exists yet.");
+    return;
   }
 
   const current = readFileSync(runtimePath, "utf8");

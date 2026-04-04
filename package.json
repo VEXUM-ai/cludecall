@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build && tsx scripts/patch-next-runtime.ts",
     "patch:next-runtime": "tsx scripts/patch-next-runtime.ts",
-    "start": "next start",
+    "start": "tsx scripts/patch-next-runtime.ts && next start",
     "lint": "eslint .",
     "demo:import-last-call": "tsx scripts/import-last-call.ts"
   },
