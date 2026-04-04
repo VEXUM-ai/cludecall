@@ -87,3 +87,6 @@
 - `npm run agent:apply-demo-config` を再実行し、prompt / first message / data collection / evaluation criteria の live 再適用までは完了した。再取得された live TTS はこの時点でも `eleven_flash_v2_5` で、UI 上で v3 が見えていても published live config と一致するかは API で確認する運用に改めた。
 - あわせて `scripts/apply-agent-demo-config.ts` に `ELEVENLABS_EXPRESSIVE_MODE` と `ELEVENLABS_SUGGESTED_AUDIO_TAGS` の上書き処理を追加した。将来 account 側で v3 expressive が解放されたら、`.env` だけで反映できる。
 - 実検証では `/v1/models` には `eleven_v3` が見えている一方で、agent PATCH で `model_id=eleven_v3` を送ると `feature_not_available / expressive_tts_not_allowed` が返った。`eleven_flash_v2_5 + expressive_mode=true` は 200 だが、保存結果は `expressive_mode=false` に戻されることも確認した。
+- ElevenLabs の公式 docs では、`Expressive mode` は `V3 Conversational` を選ぶと有効化され、追加料金も不要とされている。一方、公式 errors docs では `feature_not_available` は「現在の plan では使えない機能」と定義されている。
+- そのため、現状の最も整合的な解釈は「公開 docs 上は self-serve でも使える前提だが、この workspace には Agents 向け expressive TTS の entitlement がまだ付与されていない」というもの。公開 docs だけからは、明示的に `Free` / `Starter` / `Creator` のどこで解放されるかは確認できなかった。
+- `GET /v1/user/subscription` などで正確な契約 tier も確認しようとしたが、API key では 401 となり、この repo からは workspace の契約情報までは取得できなかった。
