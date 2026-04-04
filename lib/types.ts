@@ -1,0 +1,69 @@
+export type ConversationChannel = "web" | "phone";
+
+export type ConversationLifecycleStatus =
+  | "idle"
+  | "connecting"
+  | "listening"
+  | "speaking"
+  | "analyzing"
+  | "error";
+
+export type TranscriptEntry = {
+  id: string;
+  role: "user" | "agent";
+  text: string;
+  tentative: boolean;
+  timeInCallSecs: number | null;
+};
+
+export type ReservationMemo = {
+  patient_name: string | null;
+  phone_number: string | null;
+  is_new_patient: boolean | null;
+  visit_reason: string | null;
+  preferred_date_1: string | null;
+  preferred_time_range_1: string | null;
+  preferred_date_2: string | null;
+  preferred_time_range_2: string | null;
+  callback_ok: boolean | null;
+  unresolved_questions: string | null;
+  notes_for_staff: string | null;
+  booking_status: string;
+};
+
+export type EvaluationCriterionResult = {
+  criteriaId: string;
+  result: string | null;
+  rationale: string | null;
+};
+
+export type ConversationAnalysis = {
+  callSuccessful: string | null;
+  transcriptSummary: string | null;
+  evaluationCriteriaResults: EvaluationCriterionResult[];
+};
+
+export type AnalyzeConversationRequest = {
+  conversationId: string;
+};
+
+export type AnalyzeConversationResponse = {
+  conversationId: string;
+  status: string;
+  transcript: TranscriptEntry[];
+  analysis: ConversationAnalysis;
+  memo: ReservationMemo;
+};
+
+export type DemoRun = AnalyzeConversationResponse & {
+  channel: ConversationChannel;
+  importedAt: string;
+  callMeta: {
+    startedAt: string | null;
+    durationSecs: number | null;
+    maskedCaller: string | null;
+    agentNumber: string | null;
+    direction: string | null;
+  };
+  cost: number | null;
+};
