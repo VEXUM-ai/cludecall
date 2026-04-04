@@ -53,3 +53,10 @@
 - ElevenLabs 側の `platform_settings.data_collection` は配列ではなく `identifier -> { type, description }` のオブジェクトで送る必要があること、`evaluation.criteria` は `id` と `conversation_goal_prompt` の形で受け付けることを確認した。
 - API 経由の再取得で、`language=ja`、`llm=gemini-3-flash-preview`、`tts=eleven_flash_v2_5`、`data_collection=12項目`、`summary_language=ja` になっていることを確認した。
 - 反映した prompt と想定シナリオは `docs/agent/dental-demo-config.md` にまとめた。
+
+## 2026-04-04 Production 起動エラーの修正
+- `npm start` でトップページを開いたとき、`Cannot find module './331.js'` が ` .next/server/webpack-runtime.js` から発生することを再現した。
+- エラーは production build の server chunk 解決だけで発生し、`npm run dev` と API route の疎通には影響しなかった。
+- `scripts/patch-next-runtime.ts` を追加し、`webpack-runtime.js` の numeric chunk 解決を `./chunks/*.js` に向ける post-build workaround を実装した。
+- `package.json` の `build` を `next build && tsx scripts/patch-next-runtime.ts` に変更し、Windows の非 ASCII パス配下でも `next start` が通るようにした。
+- 修正後に `npm start` を別ポートで起動し、トップ画面 `200`、`/api/eleven/conversation-token` `200`、`npm run demo:import-last-call` が `No completed phone conversation was found for the configured agent.` を返すところまで確認した。

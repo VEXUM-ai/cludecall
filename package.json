@@ -5,7 +5,8 @@
   "scripts": {
     "agent:apply-demo-config": "tsx scripts/apply-agent-demo-config.ts",
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && tsx scripts/patch-next-runtime.ts",
+    "patch:next-runtime": "tsx scripts/patch-next-runtime.ts",
     "start": "next start",
     "lint": "eslint .",
     "demo:import-last-call": "tsx scripts/import-last-call.ts"

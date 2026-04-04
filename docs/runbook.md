@@ -28,3 +28,4 @@
 - phone conversation が拾えない: `conversationId` を指定して `npm run demo:import-last-call -- --conversationId=<id>` を使う。
 - analysis が遅い: 数秒待って再試行する。
 - WebRTC でマイク権限が拒否された: ブラウザ設定からマイク権限を許可する。
+- `next start` で `Cannot find module './331.js'` が出る: 最新コードで `npm run build` をやり直す。build の最後に runtime patch が自動で入る。
