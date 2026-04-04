@@ -89,6 +89,11 @@ function buildEvaluationCriteriaConfig() {
   }));
 }
 
+function readOptionalEnv(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value ? value : null;
+}
+
 async function main() {
   loadDotenvFile();
   const { apiKey, agentId } = getServerConfig();
@@ -107,14 +112,24 @@ async function main() {
   const currentPlatformSettings = ((currentAgent.platform_settings ?? {}) as JsonObject) satisfies JsonObject;
   const currentGuardrails = ((currentPlatformSettings.guardrails ?? {}) as JsonObject) satisfies JsonObject;
   const currentFocusGuardrail = ((currentGuardrails.focus ?? {}) as JsonObject) satisfies JsonObject;
+  const resolvedTtsModelId =
+    readOptionalEnv("ELEVENLABS_TTS_MODEL_ID") ??
+    (typeof currentTtsConfig.model_id === "string" && currentTtsConfig.model_id.length > 0
+      ? currentTtsConfig.model_id
+      : DENTAL_DEMO_TTS_MODEL_ID);
+  const resolvedVoiceId =
+    readOptionalEnv("ELEVENLABS_VOICE_ID") ??
+    (typeof currentTtsConfig.voice_id === "string" && currentTtsConfig.voice_id.length > 0
+      ? currentTtsConfig.voice_id
+      : DENTAL_DEMO_VOICE_ID);
 
   const patchBody: JsonObject = {
     conversation_config: {
       ...conversationConfig,
       tts: {
         ...currentTtsConfig,
-        model_id: DENTAL_DEMO_TTS_MODEL_ID,
-        voice_id: DENTAL_DEMO_VOICE_ID,
+        model_id: resolvedTtsModelId,
+        voice_id: resolvedVoiceId,
       },
       agent: {
         ...currentAgentConfig,
@@ -178,7 +193,7 @@ async function main() {
   console.log(`llm: ${String(updatedPromptConfig.llm ?? "")}`);
   console.log(`ttsModel: ${String(updatedTtsConfig.model_id ?? "")}`);
   console.log(`voiceId: ${String(updatedTtsConfig.voice_id ?? "")}`);
-  console.log(`voiceName: ${DENTAL_DEMO_VOICE_NAME}`);
+  console.log(`defaultVoiceName: ${DENTAL_DEMO_VOICE_NAME}`);
   console.log(`dataCollectionItems: ${Object.keys(updatedDataCollection).length}`);
   console.log(`evaluationCriteria: ${updatedCriteria.length}`);
 }

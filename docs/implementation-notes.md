@@ -75,3 +75,5 @@
 - デモ設定コードは女性 voice `Bella` を使うように更新し、v3 が解放されていない間は `eleven_flash_v2_5 + Bella` を既定値にする。
 - `lib/latency.ts` と `POST /api/demo/latency` を追加し、Web 会話の接続時間、初回応答時間、分析時間、電話 transcript ベースの応答間隔を `artifacts/latency/latency-samples.json` に蓄積し、`docs/latency-report.md` を自動更新するようにした。
 - `components/conversation-provider.tsx` は analysis 完了後に Web latency を送信するようにし、`components/home-page.tsx` は最新の Web / 電話 latency を表示するようにした。
+- その後、UI 上では `V3 会話型` が選択可能であることを確認できた。問題は「選べない」ことではなく、古いブラウザ状態や自動再適用スクリプトで TTS 設定が戻ることだった。
+- `scripts/apply-agent-demo-config.ts` は TTS モデルと voice を固定値で上書きしないよう修正し、未指定時は live agent の現在値を保持、必要時のみ `.env` の `ELEVENLABS_TTS_MODEL_ID` / `ELEVENLABS_VOICE_ID` で明示上書きするようにした。

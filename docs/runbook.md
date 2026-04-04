@@ -8,6 +8,7 @@
 5. ブラウザで開始し、会話後に memo を確認する。
 6. `could not establish pc connection` が出る端末では、アプリが自動で WebSocket fallback を試す。失敗する場合はページを再読み込みしてから再度 `開始` を押す。
 7. 会話終了後の analysis 成功時に、Web の接続時間と初回応答時間が `docs/latency-report.md` に自動集計される。
+8. UI で Eleven v3 や voice を手動変更した場合、公開後に `npm run agent:apply-demo-config` を実行しても、その時点の live agent の TTS 設定を維持する。`.env` に `ELEVENLABS_TTS_MODEL_ID` や `ELEVENLABS_VOICE_ID` を入れた場合だけ明示的に上書きする。
 
 ## 即日電話デモ
 1. `npm run agent:apply-demo-config` を実行し、歯科受付用の prompt と Data Collection を live agent に再適用する。
