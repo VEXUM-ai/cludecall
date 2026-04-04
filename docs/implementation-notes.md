@@ -29,3 +29,17 @@
 - Playwright CLI で UI を操作し、`最新の電話会話を取り込む` 実行時に同じエラーが画面表示されることを確認した。
 - WebRTC の `開始` はマイク権限未許可のため `Permission denied` を表示し、アプリが固まらないことを確認した。
 - ブラウザコンソールの 404 ノイズを減らすため `app/icon.svg` を追加した。
+
+## 2026-04-04 電話デモの前進
+- ElevenLabs API から作成済み agent を取得し、`ELEVENLABS_AGENT_ID=agent_2301knc096q9fg5bcq3gj1gmrp4z` を `.env` に反映した。
+- Twilio の Verified Caller ID を ElevenLabs に import し、電話番号 `+81 80 8347 3640` が利用可能になったことを確認した。
+- ただし Verified Caller ID は `outbound-only` で、電話番号詳細画面でも agent 割り当て不可と表示された。即日デモの電話経路は `発信コール` ベースに固定する。
+- runbook を更新し、当日デモは `agent 割り当て済み電話番号` ではなく `ダッシュボードからの outbound call` として進める方針を明文化した。
+
+## 2026-04-04 ElevenLabs 接続の修正
+- Next.js の route handler から ElevenLabs へ送る `fetch` が `fetch failed` で落ちたため、サーバー側通信を `node:https` ベースの実装に切り替えた。
+- 同じ API key で Node 単体の `fetch` と `https.request` は成功していたため、回避策として Next の patched fetch に依存しないようにした。
+- 修正後に `GET /api/eleven/conversation-token` が成功し、WebRTC 用 token を返すことを確認した。
+- `POST /api/demo/import-last-call` は実電話会話がまだ無いため、`No completed phone conversation was found for the configured agent.` を返すことを確認した。
+- ビルド後に `.next` を lint 対象へ拾ってしまう問題が出たため、`eslint.config.mjs` に build artifact の ignore を追加した。
+- `npm run lint` と `npm run build` を再実行し、どちらも成功した。

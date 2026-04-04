@@ -1,3 +1,5 @@
+import { request as httpsRequest } from "node:https";
+
 import { z } from "zod";
 
 import { getServerConfig } from "@/lib/env";
@@ -69,32 +71,86 @@ function buildApiUrl(
   return url;
 }
 
-async function readErrorPayload(response: Response): Promise<unknown> {
-  const contentType = response.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    return response.json();
-  }
-  return response.text();
+type RawJsonResponse = {
+  statusCode: number;
+  payload: unknown;
+};
+
+function nodeRequestJson(
+  url: URL,
+  init: { method: string; headers?: Record<string, string>; body?: string }
+): Promise<RawJsonResponse> {
+  return new Promise((resolve, reject) => {
+    const request = httpsRequest(
+      url,
+      {
+        method: init.method,
+        headers: init.headers,
+      },
+      (response) => {
+        let rawBody = "";
+
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          rawBody += chunk;
+        });
+        response.on("end", () => {
+          const contentType = response.headers["content-type"] ?? "";
+          const payload = String(contentType).includes("application/json")
+            ? rawBody
+              ? JSON.parse(rawBody)
+              : null
+            : rawBody;
+
+          resolve({
+            statusCode: response.statusCode ?? 500,
+            payload,
+          });
+        });
+      }
+    );
+
+    request.on("error", (error) => {
+      reject(error);
+    });
+
+    if (init.body) {
+      request.write(init.body);
+    }
+
+    request.end();
+  });
 }
 
 async function elevenLabsFetch<T>(
   input: URL,
-  init: RequestInit,
+  init: {
+    method: string;
+    headers?: Record<string, string>;
+    body?: string;
+  },
   schema: z.ZodType<T>
 ): Promise<T> {
   const { apiKey } = getServerConfig();
-  const response = await fetch(input, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      "xi-api-key": apiKey,
-      ...(init.headers ?? {}),
-    },
-    cache: "no-store",
-  });
 
-  if (!response.ok) {
-    const payload = await readErrorPayload(response);
+  let response: RawJsonResponse;
+  try {
+    response = await nodeRequestJson(input, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": apiKey,
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? `ElevenLabs request failed: ${error.message}` : "ElevenLabs request failed.";
+    throw new ElevenLabsApiError(message, 502);
+  }
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    const payload = response.payload;
     const message =
       typeof payload === "string"
         ? payload
@@ -103,13 +159,12 @@ async function elevenLabsFetch<T>(
             "detail" in payload &&
             typeof payload.detail === "string"
           ? payload.detail
-          : `ElevenLabs request failed with ${response.status}`;
+          : `ElevenLabs request failed with ${response.statusCode}`;
 
-    throw new ElevenLabsApiError(message, response.status, payload);
+    throw new ElevenLabsApiError(message, response.statusCode, payload);
   }
 
-  const payload = await response.json();
-  return schema.parse(payload);
+  return schema.parse(response.payload);
 }
 
 function hasAnalysis(details: ConversationDetails): boolean {
