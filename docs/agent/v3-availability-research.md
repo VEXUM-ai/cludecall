@@ -7,6 +7,11 @@
 - ただし、`eleven_v3_conversational` / Expressive Mode がどの plan で解放されるかの公開マトリクスは確認できていない
 - したがって、今の最も安全な理解は「正しい model id を使っても拒否されるなら、plan か workspace entitlement か staged rollout のどれかで止まっている」
 
+## 現在の実測ステータス
+- 2026-04-05 時点では、有料化後の再検証で `eleven_v3_conversational + expressive_mode=true` が live agent API で通った
+- そのため、このリポジトリのデモ本番では v3 conversational を利用可能
+- 過去に詰まっていた主因は、少なくとも `eleven_v3` と `eleven_v3_conversational` の違い、または account 側の利用条件未充足だった可能性が高い
+
 ## 公式に確認できた事実
 
 ### 1. Agents 側の正式な v3 model id

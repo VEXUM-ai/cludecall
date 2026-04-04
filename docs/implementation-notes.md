@@ -96,3 +96,9 @@
 - 特に重要なのは、Agents 側の正式な conversational v3 model id が `eleven_v3_conversational` であり、general TTS の `eleven_v3` と別である点。
 - ただし plan / entitlement / rollout のどれが拒否要因かは、公開 docs だけでは最終確定できないため、サポート問い合わせ前提の論点整理も併記した。
 - ElevenLabs 公式窓口 `team@elevenlabs.io` へ、`feature_not_available / expressive_tts_not_allowed`、`agent_2301knc096q9fg5bcq3gj1gmrp4z`、`request_id=6e9fa91dbd6d59768a35907d9a500ace` を添えて問い合わせを送信した。
+
+## 2026-04-05 有料化後の v3 再検証
+- 有料化後に再度 live agent へ PATCH を試したところ、`model_id=eleven_v3_conversational`、`expressive_mode=true` が 200 で通った。
+- 保存後に live agent を再取得しても、`ttsModel=eleven_v3_conversational`、`expressiveMode=true` を保持していることを確認した。
+- `npm run agent:apply-demo-config` を再実行しても同じ設定を維持できたため、現時点ではデモ本番でも `Eleven v3 Conversational + Bella` を使える状態になった。
+- ここからの注意点は、Agents 側では `eleven_v3` ではなく `eleven_v3_conversational` を使うこと。
