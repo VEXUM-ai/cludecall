@@ -1,4 +1,5 @@
-import { persistLatestPhoneCall } from "@/lib/elevenlabs/api";
+import { persistLatestPhoneCall } from "../lib/elevenlabs/api";
+import { loadDotenvFile } from "./load-dotenv";
 
 function parseConversationIdArg(args: string[]): string | undefined {
   const value = args.find((arg) => arg.startsWith("--conversationId="));
@@ -6,6 +7,7 @@ function parseConversationIdArg(args: string[]): string | undefined {
 }
 
 async function main() {
+  loadDotenvFile();
   const conversationId = parseConversationIdArg(process.argv.slice(2));
   const { markdownPath, jsonPath, run } = await persistLatestPhoneCall(conversationId);
 

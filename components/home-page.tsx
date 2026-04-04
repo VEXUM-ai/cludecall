@@ -229,11 +229,11 @@ export function HomePage() {
               <p>Twilio 日本着信番号の審査前でも、outbound-only で今日中に電話デモできます。</p>
             </div>
             <ol className="ordered-list">
-              <li>ElevenLabs で private agent を作成し、.env に agent ID を入れる。</li>
+              <li>`.env` を設定し、`npm run agent:apply-demo-config` で歯科受付用 prompt を反映する。</li>
               <li>Twilio Verified Caller ID または既存番号を ElevenLabs に import する。</li>
               <li>ElevenLabs ダッシュボードからあなたの電話へ outbound call を送る。</li>
               <li>終話後にこの画面か CLI で最新通話を回収する。</li>
-              <li>`pnpm demo:import-last-call` で Markdown 証跡を保存する。</li>
+              <li>`npm run demo:import-last-call` で Markdown 証跡を保存する。</li>
             </ol>
           </section>
 

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "agent:apply-demo-config": "tsx scripts/apply-agent-demo-config.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

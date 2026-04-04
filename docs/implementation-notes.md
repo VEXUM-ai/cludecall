@@ -9,7 +9,7 @@
 ## 2026-04-04 コア実装
 - `GET /api/eleven/conversation-token` を追加し、サーバー側の API key で WebRTC token を返すようにした。
 - `POST /api/eleven/analyze` を追加し、`analysis/run` 後に conversation details を polling して memo を返すようにした。
-- `POST /api/demo/import-last-call` と `pnpm demo:import-last-call` を追加し、最新電話会話の取り込みと Markdown/JSON 保存を実装した。
+- `POST /api/demo/import-last-call` と `npm run demo:import-last-call` を追加し、最新電話会話の取り込みと Markdown/JSON 保存を実装した。
 - `components/conversation-provider.tsx` で WebRTC 会話の状態、transcript、終話後 analysis を管理するようにした。
 - `components/home-page.tsx` で Web デモと電話会話の取り込み UI を分けて表示するようにした。
 - `docs/agent/README.md`、`docs/runbook.md`、`docs/demo-runs/README.md` を追加し、設定・運用・証跡の見方を残した。
@@ -43,3 +43,13 @@
 - `POST /api/demo/import-last-call` は実電話会話がまだ無いため、`No completed phone conversation was found for the configured agent.` を返すことを確認した。
 - ビルド後に `.next` を lint 対象へ拾ってしまう問題が出たため、`eslint.config.mjs` に build artifact の ignore を追加した。
 - `npm run lint` と `npm run build` を再実行し、どちらも成功した。
+
+## 2026-04-04 Agent 設定の実データ投入
+- ElevenLabs API から live agent の現在設定を取得したところ、当初は英語の汎用アシスタント設定になっており、歯科受付用の prompt、Data Collection、Guardrail が未整備だった。
+- `lib/agent-demo-config.ts` を追加し、歯科一次受付デモ向けの first message、system prompt、Data Collection 12項目、評価基準をコードとして固定した。
+- `scripts/apply-agent-demo-config.ts` を追加し、`.env` の `ELEVENLABS_API_KEY` と `ELEVENLABS_AGENT_ID` を使って live agent に設定を再適用できるようにした。
+- `scripts/load-dotenv.ts` を追加し、CLI から実行する `agent:apply-demo-config` と `demo:import-last-call` の両方で `.env` を読み込むようにした。
+- 日本語 agent を PATCH したとき `Invalid conversation config: Non-english Agents must use turbo or flash v2_5.` で失敗したため、`conversation_config.tts.model_id` を `eleven_flash_v2_5` に固定するよう修正した。
+- ElevenLabs 側の `platform_settings.data_collection` は配列ではなく `identifier -> { type, description }` のオブジェクトで送る必要があること、`evaluation.criteria` は `id` と `conversation_goal_prompt` の形で受け付けることを確認した。
+- API 経由の再取得で、`language=ja`、`llm=gemini-3-flash-preview`、`tts=eleven_flash_v2_5`、`data_collection=12項目`、`summary_language=ja` になっていることを確認した。
+- 反映した prompt と想定シナリオは `docs/agent/dental-demo-config.md` にまとめた。

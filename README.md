@@ -20,6 +20,7 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 - `npm run dev`
 - `npm run lint`
 - `npm run build`
+- `npm run agent:apply-demo-config`
 - `npm run demo:import-last-call`
 
 ## 主要なファイル
@@ -35,5 +36,6 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 - 全体計画は `docs/demo-plan.md`
 - 実装ログは `docs/implementation-notes.md`
 - agent 設定は `docs/agent/README.md`
+- デモ用の agent 文面は `docs/agent/dental-demo-config.md`
 - 運用手順は `docs/runbook.md`
 - 証跡フォーマットは `docs/demo-runs/README.md`
