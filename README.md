@@ -32,6 +32,7 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 - `scripts/import-last-call.ts`
 
 ## 補足
+- 全体計画は `docs/demo-plan.md`
 - 実装ログは `docs/implementation-notes.md`
 - agent 設定は `docs/agent/README.md`
 - 運用手順は `docs/runbook.md`

@@ -18,3 +18,7 @@
 - `npm run lint`: 成功
 - `npm run build`: 成功
 - `npm run demo:import-last-call`: `.env` 未設定時に `Missing ELEVENLABS_API_KEY` で停止することを確認。設定不足の検知としては期待どおり。
+
+## 2026-04-04 ドキュメント整理
+- `docs/demo-plan.md` を追加し、即日デモ経路と最終的な inbound 電話デモ経路をひとつの計画書に統合した。
+- `README.md` から全体計画へ辿れるように更新した。
