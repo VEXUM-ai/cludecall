@@ -77,3 +77,11 @@
 - `components/conversation-provider.tsx` は analysis 完了後に Web latency を送信するようにし、`components/home-page.tsx` は最新の Web / 電話 latency を表示するようにした。
 - その後、UI 上では `V3 会話型` が選択可能であることを確認できた。問題は「選べない」ことではなく、古いブラウザ状態や自動再適用スクリプトで TTS 設定が戻ることだった。
 - `scripts/apply-agent-demo-config.ts` は TTS モデルと voice を固定値で上書きしないよう修正し、未指定時は live agent の現在値を保持、必要時のみ `.env` の `ELEVENLABS_TTS_MODEL_ID` / `ELEVENLABS_VOICE_ID` で明示上書きするようにした。
+
+## 2026-04-05 公式 best practices を反映した日本語電話受付 prompt 設計
+- ElevenLabs の公式 Prompting guide、Guardrails、Expressive mode、Voice customization、Pronunciation dictionary を確認し、日本語電話受付向けの設計原則を `docs/agent/japanese-phone-voice-design.md` に整理した。
+- agent の system prompt は `# Role` `# Goals` `# Tone` `# Voice & delivery` `# Intake flow` `# Normalization` `# Safety` `# Guardrails` `# Recovery` `# Closing` の section-based 構造に再編した。
+- 日本語の電話受付らしさは audio tags の多用ではなく、`明るい / はきはき / 大人の女性受付 / 不安時は少し落ち着く / 復唱だけ少しゆっくり` という自然言語指示で制御する方針にした。
+- tags は `[slow]` を氏名、電話番号、日時、重要確認事項の復唱に限定し、`[laughs]` `\[giggles]` `\[whispers]` `\[sighs]` は通常の受付では使わない方針を明文化した。
+- pronunciation dictionary は `Eleven v3 Conversational` を前提に alias ベースで設計し、初期サンプルとして `VEXUMデンタルクリニック` `AI受付` `LINE` `SMS` `CT` `CAD/CAM` `PMTC` `GBT` を含む PLS を `docs/agent/pronunciation-dictionary-ja-demo.pls` に追加した。
+- `npm run agent:apply-demo-config` を再実行し、prompt / first message / data collection / evaluation criteria の live 再適用までは完了した。再取得された live TTS はこの時点でも `eleven_flash_v2_5` で、UI 上で v3 が見えていても published live config と一致するかは API で確認する運用に改めた。

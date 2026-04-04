@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lexicon version="1.0"
+  xmlns="http://www.w3.org/2005/01/pronunciation-lexicon"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.w3.org/2005/01/pronunciation-lexicon http://www.w3.org/TR/2007/CR-pronunciation-lexicon-20071212/pls.xsd"
+  xml:lang="ja-JP">
+  <lexeme>
+    <grapheme>VEXUMデンタルクリニック</grapheme>
+    <alias>ベクサムデンタルクリニック</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>VEXUM歯科</grapheme>
+    <alias>ベクサムしか</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>AI受付</grapheme>
+    <alias>エーアイ受付</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>LINE</grapheme>
+    <alias>ライン</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>SMS</grapheme>
+    <alias>エスエムエス</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>CT</grapheme>
+    <alias>シーティー</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>CAD/CAM</grapheme>
+    <alias>キャドキャム</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>PMTC</grapheme>
+    <alias>ピーエムティーシー</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>GBT</grapheme>
+    <alias>ジービーティー</alias>
+  </lexeme>
+</lexicon>

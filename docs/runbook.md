@@ -33,6 +33,6 @@
 - analysis が遅い: 数秒待って再試行する。
 - WebRTC でマイク権限が拒否された: ブラウザ設定からマイク権限を許可する。
 - WebRTC の PeerConnection が張れない: アプリは `/api/eleven/signed-url` を使う WebSocket fallback に自動で切り替える。
-- `eleven_v3` を使いたいのに反映されない: 現アカウントでは ElevenLabs API が `feature_not_available / expressive_tts_not_allowed` を返し、Conversational AI への v3 適用が拒否される。
+- `V3 会話型` を UI で選んだのに反映されない: まず UI で変更を公開し、画面をリロードして stale 表示を避ける。次に `npm run agent:apply-demo-config` を実行しても、その時点の live TTS 設定を保持できる。実際に反映されたかは live agent の再取得値で確認し、なお `eleven_flash_v2_5` のままなら未公開・反映遅延・別ブランチ操作を疑う。
 - `next start` で `Cannot find module './331.js'` が出る: 最新コードで `npm run build` をやり直す。build の最後に runtime patch が自動で入る。
 - `npm start` は毎回 runtime patch を先に実行するので、古い `.next` を持ったままでも `./331.js` に戻りにくい。

@@ -10,15 +10,19 @@
 - Private agent
 - Primary LLM: `Gemini 3 Flash Preview`
 - Fallback: `Gemini 2.5 Flash`
-- Voice model: `Eleven Flash v2.5`
+- Recommended voice model: `Eleven v3 Conversational`
+- Fallback voice model in code: `Eleven Flash v2.5`
 - Text normalization: `elevenlabs`
 - Turn timeout: `6-8秒`
 - Soft timeout: 有効
 - Interruptions: 有効
+- Turn eagerness: `Normal` を基本にし、電話番号や日時の回収では `Patient` 寄りでテスト
+- Speed: `1.0` から始めて `0.98-1.05` を試す
 - 返答長: `1-2文`
 - 1ターン1質問
 
-日本語 agent を ElevenLabs API 経由で更新する場合、`conversation_config.tts.model_id` は `eleven_flash_v2_5` のような日本語対応の Turbo / Flash v2.5 系でないと `Invalid conversation config: Non-english Agents must use turbo or flash v2_5.` で弾かれる。
+voice / prompt / 発音辞書の詳細設計は [docs/agent/japanese-phone-voice-design.md](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/japanese-phone-voice-design.md) にまとめてある。
+発音辞書のアップロード用サンプルは [docs/agent/pronunciation-dictionary-ja-demo.pls](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/pronunciation-dictionary-ja-demo.pls) を使う。
 
 ## Prompt
 ```text
