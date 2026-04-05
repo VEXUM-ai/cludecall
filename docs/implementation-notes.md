@@ -125,3 +125,4 @@
 - `docs/agent/dental-demo-config.md` には FAQ を短く答える方針を追加し、予約確定や保険判断はスタッフ確認へ回す運用を明示した。
 - `docs/agent/japanese-phone-voice-design.md` には、電話でよく聞かれる定番質問は事務的に短く答えること、感情タグを使わず平静なトーンで案内することを追記した。
 - `docs/agent/pronunciation-dictionary-ja-demo.pls` には医院名、駅名、ビル名、住所表現、前日18時など読み間違えやすい語を追加した。
+- `lib/agent-demo-config.ts` の live prompt にも同じ医院プロフィールと FAQ handling を追加し、`npm run agent:apply-demo-config` を再実行して live agent へ反映した。
