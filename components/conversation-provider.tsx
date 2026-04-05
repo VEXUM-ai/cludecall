@@ -25,8 +25,10 @@ import type {
 } from "@/lib/types";
 
 const DESIRED_OUTPUT_VOLUME = 1;
-const AUDIO_LEVEL_POLL_MS = 180;
+const AUDIO_LEVEL_POLL_MS = 320;
+const AUDIO_LEVEL_DELTA_THRESHOLD = 0.03;
 const OUTPUT_DEVICE_SAMPLE_RATE = 48_000;
+const LAST_WORKING_TRANSPORT_STORAGE_KEY = "dental-intake:last-working-transport";
 
 type ConversationContextValue = {
   conversationId: string | null;
@@ -113,6 +115,7 @@ function clampVolumeLevel(value: number) {
   if (!Number.isFinite(value)) {
     return 0;
   }
+
   return Math.min(1, Math.max(0, value));
 }
 
@@ -224,6 +227,26 @@ async function listOutputDevices() {
     }));
 }
 
+function readLastWorkingTransport(): ConversationTransport {
+  if (typeof window === "undefined") {
+    return "webrtc";
+  }
+
+  return window.localStorage.getItem(LAST_WORKING_TRANSPORT_STORAGE_KEY) === "websocket"
+    ? "websocket"
+    : "webrtc";
+}
+
+function persistLastWorkingTransport(transport: ConversationTransport) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (transport === "webrtc" || transport === "websocket") {
+    window.localStorage.setItem(LAST_WORKING_TRANSPORT_STORAGE_KEY, transport);
+  }
+}
+
 const ConversationContext = createContext<ConversationContextValue | null>(null);
 
 export function ConversationProvider({ children }: { children: ReactNode }) {
@@ -238,6 +261,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activeTransport, setActiveTransport] =
     useState<ConversationTransport>("unknown");
+  const [preferredTransport, setPreferredTransport] =
+    useState<ConversationTransport>("webrtc");
   const [availableOutputDevices, setAvailableOutputDevices] = useState<
     AudioOutputDevice[]
   >([]);
@@ -292,6 +317,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     void refreshOutputDevices();
   }, [refreshOutputDevices]);
 
+  useEffect(() => {
+    setPreferredTransport(readLastWorkingTransport());
+  }, []);
+
   function recordFirstAgentResponse() {
     if (!sessionTiming.current || sessionTiming.current.firstAgentResponseMs !== null) {
       return;
@@ -319,6 +348,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       if (role === "agent") {
         recordFirstAgentResponse();
       }
+
       setTranscript((current) => {
         const last = current[current.length - 1];
         if (last && last.role === role && last.text === text) {
@@ -384,6 +414,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       });
     },
     onConnect: ({ conversationId: connectedConversationId }) => {
+      if (sessionTiming.current && sessionTiming.current.connectMs === null) {
+        sessionTiming.current.connectMs = Math.round(
+          performance.now() - sessionTiming.current.startedAtMs
+        );
+      }
       setConversationId(connectedConversationId);
       pushSessionEvent(`会話に接続しました: ${connectedConversationId}`, "success");
     },
@@ -408,8 +443,19 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     }
 
     const intervalId = window.setInterval(() => {
-      setInputLevel(clampVolumeLevel(conversation.getInputVolume()));
-      setOutputLevel(clampVolumeLevel(conversation.getOutputVolume()));
+      const nextInputLevel = clampVolumeLevel(conversation.getInputVolume());
+      const nextOutputLevel = clampVolumeLevel(conversation.getOutputVolume());
+
+      setInputLevel((current) =>
+        Math.abs(current - nextInputLevel) >= AUDIO_LEVEL_DELTA_THRESHOLD
+          ? nextInputLevel
+          : current
+      );
+      setOutputLevel((current) =>
+        Math.abs(current - nextOutputLevel) >= AUDIO_LEVEL_DELTA_THRESHOLD
+          ? nextOutputLevel
+          : current
+      );
     }, AUDIO_LEVEL_POLL_MS);
 
     return () => {
@@ -563,50 +609,93 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     setLastAudioEventAt(null);
     nextTranscriptId.current = 0;
     nextSessionEventId.current = 0;
+
+    const initialTransport = preferredTransport === "websocket" ? "websocket" : "webrtc";
     sessionTiming.current = {
       startedAtMs: performance.now(),
-      transport: "webrtc",
+      transport: initialTransport,
       connectMs: null,
       firstAgentResponseMs: null,
     };
-    setActiveTransport("webrtc");
+    setActiveTransport(initialTransport);
     setIsStarting(true);
     pushSessionEvent("Web 会話の接続を開始しました。");
 
+    async function getConversationToken() {
+      const response = await fetch("/api/eleven/conversation-token", {
+        method: "GET",
+      });
+      const payload = (await response.json()) as
+        | { token: string }
+        | { error?: string };
+
+      if (!response.ok || !("token" in payload)) {
+        throw new Error(
+          "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "Failed to get conversation token."
+        );
+      }
+
+      return payload.token;
+    }
+
+    async function getSignedUrl() {
+      const response = await fetch("/api/eleven/signed-url", {
+        method: "GET",
+      });
+      const payload = (await response.json()) as
+        | { signedUrl: string }
+        | { error?: string };
+
+      if (!response.ok || !("signedUrl" in payload)) {
+        throw new Error(
+          "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "Failed to get signed URL for websocket fallback."
+        );
+      }
+
+      return payload.signedUrl;
+    }
+
+    async function startWithTransport(transport: ConversationTransport) {
+      if (transport === "websocket") {
+        const signedUrl = await getSignedUrl();
+        const startedConversationId = await conversation.startSession({
+          connectionType: "websocket",
+          signedUrl,
+        });
+        return { startedConversationId, transport: "websocket" as const };
+      }
+
+      const token = await getConversationToken();
+      const startedConversationId = await conversation.startSession({
+        connectionType: "webrtc",
+        conversationToken: token,
+      });
+      return { startedConversationId, transport: "webrtc" as const };
+    }
+
     try {
-      const unlocked = await unlockBrowserAudioPlayback();
+      const unlockPromise = unlockBrowserAudioPlayback();
+      const microphonePromise = navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const unlocked = await unlockPromise;
       setBrowserAudioUnlocked(unlocked);
       pushSessionEvent(
         unlocked
-          ? "ブラウザ音声出力を有効化しました。"
-          : "ブラウザ音声出力の有効化を確認できませんでした。",
+          ? "ブラウザ音声出力を事前準備しました。"
+          : "ブラウザ音声出力の事前準備を環境依存で完了できませんでした。",
         unlocked ? "success" : "warning"
       );
 
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      await microphonePromise;
       pushSessionEvent("マイクへのアクセスを確認しました。", "success");
-      await refreshOutputDevices();
 
       try {
-        const response = await fetch("/api/eleven/conversation-token", {
-          method: "GET",
-        });
-        const payload = (await response.json()) as
-          | { token: string }
-          | { error?: string };
-
-        if (!response.ok || !("token" in payload)) {
-          throw new Error(
-            "error" in payload && typeof payload.error === "string"
-              ? payload.error
-              : "Failed to get conversation token."
-          );
-        }
-
-        const startedConversationId = await conversation.startSession({
-          connectionType: "webrtc",
-          conversationToken: payload.token,
-        });
+        const { startedConversationId, transport } =
+          await startWithTransport(initialTransport);
 
         conversation.setVolume({ volume: DESIRED_OUTPUT_VOLUME });
         if (selectedOutputDeviceId) {
@@ -617,16 +706,19 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           });
         }
 
-        if (sessionTiming.current) {
-          sessionTiming.current.connectMs = Math.round(
-            performance.now() - sessionTiming.current.startedAtMs
-          );
-        }
+        persistLastWorkingTransport(transport);
+        setPreferredTransport(transport);
+        setActiveTransport(transport);
         setConversationId(startedConversationId);
-        pushSessionEvent("WebRTC で接続しました。", "success");
-      } catch (webRtcError) {
-        if (!isPeerConnectionError(webRtcError)) {
-          throw webRtcError;
+        pushSessionEvent(
+          transport === "websocket"
+            ? "WebSocket で接続しました。"
+            : "WebRTC で接続しました。",
+          "success"
+        );
+      } catch (transportError) {
+        if (initialTransport !== "webrtc" || !isPeerConnectionError(transportError)) {
+          throw transportError;
         }
 
         if (sessionTiming.current) {
@@ -634,29 +726,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         }
         setActiveTransport("websocket");
         pushSessionEvent(
-          "WebRTC 接続に失敗したため WebSocket fallback に切り替えました。",
+          "WebRTC 接続に失敗したため、WebSocket fallback に切り替えました。",
           "warning"
         );
 
-        const response = await fetch("/api/eleven/signed-url", {
-          method: "GET",
-        });
-        const payload = (await response.json()) as
-          | { signedUrl: string }
-          | { error?: string };
-
-        if (!response.ok || !("signedUrl" in payload)) {
-          throw new Error(
-            "error" in payload && typeof payload.error === "string"
-              ? payload.error
-              : "Failed to get signed URL for websocket fallback."
-          );
-        }
-
-        const startedConversationId = await conversation.startSession({
-          connectionType: "websocket",
-          signedUrl: payload.signedUrl,
-        });
+        const { startedConversationId } = await startWithTransport("websocket");
 
         conversation.setVolume({ volume: DESIRED_OUTPUT_VOLUME });
         if (selectedOutputDeviceId) {
@@ -667,11 +741,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           });
         }
 
-        if (sessionTiming.current) {
-          sessionTiming.current.connectMs = Math.round(
-            performance.now() - sessionTiming.current.startedAtMs
-          );
-        }
+        persistLastWorkingTransport("websocket");
+        setPreferredTransport("websocket");
         setConversationId(startedConversationId);
         pushSessionEvent("WebSocket fallback で接続しました。", "success");
       }
@@ -696,23 +767,23 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     const targetConversationId = conversation.getId() ?? conversationId;
     if (!targetConversationId) {
       setError("No conversation ID is available for analysis.");
-      pushSessionEvent("conversationId が無いため解析できません。", "error");
+      pushSessionEvent("conversationId が無いため分析できません。", "error");
       return;
     }
 
     try {
-      pushSessionEvent("会話を終了し、解析を開始します。");
+      pushSessionEvent("会話を終了し、分析を開始します。");
       await conversation.endSession();
       await analyzeByConversationId(targetConversationId);
-      pushSessionEvent("解析が完了しました。", "success");
+      pushSessionEvent("分析が完了しました。", "success");
     } catch (endError) {
       setError(
         endError instanceof Error ? endError.message : "Failed to end conversation."
       );
       pushSessionEvent(
         endError instanceof Error
-          ? `終了または解析に失敗しました: ${endError.message}`
-          : "終了または解析に失敗しました。",
+          ? `終了または分析に失敗しました: ${endError.message}`
+          : "終了または分析に失敗しました。",
         "error"
       );
     }

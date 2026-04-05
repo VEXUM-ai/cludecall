@@ -1,4 +1,4 @@
-import { request as httpsRequest } from "node:https";
+import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
 
 import { z } from "zod";
 
@@ -20,6 +20,7 @@ import type {
 } from "@/lib/types";
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
+const ELEVENLABS_HTTPS_AGENT = new HttpsAgent({ keepAlive: true });
 
 const listConversationsSchema = z.object({
   conversations: z.array(
@@ -114,6 +115,7 @@ function nodeRequestJson(
       {
         method: init.method,
         headers: init.headers,
+        agent: ELEVENLABS_HTTPS_AGENT,
       },
       (response) => {
         let rawBody = "";

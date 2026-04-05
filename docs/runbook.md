@@ -62,3 +62,20 @@
 2. 選択した会話の `要約`、`メタデータ`、`受付メモ`、`レイテンシ`、`evaluation`、`transcript` が下に表示される。
 3. `最新の電話会話を取り込む` を押すと、完了済みの電話会話を選択中の会話として表示できる。
 4. Web 会話の transcript も同じ詳細ビューに出るため、電話と Web を同じ比較軸で確認できる。
+## Eleven v3 速度改善の反映手順
+1. `npm run agent:apply-demo-config`
+2. ElevenLabs UI で対象 branch を `公開`
+3. 公開後に Web 会話を開始し、応答の体感差を確認する
+4. 直近の結果は `docs/latency-report.md` と `docs/web-conversation-analysis.md` で見る
+
+## 今回の速度設定
+- `tts.model_id = eleven_v3_conversational`
+- `expressive_mode = true`
+- `turn_timeout = 6`
+- `turn_eagerness = eager`
+- `max_tokens = 180`
+- `cascade_timeout_seconds = 6`
+
+## 注意
+- `npm run agent:apply-demo-config` で反映されるのは branch 側設定で、公開前の live API には反映されない場合がある。
+- live 反映後に速さがまだ不足する場合は、FAQ のさらなる圧縮か `tts.speed` の微調整を検討する。

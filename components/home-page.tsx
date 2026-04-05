@@ -484,7 +484,30 @@ export function HomePage({
   );
 
   useEffect(() => {
-    void refreshHistory();
+    if (typeof window === "undefined") {
+      void refreshHistory();
+      return;
+    }
+
+    const supportsIdleCallback =
+      typeof window.requestIdleCallback === "function" &&
+      typeof window.cancelIdleCallback === "function";
+    const scheduleRefresh = supportsIdleCallback
+      ? window.requestIdleCallback(() => {
+          void refreshHistory();
+        })
+      : window.setTimeout(() => {
+          void refreshHistory();
+        }, 1200);
+
+    return () => {
+      if (supportsIdleCallback) {
+        window.cancelIdleCallback(scheduleRefresh);
+        return;
+      }
+
+      window.clearTimeout(scheduleRefresh);
+    };
   }, [refreshHistory]);
 
   useEffect(() => {

@@ -146,3 +146,10 @@
 - `app/api/demo/conversations` を追加し、最近の会話一覧を Web / phone 混在で取得できるようにした。
 - `app/api/demo/conversations/[conversationId]` を追加し、選択した会話の transcript、要約、メモ、評価、遅延、通話メタデータを表示できるようにした。
 - `lib/elevenlabs/api.ts` に履歴用の読み取り関数を追加し、分析済み会話を UI から再取得できるようにした。
+## 2026-04-05 Eleven v3 前提の速度改善
+- 公式 docs と公式 examples を基に、応答速度の主要レバーを `turn_timeout` `turn_eagerness` `prompt長` `接続前の直列待ち` に整理した。詳細は `docs/v3-speed-optimization-research.md` にまとめた。
+- `components/conversation-provider.tsx` を整理し、`unlockBrowserAudioPlayback()` と `getUserMedia()` を並列化、開始経路から出力デバイス再列挙を外し、前回成功した transport を再利用するようにした。
+- `lib/elevenlabs/api.ts` に `https.Agent({ keepAlive: true })` を入れ、会話開始時の token / signed URL 取得で毎回新規 TLS 接続を張り直さないようにした。
+- `components/home-page.tsx` の履歴自動読み込みは idle 後に遅延させ、初回会話開始とぶつかりにくくした。
+- `lib/agent-demo-config.ts` と `scripts/apply-agent-demo-config.ts` を更新し、branch 側の agent 設定を `eleven_v3_conversational` のまま `turn_timeout=6`、`turn_eagerness=eager`、`max_tokens=180`、`cascade_timeout_seconds=6` にした。
+- なお、`npm run agent:apply-demo-config` 実行後に branch 側では新設定を確認できたが、branch 指定なしの live API では旧設定のままだった。現状は ElevenLabs UI で `公開` して live に反映する必要がある。
