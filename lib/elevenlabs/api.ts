@@ -195,6 +195,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isConversationDone(status: string | undefined): boolean {
+  return status?.toLowerCase() === "done";
+}
+
 function toIsoFromUnix(value: unknown): string | null {
   if (typeof value !== "number") {
     return null;
@@ -401,7 +405,7 @@ async function findMostRecentPhoneConversationId(): Promise<string> {
   );
 
   for (const candidate of candidates) {
-    if (candidate.status?.toLowerCase() === "in-progress") {
+    if (!isConversationDone(candidate.status)) {
       continue;
     }
 

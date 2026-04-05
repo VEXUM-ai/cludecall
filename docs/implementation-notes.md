@@ -113,3 +113,9 @@
 - `onAudio` で agent 音声受信数を数え、`getInputVolume()` と `getOutputVolume()` を定期取得して UI に出すようにした。
 - `components/home-page.tsx` に `音声出力チェック` セクションを追加し、出力デバイス切替、スピーカーテスト、診断メトリクスを確認できるようにした。
 - Web 側で声が聞こえないときの確認手順は `docs/audio-troubleshooting.md` にまとめた。
+
+## 2026-04-05 電話会話取り込みの 409 修正
+- ログを確認すると、最新の電話会話として `status=initiated` の未成立 outbound call を拾っていた。
+- `npm run demo:import-last-call` はその会話に対して `analysis/run` を呼んでいたため、ElevenLabs から `409` が返っていた。
+- `lib/elevenlabs/api.ts` の `findMostRecentPhoneConversationId()` を修正し、`status=done` の電話会話だけを取り込み対象にした。
+- これにより、未成立の発信履歴が残っていても、完了済みの電話会話だけを安全に回収できるようにした。

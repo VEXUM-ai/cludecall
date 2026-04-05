@@ -43,3 +43,9 @@
 4. `audio packets received` が増えない場合は agent 側から音声が届いていない。
 5. `audio packets received` が増えているのに聞こえない場合は、出力デバイスを `システム既定` 以外へ切り替えて再試行する。
 6. 詳細は `docs/audio-troubleshooting.md` を参照する。
+
+## 2026-04-05 電話会話の取り込みで 409 が出る場合
+1. 最新の outbound call が未成立だと、ElevenLabs 側で `status=initiated` のまま残ることがある。
+2. その会話に対して `analysis/run` を呼ぶと `409` が返る。
+3. 現在の実装は `status=done` の電話会話だけを取り込み対象にしている。
+4. それでも取り込めない場合は、完了済みの電話通話がまだ無いか、直近の成功会話が Web 会話である可能性が高い。
