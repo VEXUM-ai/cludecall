@@ -119,3 +119,9 @@
 - `npm run demo:import-last-call` はその会話に対して `analysis/run` を呼んでいたため、ElevenLabs から `409` が返っていた。
 - `lib/elevenlabs/api.ts` の `findMostRecentPhoneConversationId()` を修正し、`status=done` の電話会話だけを取り込み対象にした。
 - これにより、未成立の発信履歴が残っていても、完了済みの電話会話だけを安全に回収できるようにした。
+
+## 2026-04-05 医院プロフィールと定番FAQの追加
+- デモ用の医院プロフィールを `VEXUMデンタルクリニック渋谷` に固定し、診療時間、休診日、支払い方法、駐車場、アクセス、当日受付、キャンセル変更の案内をドキュメントへ追記した。
+- `docs/agent/dental-demo-config.md` には FAQ を短く答える方針を追加し、予約確定や保険判断はスタッフ確認へ回す運用を明示した。
+- `docs/agent/japanese-phone-voice-design.md` には、電話でよく聞かれる定番質問は事務的に短く答えること、感情タグを使わず平静なトーンで案内することを追記した。
+- `docs/agent/pronunciation-dictionary-ja-demo.pls` には医院名、駅名、ビル名、住所表現、前日18時など読み間違えやすい語を追加した。

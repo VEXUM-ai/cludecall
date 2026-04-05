@@ -5,12 +5,28 @@
   xsi:schemaLocation="http://www.w3.org/2005/01/pronunciation-lexicon http://www.w3.org/TR/2007/CR-pronunciation-lexicon-20071212/pls.xsd"
   xml:lang="ja-JP">
   <lexeme>
+    <grapheme>VEXUMデンタルクリニック渋谷</grapheme>
+    <alias>ベクサムデンタルクリニックしぶや</alias>
+  </lexeme>
+  <lexeme>
     <grapheme>VEXUMデンタルクリニック</grapheme>
     <alias>ベクサムデンタルクリニック</alias>
   </lexeme>
   <lexeme>
     <grapheme>VEXUM歯科</grapheme>
     <alias>ベクサムしか</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>VEXUMスクエア</grapheme>
+    <alias>ベクサムスクエア</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>渋谷駅B5出口</grapheme>
+    <alias>しぶやえきびごでぐち</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>東京都渋谷区渋谷</grapheme>
+    <alias>とうきょうとしぶやくしぶや</alias>
   </lexeme>
   <lexeme>
     <grapheme>AI受付</grapheme>
@@ -39,5 +55,9 @@
   <lexeme>
     <grapheme>GBT</grapheme>
     <alias>ジービーティー</alias>
+  </lexeme>
+  <lexeme>
+    <grapheme>前日18時</grapheme>
+    <alias>ぜんじつじゅうはちじ</alias>
   </lexeme>
 </lexicon>
