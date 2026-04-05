@@ -16,7 +16,6 @@ import {
 import type {
   AnalyzeConversationResponse,
   AudioDiagnostics,
-  AudioOutputDevice,
   ConversationEventLogEntry,
   ConversationLifecycleStatus,
   ConversationTransport,
@@ -27,7 +26,6 @@ import type {
 const DESIRED_OUTPUT_VOLUME = 1;
 const AUDIO_LEVEL_POLL_MS = 320;
 const AUDIO_LEVEL_DELTA_THRESHOLD = 0.03;
-const OUTPUT_DEVICE_SAMPLE_RATE = 48_000;
 const LAST_WORKING_TRANSPORT_STORAGE_KEY = "dental-intake:last-working-transport";
 
 type ConversationContextValue = {
@@ -42,14 +40,9 @@ type ConversationContextValue = {
   lifecycleStatus: ConversationLifecycleStatus;
   sdkStatus: string;
   audioDiagnostics: AudioDiagnostics;
-  availableOutputDevices: AudioOutputDevice[];
-  speakerSelectionSupported: boolean;
   startConversation: () => Promise<void>;
   stopConversation: () => Promise<void>;
   clearResult: () => void;
-  refreshOutputDevices: () => Promise<void>;
-  selectOutputDevice: (deviceId: string | null) => Promise<void>;
-  playSpeakerTest: () => Promise<void>;
 };
 
 type ConversationEvent = {
@@ -119,14 +112,6 @@ function clampVolumeLevel(value: number) {
   return Math.min(1, Math.max(0, value));
 }
 
-function supportsSpeakerSelection() {
-  if (typeof HTMLMediaElement === "undefined") {
-    return false;
-  }
-
-  return "setSinkId" in HTMLMediaElement.prototype;
-}
-
 function getAudioContextCtor() {
   if (typeof window === "undefined") {
     return null;
@@ -176,57 +161,6 @@ async function unlockBrowserAudioPlayback() {
   return sharedAudioContext.state === "running";
 }
 
-async function playSpeakerTestTone() {
-  const AudioContextCtor = getAudioContextCtor();
-  if (!AudioContextCtor) {
-    throw new Error("This browser does not support the Web Audio API.");
-  }
-
-  if (!sharedAudioContext) {
-    sharedAudioContext = new AudioContextCtor();
-  }
-
-  if (sharedAudioContext.state === "suspended") {
-    await sharedAudioContext.resume();
-  }
-
-  const oscillator = sharedAudioContext.createOscillator();
-  const gain = sharedAudioContext.createGain();
-  oscillator.type = "sine";
-  oscillator.frequency.value = 880;
-  gain.gain.value = 0.06;
-  oscillator.connect(gain);
-  gain.connect(sharedAudioContext.destination);
-  oscillator.start();
-  oscillator.stop(sharedAudioContext.currentTime + 0.18);
-
-  await new Promise<void>((resolve) => {
-    oscillator.addEventListener(
-      "ended",
-      () => {
-        oscillator.disconnect();
-        gain.disconnect();
-        resolve();
-      },
-      { once: true }
-    );
-  });
-}
-
-async function listOutputDevices() {
-  if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) {
-    return [] satisfies AudioOutputDevice[];
-  }
-
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  return devices
-    .filter((device) => device.kind === "audiooutput")
-    .map((device, index) => ({
-      id: device.deviceId,
-      label: device.label || `Speaker ${index + 1}`,
-    }));
-}
-
 function readLastWorkingTransport(): ConversationTransport {
   if (typeof window === "undefined") {
     return "webrtc";
@@ -263,12 +197,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     useState<ConversationTransport>("unknown");
   const [preferredTransport, setPreferredTransport] =
     useState<ConversationTransport>("webrtc");
-  const [availableOutputDevices, setAvailableOutputDevices] = useState<
-    AudioOutputDevice[]
-  >([]);
-  const [selectedOutputDeviceId, setSelectedOutputDeviceId] = useState<string | null>(
-    null
-  );
   const [browserAudioUnlocked, setBrowserAudioUnlocked] = useState(false);
   const [inputLevel, setInputLevel] = useState(0);
   const [outputLevel, setOutputLevel] = useState(0);
@@ -294,29 +222,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const refreshOutputDevices = useCallback(async () => {
-    try {
-      const devices = await listOutputDevices();
-      setAvailableOutputDevices(devices);
-      if (
-        selectedOutputDeviceId &&
-        !devices.some((device) => device.id === selectedOutputDeviceId)
-      ) {
-        setSelectedOutputDeviceId(null);
-      }
-    } catch (deviceError) {
-      setError(
-        deviceError instanceof Error
-          ? deviceError.message
-          : "Failed to enumerate audio output devices."
-      );
-    }
-  }, [selectedOutputDeviceId]);
-
-  useEffect(() => {
-    void refreshOutputDevices();
-  }, [refreshOutputDevices]);
-
   useEffect(() => {
     setPreferredTransport(readLastWorkingTransport());
   }, []);
@@ -333,7 +238,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
 
   const conversation = useConversation({
     volume: DESIRED_OUTPUT_VOLUME,
-    outputDeviceId: selectedOutputDeviceId ?? undefined,
     onMessage: (event) => {
       if (!isConversationEvent(event)) {
         return;
@@ -479,17 +383,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     return "idle";
   }, [conversation.isSpeaking, conversation.status, error, isAnalyzing, isStarting]);
 
-  const selectedOutputDeviceLabel = useMemo(() => {
-    if (!selectedOutputDeviceId) {
-      return null;
-    }
-
-    return (
-      availableOutputDevices.find((device) => device.id === selectedOutputDeviceId)?.label ??
-      null
-    );
-  }, [availableOutputDevices, selectedOutputDeviceId]);
-
   const audioDiagnostics = useMemo<AudioDiagnostics>(
     () => ({
       transport: activeTransport,
@@ -499,8 +392,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       receivedAudioEvents,
       lastAudioEventAt,
       browserAudioUnlocked,
-      selectedOutputDeviceId,
-      selectedOutputDeviceLabel,
     }),
     [
       activeTransport,
@@ -509,8 +400,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       lastAudioEventAt,
       outputLevel,
       receivedAudioEvents,
-      selectedOutputDeviceId,
-      selectedOutputDeviceLabel,
     ]
   );
 
@@ -571,28 +460,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       );
     } finally {
       setIsAnalyzing(false);
-    }
-  }
-
-  async function selectOutputDevice(deviceId: string | null) {
-    setSelectedOutputDeviceId(deviceId);
-
-    if (conversation.status !== "connected") {
-      return;
-    }
-
-    try {
-      await conversation.changeOutputDevice({
-        format: "pcm",
-        sampleRate: OUTPUT_DEVICE_SAMPLE_RATE,
-        ...(deviceId ? { outputDeviceId: deviceId } : {}),
-      });
-    } catch (deviceError) {
-      setError(
-        deviceError instanceof Error
-          ? deviceError.message
-          : "Failed to switch the output device."
-      );
     }
   }
 
@@ -698,14 +565,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           await startWithTransport(initialTransport);
 
         conversation.setVolume({ volume: DESIRED_OUTPUT_VOLUME });
-        if (selectedOutputDeviceId) {
-          await conversation.changeOutputDevice({
-            format: "pcm",
-            sampleRate: OUTPUT_DEVICE_SAMPLE_RATE,
-            outputDeviceId: selectedOutputDeviceId,
-          });
-        }
-
         persistLastWorkingTransport(transport);
         setPreferredTransport(transport);
         setActiveTransport(transport);
@@ -733,14 +592,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         const { startedConversationId } = await startWithTransport("websocket");
 
         conversation.setVolume({ volume: DESIRED_OUTPUT_VOLUME });
-        if (selectedOutputDeviceId) {
-          await conversation.changeOutputDevice({
-            format: "pcm",
-            sampleRate: OUTPUT_DEVICE_SAMPLE_RATE,
-            outputDeviceId: selectedOutputDeviceId,
-          });
-        }
-
         persistLastWorkingTransport("websocket");
         setPreferredTransport("websocket");
         setConversationId(startedConversationId);
@@ -789,22 +640,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function playSpeakerTest() {
-    setError(null);
-
-    try {
-      const unlocked = await unlockBrowserAudioPlayback();
-      setBrowserAudioUnlocked(unlocked);
-      await playSpeakerTestTone();
-    } catch (speakerTestError) {
-      setError(
-        speakerTestError instanceof Error
-          ? speakerTestError.message
-          : "Failed to play the speaker test."
-      );
-    }
-  }
-
   function clearResult() {
     setAnalysisResult(null);
     setError(null);
@@ -824,14 +659,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         lifecycleStatus,
         sdkStatus: conversation.status,
         audioDiagnostics,
-        availableOutputDevices,
-        speakerSelectionSupported: supportsSpeakerSelection(),
         startConversation,
         stopConversation,
         clearResult,
-        refreshOutputDevices,
-        selectOutputDevice,
-        playSpeakerTest,
       }}
     >
       {children}

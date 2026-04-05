@@ -153,3 +153,11 @@
 - `components/home-page.tsx` の履歴自動読み込みは idle 後に遅延させ、初回会話開始とぶつかりにくくした。
 - `lib/agent-demo-config.ts` と `scripts/apply-agent-demo-config.ts` を更新し、branch 側の agent 設定を `eleven_v3_conversational` のまま `turn_timeout=6`、`turn_eagerness=eager`、`max_tokens=180`、`cascade_timeout_seconds=6` にした。
 - なお、`npm run agent:apply-demo-config` 実行後に branch 側では新設定を確認できたが、branch 指定なしの live API では旧設定のままだった。現状は ElevenLabs UI で `公開` して live に反映する必要がある。
+
+## 2026-04-05 UI 崩れと古い音声出力チェックの撤去
+- `app/globals.css` に履歴カードまわりの重複定義が残っており、`selected-summary` などに列方向と行方向の指定が混在していたため、スタイルを全面整理した。
+- `components/conversation-provider.tsx` から `availableOutputDevices`、`selectOutputDevice`、`playSpeakerTest` などの未使用 API を完全に撤去し、音声出力チェック UI の残骸が再表示されないようにした。
+- `lib/types.ts` の `AudioDiagnostics` も画面で使っていない出力デバイス項目を削除した。
+- Web 音声の切り分けは、いまは `audio packets received`、`ライブ transcript`、`現在のアクションログ` の3軸で行う。
+- 旧 `next start` が複数ポートで残っていたため古い UI が表示され続けていた。古いプロセスを停止し、最新ビルドを `http://localhost:3000` の 1 本だけで再起動した。
+- 変更後に `npm run lint` と `npm run build` を通した。

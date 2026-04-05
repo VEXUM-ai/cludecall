@@ -121,11 +121,6 @@ export type OutboundCallResult = {
   toNumber: string;
 };
 
-export type AudioOutputDevice = {
-  id: string;
-  label: string;
-};
-
 export type AudioDiagnostics = {
   transport: ConversationTransport;
   requestedVolume: number;
@@ -134,6 +129,4 @@ export type AudioDiagnostics = {
   receivedAudioEvents: number;
   lastAudioEventAt: string | null;
   browserAudioUnlocked: boolean;
-  selectedOutputDeviceId: string | null;
-  selectedOutputDeviceLabel: string | null;
 };

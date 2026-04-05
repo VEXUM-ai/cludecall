@@ -37,12 +37,10 @@
 - `next start` で `Cannot find module './331.js'` が出る: 最新コードで `npm run build` をやり直す。build の最後に runtime patch が自動で入る。
 - `npm start` は毎回 runtime patch を先に実行するので、古い `.next` を持ったままでも `./331.js` に戻りにくい。
 ## 2026-04-05 Web 音声が聞こえない場合
-1. 画面の `スピーカーテスト` を押して、ブラウザからテスト音が出るか確認する。
-2. テスト音が出ない場合は OS とブラウザの出力先を確認する。
-3. テスト音が出る場合は `開始` を押して会話し、`audio packets received` が増えるか確認する。
-4. `audio packets received` が増えない場合は agent 側から音声が届いていない。
-5. `audio packets received` が増えているのに聞こえない場合は、出力デバイスを `システム既定` 以外へ切り替えて再試行する。
-6. 詳細は `docs/audio-troubleshooting.md` を参照する。
+1. `開始` を押して会話し、`現在のアクションログ` に接続完了や fallback が出るか確認する。
+2. `audio packets received` が増えない場合は agent 側から音声が届いていない。
+3. `audio packets received` が増えて `ライブ transcript` に agent 発話も出るのに聞こえない場合は、OS とブラウザの出力先を確認する。
+4. 詳細は `docs/audio-troubleshooting.md` を参照する。
 
 ## 2026-04-05 電話会話の取り込みで 409 が出る場合
 1. 最新の outbound call が未成立だと、ElevenLabs 側で `status=initiated` のまま残ることがある。
