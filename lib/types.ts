@@ -119,6 +119,8 @@ export type OutboundCallResult = {
   agentPhoneNumberId: string;
   agentPhoneNumber: string | null;
   toNumber: string;
+  twilioAccountType: string | null;
+  warnings: string[];
 };
 
 export type AudioDiagnostics = {

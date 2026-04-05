@@ -178,6 +178,7 @@
 ## 2026-04-05 Twilio Trial の英語アナウンスが電話デモ開始前に入る件
 - `09047064087` を Verified Caller ID へ追加した後に再発信すると、Twilio 側では `completed` まで進み、未検証番号エラーは解消していた。
 - ただし Twilio アカウント自体はまだ `type=Trial` で、接続直後に英語の trial アナウンスが先に流れる条件だった。
+- ElevenLabs の Twilio native integration ヘルプでも、前提は `paid Twilio account and an active Twilio phone number` と案内されているため、Trial のままの構成自体がサポート経路から外れている可能性が高い。
 - Twilio Events では outbound call 作成時に `<Connect><Stream url=\"wss://api.elevenlabs.io/v1/convai/conversation\">` の TwiML が入っていたため、ElevenLabs への接続指示自体は作成されていた。
 - それでも ElevenLabs conversation `conv_9701kneyj9cefsnb1p9n7sxq20b8` は `initiated` のままで、`accepted_time_unix_secs=null`、`has_audio=false`、transcript 0 件だった。
 - したがって、今回ユーザーが聞いた英語は agent 設定ではなく Twilio Trial 側の案内である可能性が高い。英語案内の途中で切ると ElevenLabs 会話本体が始まらない。

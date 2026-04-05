@@ -405,6 +405,11 @@ code {
   color: var(--danger);
 }
 
+.warning-text {
+  margin: 0;
+  color: #8a4b00;
+}
+
 .memo-grid,
 .meta-grid {
   display: grid;

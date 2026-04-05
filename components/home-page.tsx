@@ -833,25 +833,40 @@ export function HomePage({
               </button>
             </div>
             {outboundCallError ? <p className="error-text">{outboundCallError}</p> : null}
-            {outboundCallResult ? (
-              <dl className="meta-grid">
-                <div>
-                  <dt>message</dt>
-                  <dd>{outboundCallResult.message}</dd>
-                </div>
-                <div>
-                  <dt>conversation_id</dt>
-                  <dd>{formatOptional(outboundCallResult.conversationId)}</dd>
-                </div>
-                <div>
-                  <dt>callSid</dt>
-                  <dd>{formatOptional(outboundCallResult.callSid)}</dd>
-                </div>
-                <div>
-                  <dt>agent phone</dt>
-                  <dd>{formatOptional(outboundCallResult.agentPhoneNumber)}</dd>
-                </div>
-              </dl>
+              {outboundCallResult ? (
+              <>
+                <dl className="meta-grid">
+                  <div>
+                    <dt>message</dt>
+                    <dd>{outboundCallResult.message}</dd>
+                  </div>
+                  <div>
+                    <dt>conversation_id</dt>
+                    <dd>{formatOptional(outboundCallResult.conversationId)}</dd>
+                  </div>
+                  <div>
+                    <dt>callSid</dt>
+                    <dd>{formatOptional(outboundCallResult.callSid)}</dd>
+                  </div>
+                  <div>
+                    <dt>agent phone</dt>
+                    <dd>{formatOptional(outboundCallResult.agentPhoneNumber)}</dd>
+                  </div>
+                  <div>
+                    <dt>Twilio account</dt>
+                    <dd>{formatOptional(outboundCallResult.twilioAccountType)}</dd>
+                  </div>
+                </dl>
+                {outboundCallResult.warnings.length > 0 ? (
+                  <div className="stack-tight">
+                    {outboundCallResult.warnings.map((warning) => (
+                      <p key={warning} className="warning-text">
+                        {warning}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </section>
 

@@ -20,6 +20,7 @@ import type {
 } from "@/lib/types";
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
+const TWILIO_API_BASE = "https://api.twilio.com/2010-04-01";
 const ELEVENLABS_HTTPS_AGENT = new HttpsAgent({ keepAlive: true });
 
 const listConversationsSchema = z.object({
@@ -69,6 +70,10 @@ const outboundCallSchema = z.object({
   callSid: z.string().nullable().optional(),
 });
 
+const twilioAccountSchema = z.object({
+  type: z.string().nullable().optional(),
+});
+
 type ConversationDetails = z.infer<typeof conversationDetailsSchema>;
 type ConversationListItem = z.infer<typeof listConversationsSchema>["conversations"][number];
 
@@ -98,6 +103,10 @@ function buildApiUrl(
   }
 
   return url;
+}
+
+function buildTwilioApiUrl(pathname: string) {
+  return new URL(pathname, `${TWILIO_API_BASE}/`);
 }
 
 type RawJsonResponse = {
@@ -192,6 +201,32 @@ async function elevenLabsFetch<T>(
           : `ElevenLabs request failed with ${response.statusCode}`;
 
     throw new ElevenLabsApiError(message, response.statusCode, payload);
+  }
+
+  return schema.parse(response.payload);
+}
+
+async function twilioFetch<T>(input: URL, schema: z.ZodType<T>): Promise<T> {
+  const config = getServerConfig();
+
+  if (!config.twilioAccountSid || !config.twilioAuthToken) {
+    throw new Error("Missing Twilio credentials.");
+  }
+
+  const basicAuth = Buffer.from(
+    `${config.twilioAccountSid}:${config.twilioAuthToken}`,
+    "utf8"
+  ).toString("base64");
+
+  const response = await nodeRequestJson(input, {
+    method: "GET",
+    headers: {
+      Authorization: `Basic ${basicAuth}`,
+    },
+  });
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`Twilio request failed with ${response.statusCode}`);
   }
 
   return schema.parse(response.payload);
@@ -428,6 +463,25 @@ async function resolveAgentPhoneNumber() {
   );
 }
 
+async function getTwilioAccountType(): Promise<string | null> {
+  const config = getServerConfig();
+
+  if (!config.twilioAccountSid || !config.twilioAuthToken) {
+    return null;
+  }
+
+  try {
+    const response = await twilioFetch(
+      buildTwilioApiUrl(`Accounts/${config.twilioAccountSid}.json`),
+      twilioAccountSchema
+    );
+
+    return response.type ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function startOutboundCall(toNumber: string): Promise<OutboundCallResult> {
   const config = getServerConfig();
   if (isSamePhoneNumber(toNumber, config.agentPhoneNumber) || isSamePhoneNumber(toNumber, config.twilioCallerId)) {
@@ -437,6 +491,7 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
   }
 
   const phoneNumber = await resolveAgentPhoneNumber();
+  const twilioAccountType = await getTwilioAccountType();
   const response = await elevenLabsFetch(
     buildApiUrl("convai/twilio/outbound-call"),
     {
@@ -450,6 +505,13 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
     outboundCallSchema
   );
 
+  const warnings: string[] = [];
+  if (twilioAccountType?.toLowerCase() === "trial") {
+    warnings.push(
+      "Twilio アカウントが Trial のため、接続直後に英語の trial アナウンスが先に流れます。ElevenLabs の Twilio native integration は paid Twilio account 前提の案内があり、Trial では AI 会話が始まらず切れることがあります。"
+    );
+  }
+
   return {
     success: response.success,
     message: response.message,
@@ -458,6 +520,8 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
     agentPhoneNumberId: phoneNumber.phone_number_id,
     agentPhoneNumber: phoneNumber.phone_number,
     toNumber,
+    twilioAccountType,
+    warnings,
   };
 }
 
