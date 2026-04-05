@@ -4,9 +4,5 @@ import { getServerConfig } from "@/lib/env";
 export default function Page() {
   const config = getServerConfig();
 
-  return (
-    <HomePage
-      defaultOutboundNumber={config.twilioCallerId ?? config.agentPhoneNumber ?? ""}
-    />
-  );
+  return <HomePage defaultOutboundNumber={config.demoOutboundTargetNumber ?? ""} />;
 }

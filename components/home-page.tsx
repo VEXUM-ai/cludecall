@@ -816,7 +816,7 @@ export function HomePage({
                 placeholder="+819012345678"
               />
               <p className="helper-text">
-                E.164 形式です。通常は `.env` の番号が初期表示されます。
+                E.164 形式です。`DEMO_OUTBOUND_TARGET_NUMBER` を入れると初期表示されます。発信元と同じ番号は指定しないでください。
               </p>
             </div>
             <div className="button-row">

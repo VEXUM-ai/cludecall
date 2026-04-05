@@ -220,6 +220,14 @@ function normalizePhoneNumber(value: string): string {
   return value.replace(/[^\d+]/g, "");
 }
 
+function isSamePhoneNumber(left: string | null, right: string | null): boolean {
+  if (!left || !right) {
+    return false;
+  }
+
+  return normalizePhoneNumber(left) === normalizePhoneNumber(right);
+}
+
 function toNullableString(value: unknown): string | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -422,6 +430,12 @@ async function resolveAgentPhoneNumber() {
 
 export async function startOutboundCall(toNumber: string): Promise<OutboundCallResult> {
   const config = getServerConfig();
+  if (isSamePhoneNumber(toNumber, config.agentPhoneNumber) || isSamePhoneNumber(toNumber, config.twilioCallerId)) {
+    throw new Error(
+      "発信先番号が発信元番号と同じです。DEMO_OUTBOUND_TARGET_NUMBER か画面入力欄に、実際に受ける別の番号を指定してください。"
+    );
+  }
+
   const phoneNumber = await resolveAgentPhoneNumber();
   const response = await elevenLabsFetch(
     buildApiUrl("convai/twilio/outbound-call"),

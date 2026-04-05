@@ -20,6 +20,9 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 
 `ELEVENLABS_TTS_MODEL_ID` と `ELEVENLABS_VOICE_ID` を入れると、`npm run agent:apply-demo-config` が TTS モデルと voice をその値に固定する。未設定なら現在の live agent の値を保持する。
 
+電話デモでアプリから架電する場合は、`DEMO_OUTBOUND_TARGET_NUMBER` に実際の着信先番号を入れる。`TWILIO_CALLER_ID` や `ELEVENLABS_AGENT_PHONE_NUMBER` と同じ番号を着信先にすると、自己発信になって正常な会話にならない。
+Verified Caller ID に自分の携帯番号を使っている場合、自分の携帯を着信先にすると caller ID と着信先が同一になる。自分で受けるデモをしたい場合は、別の caller ID / 購入番号 / 別端末を用意する。
+
 `npm run build` と `npm start` は、Windows の非 ASCII パス配下で `next start` が `Cannot find module './331.js'` になるケースを避けるため、`.next/server/webpack-runtime.js` の chunk 解決を自動補正する。
 
 ## よく使うコマンド

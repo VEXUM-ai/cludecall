@@ -5,6 +5,7 @@ type ServerConfig = {
   twilioAccountSid: string | null;
   twilioAuthToken: string | null;
   twilioCallerId: string | null;
+  demoOutboundTargetNumber: string | null;
   demoTimezone: string;
 };
 
@@ -29,6 +30,7 @@ export function getServerConfig(): ServerConfig {
     twilioAccountSid: readEnv("TWILIO_ACCOUNT_SID"),
     twilioAuthToken: readEnv("TWILIO_AUTH_TOKEN"),
     twilioCallerId: readEnv("TWILIO_CALLER_ID"),
+    demoOutboundTargetNumber: readEnv("DEMO_OUTBOUND_TARGET_NUMBER"),
     demoTimezone: readEnv("DEMO_TIMEZONE") ?? "Asia/Tokyo",
   };
 }

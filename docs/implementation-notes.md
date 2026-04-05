@@ -167,3 +167,10 @@
 - あわせて ElevenLabs と Google の公式 docs を見直し、`eleven_v3_conversational` と general TTS の `eleven_v3` を混同しない計画に改めた。
 - 現時点では `電話デモ成功` を最優先とし、`Agents v3 と API v3 の差分検証`、`Gemini 音声系の比較` は後続フェーズへ送る方針を `docs/phone-test-and-voice-eval-plan.md` にまとめた。
 - `docs/demo-plan.md` からも新計画書へ辿れるよう導線を追加した。
+
+## 2026-04-05 outbound call が英語メッセージで切れる件の切り分け
+- live agent の取得結果では `language=ja`、`first_message` 日本語、`tts.model_id=eleven_v3_conversational` であり、agent 本体は英語設定ではなかった。
+- 直近の失敗会話 `conv_9701knepv602f28atafnx5weczer` を確認すると、`phone_call.agent_number` と `phone_call.external_number` がどちらも `+818083473640` で、発信元と着信先が同一だった。
+- この状態では AI 通話ではなく、キャリア側の自己発信挙動に落ちる可能性が高い。
+- 対策として `TWILIO_CALLER_ID` / `ELEVENLABS_AGENT_PHONE_NUMBER` を着信先の初期値に使う実装をやめ、`DEMO_OUTBOUND_TARGET_NUMBER` を新設した。
+- さらに `lib/elevenlabs/api.ts` で、発信先が caller ID や agent phone number と同一なら API 側で明示的にエラーにするようにした。
