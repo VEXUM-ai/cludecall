@@ -36,3 +36,10 @@
 - `V3 会話型` を UI で選んだのに反映されない: まず UI で変更を公開し、画面をリロードして stale 表示を避ける。次に `npm run agent:apply-demo-config` を実行しても、その時点の live TTS 設定を保持できる。実際に反映されたかは live agent の再取得値で確認する。API から v3 を試す場合は `eleven_v3` ではなく `eleven_v3_conversational` を前提にし、それでも `feature_not_available` が返るなら plan / entitlement / rollout の確認が必要。詳細は `docs/agent/v3-availability-research.md` を参照。
 - `next start` で `Cannot find module './331.js'` が出る: 最新コードで `npm run build` をやり直す。build の最後に runtime patch が自動で入る。
 - `npm start` は毎回 runtime patch を先に実行するので、古い `.next` を持ったままでも `./331.js` に戻りにくい。
+## 2026-04-05 Web 音声が聞こえない場合
+1. 画面の `スピーカーテスト` を押して、ブラウザからテスト音が出るか確認する。
+2. テスト音が出ない場合は OS とブラウザの出力先を確認する。
+3. テスト音が出る場合は `開始` を押して会話し、`audio packets received` が増えるか確認する。
+4. `audio packets received` が増えない場合は agent 側から音声が届いていない。
+5. `audio packets received` が増えているのに聞こえない場合は、出力デバイスを `システム既定` 以外へ切り替えて再試行する。
+6. 詳細は `docs/audio-troubleshooting.md` を参照する。

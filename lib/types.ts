@@ -78,8 +78,8 @@ export type DemoRun = AnalyzeConversationResponse & {
     durationSecs: number | null;
     maskedCaller: string | null;
     agentNumber: string | null;
-      direction: string | null;
-    };
+    direction: string | null;
+  };
   cost: number | null;
   latency: LatencySample | null;
 };
@@ -92,4 +92,21 @@ export type OutboundCallResult = {
   agentPhoneNumberId: string;
   agentPhoneNumber: string | null;
   toNumber: string;
+};
+
+export type AudioOutputDevice = {
+  id: string;
+  label: string;
+};
+
+export type AudioDiagnostics = {
+  transport: ConversationTransport;
+  requestedVolume: number;
+  inputLevel: number;
+  outputLevel: number;
+  receivedAudioEvents: number;
+  lastAudioEventAt: string | null;
+  browserAudioUnlocked: boolean;
+  selectedOutputDeviceId: string | null;
+  selectedOutputDeviceLabel: string | null;
 };

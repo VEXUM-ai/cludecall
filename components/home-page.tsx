@@ -9,6 +9,26 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`status-badge status-${status}`}>{status}</span>;
 }
 
+function formatBoolean(value: boolean | null) {
+  if (value === null) {
+    return "未取得";
+  }
+
+  return value ? "はい" : "いいえ";
+}
+
+function formatOptional(value: string | number | null) {
+  if (value === null || value === "") {
+    return "未取得";
+  }
+
+  return String(value);
+}
+
+function formatAudioLevel(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
 function MemoTable({
   title,
   memo,
@@ -17,21 +37,18 @@ function MemoTable({
   memo: DemoRun["memo"];
 }) {
   const rows = [
-    ["patient_name", memo.patient_name],
-    ["phone_number", memo.phone_number],
-    [
-      "is_new_patient",
-      memo.is_new_patient === null ? null : memo.is_new_patient ? "はい" : "いいえ",
-    ],
-    ["visit_reason", memo.visit_reason],
-    ["preferred_date_1", memo.preferred_date_1],
-    ["preferred_time_range_1", memo.preferred_time_range_1],
-    ["preferred_date_2", memo.preferred_date_2],
-    ["preferred_time_range_2", memo.preferred_time_range_2],
-    ["callback_ok", memo.callback_ok === null ? null : memo.callback_ok ? "はい" : "いいえ"],
-    ["unresolved_questions", memo.unresolved_questions],
-    ["notes_for_staff", memo.notes_for_staff],
-    ["booking_status", memo.booking_status],
+    ["患者名", memo.patient_name],
+    ["電話番号", memo.phone_number],
+    ["新患かどうか", formatBoolean(memo.is_new_patient)],
+    ["来院理由", memo.visit_reason],
+    ["第1希望日", memo.preferred_date_1],
+    ["第1希望時間帯", memo.preferred_time_range_1],
+    ["第2希望日", memo.preferred_date_2],
+    ["第2希望時間帯", memo.preferred_time_range_2],
+    ["折り返し可否", formatBoolean(memo.callback_ok)],
+    ["未解決事項", memo.unresolved_questions],
+    ["スタッフ向けメモ", memo.notes_for_staff],
+    ["受付ステータス", memo.booking_status],
   ] as const;
 
   return (
@@ -43,7 +60,7 @@ function MemoTable({
         {rows.map(([label, value]) => (
           <div key={label} className="memo-row">
             <dt>{label}</dt>
-            <dd>{value ?? "未取得"}</dd>
+            <dd>{formatOptional(value)}</dd>
           </div>
         ))}
       </dl>
@@ -81,7 +98,7 @@ function LatencyTable({
         {rows.map(([label, value]) => (
           <div key={label} className="memo-row">
             <dt>{label}</dt>
-            <dd>{value ?? "未取得"}</dd>
+            <dd>{formatOptional(value)}</dd>
           </div>
         ))}
       </dl>
@@ -104,9 +121,15 @@ export function HomePage({
     isAnalyzing,
     lifecycleStatus,
     sdkStatus,
+    audioDiagnostics,
+    availableOutputDevices,
+    speakerSelectionSupported,
     startConversation,
     stopConversation,
     clearResult,
+    refreshOutputDevices,
+    selectOutputDevice,
+    playSpeakerTest,
   } = useConversationController();
 
   const [isImportingPhoneCall, setIsImportingPhoneCall] = useState(false);
@@ -115,7 +138,12 @@ export function HomePage({
   const [outboundNumber, setOutboundNumber] = useState(defaultOutboundNumber);
   const [isPlacingCall, setIsPlacingCall] = useState(false);
   const [outboundCallError, setOutboundCallError] = useState<string | null>(null);
-  const [outboundCallResult, setOutboundCallResult] = useState<OutboundCallResult | null>(null);
+  const [outboundCallResult, setOutboundCallResult] = useState<OutboundCallResult | null>(
+    null
+  );
+  const [isRefreshingOutputs, setIsRefreshingOutputs] = useState(false);
+  const [isPlayingSpeakerTest, setIsPlayingSpeakerTest] = useState(false);
+  const [isSwitchingOutput, setIsSwitchingOutput] = useState(false);
 
   const canStart = lifecycleStatus === "idle" || lifecycleStatus === "error";
   const canStop =
@@ -125,7 +153,7 @@ export function HomePage({
 
   const transcriptPlaceholder = useMemo(() => {
     if (canStop) {
-      return "会話中です。話者ごとの transcript がここに流れます。";
+      return "会話中です。発話ごとの transcript をここに表示します。";
     }
     return "開始すると transcript を表示します。";
   }, [canStop]);
@@ -189,14 +217,41 @@ export function HomePage({
     }
   }
 
+  async function handleRefreshOutputs() {
+    setIsRefreshingOutputs(true);
+    try {
+      await refreshOutputDevices();
+    } finally {
+      setIsRefreshingOutputs(false);
+    }
+  }
+
+  async function handleOutputDeviceChange(deviceId: string) {
+    setIsSwitchingOutput(true);
+    try {
+      await selectOutputDevice(deviceId || null);
+    } finally {
+      setIsSwitchingOutput(false);
+    }
+  }
+
+  async function handlePlaySpeakerTest() {
+    setIsPlayingSpeakerTest(true);
+    try {
+      await playSpeakerTest();
+    } finally {
+      setIsPlayingSpeakerTest(false);
+    }
+  }
+
   return (
     <main className="page-shell">
       <section className="hero card">
         <div className="hero-copy">
           <p className="eyebrow">Dental Receptionist Demo</p>
-          <h1>歯科一次受付AI デモ</h1>
+          <h1>歯科一次受付 AI デモ</h1>
           <p className="lead">
-            Web 会話と実電話会話の両方で、仮受付メモを ElevenLabs の analysis から回収するデモです。
+            Web 会話と実電話の両方で、会話後に受付メモとレイテンシを回収するデモです。
           </p>
         </div>
         <div className="hero-meta">
@@ -219,8 +274,8 @@ export function HomePage({
         <div className="stack">
           <section className="card">
             <div className="section-heading">
-              <h2>WebRTC デモ</h2>
-              <p>ブラウザから agent に接続して会話し、終話後に memo を取得します。</p>
+              <h2>Web 会話</h2>
+              <p>ブラウザから agent に接続して会話し、終了後にメモを取得します。</p>
             </div>
             <div className="button-row">
               <button
@@ -229,7 +284,7 @@ export function HomePage({
                 onClick={startConversation}
                 disabled={!canStart || isStarting || isAnalyzing}
               >
-                {isStarting ? "開始中..." : "開始"}
+                {isStarting ? "接続中..." : "開始"}
               </button>
               <button
                 type="button"
@@ -237,7 +292,7 @@ export function HomePage({
                 onClick={stopConversation}
                 disabled={!canStop || isStarting || isAnalyzing}
               >
-                {isAnalyzing ? "分析中..." : "終了してメモ取得"}
+                {isAnalyzing ? "解析中..." : "終了してメモ取得"}
               </button>
               <button
                 type="button"
@@ -249,6 +304,95 @@ export function HomePage({
               </button>
             </div>
             {error ? <p className="error-text">{error}</p> : null}
+          </section>
+
+          <section className="card">
+            <div className="section-heading">
+              <h2>音声出力チェック</h2>
+              <p>
+                声が聞こえない場合は、ここでスピーカー経路と AI 音声の到達状況を確認できます。
+              </p>
+            </div>
+            <div className="field-stack">
+              <label className="field-label" htmlFor="output-device">
+                出力デバイス
+              </label>
+              <select
+                id="output-device"
+                className="text-input"
+                value={audioDiagnostics.selectedOutputDeviceId ?? ""}
+                onChange={(event) => void handleOutputDeviceChange(event.target.value)}
+                disabled={!speakerSelectionSupported || isSwitchingOutput}
+              >
+                <option value="">システム既定のスピーカー</option>
+                {availableOutputDevices.map((device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.label}
+                  </option>
+                ))}
+              </select>
+              <p className="helper-text">
+                {speakerSelectionSupported
+                  ? "Chrome / Edge 系では出力先を切り替えられます。"
+                  : "このブラウザは出力デバイスの切り替えに対応していません。"}
+              </p>
+            </div>
+            <div className="button-row">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={handleRefreshOutputs}
+                disabled={isRefreshingOutputs}
+              >
+                {isRefreshingOutputs ? "再取得中..." : "出力デバイスを再取得"}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handlePlaySpeakerTest}
+                disabled={isPlayingSpeakerTest}
+              >
+                {isPlayingSpeakerTest ? "再生中..." : "スピーカーテスト"}
+              </button>
+            </div>
+            <dl className="meta-grid diagnostics-grid">
+              <div>
+                <dt>transport</dt>
+                <dd>{audioDiagnostics.transport}</dd>
+              </div>
+              <div>
+                <dt>browser audio unlocked</dt>
+                <dd>{audioDiagnostics.browserAudioUnlocked ? "yes" : "no"}</dd>
+              </div>
+              <div>
+                <dt>requested volume</dt>
+                <dd>{formatAudioLevel(audioDiagnostics.requestedVolume)}</dd>
+              </div>
+              <div>
+                <dt>input level</dt>
+                <dd>{formatAudioLevel(audioDiagnostics.inputLevel)}</dd>
+              </div>
+              <div>
+                <dt>output level</dt>
+                <dd>{formatAudioLevel(audioDiagnostics.outputLevel)}</dd>
+              </div>
+              <div>
+                <dt>audio packets received</dt>
+                <dd>{audioDiagnostics.receivedAudioEvents}</dd>
+              </div>
+              <div>
+                <dt>last audio packet</dt>
+                <dd>{formatOptional(audioDiagnostics.lastAudioEventAt)}</dd>
+              </div>
+              <div>
+                <dt>selected speaker</dt>
+                <dd>{audioDiagnostics.selectedOutputDeviceLabel ?? "システム既定"}</dd>
+              </div>
+            </dl>
+            <p className="helper-text">
+              スピーカーテストが聞こえるのに agent の声だけ聞こえない場合は、会話開始後に
+              `audio packets received` が増えるかを確認してください。
+            </p>
           </section>
 
           <section className="card transcript-card">
@@ -274,7 +418,7 @@ export function HomePage({
           </section>
 
           {analysisResult ? (
-            <MemoTable title="Web 会話の仮受付メモ" memo={analysisResult.memo} />
+            <MemoTable title="Web 会話の受付メモ" memo={analysisResult.memo} />
           ) : null}
 
           <LatencyTable title="Web 会話のレイテンシ" sample={latencySample} />
@@ -284,11 +428,13 @@ export function HomePage({
           <section className="card">
             <div className="section-heading">
               <h2>AI から電話をかける</h2>
-              <p>アプリから ElevenLabs の outbound call API を呼び出して、指定した番号へテスト架電します。</p>
+              <p>
+                アプリから ElevenLabs の outbound call API を呼び出して、指定番号へ電話をかけます。
+              </p>
             </div>
             <div className="field-stack">
               <label className="field-label" htmlFor="outbound-number">
-                発信先電話番号
+                発信先番号
               </label>
               <input
                 id="outbound-number"
@@ -299,7 +445,7 @@ export function HomePage({
                 placeholder="+819012345678"
               />
               <p className="helper-text">
-                E.164 形式推奨。既定値には `.env` の電話番号を入れています。
+                E.164 形式です。通常は `.env` の番号が初期表示されます。
               </p>
             </div>
             <div className="button-row">
@@ -321,15 +467,15 @@ export function HomePage({
                 </div>
                 <div>
                   <dt>conversation_id</dt>
-                  <dd>{outboundCallResult.conversationId ?? "未取得"}</dd>
+                  <dd>{formatOptional(outboundCallResult.conversationId)}</dd>
                 </div>
                 <div>
                   <dt>callSid</dt>
-                  <dd>{outboundCallResult.callSid ?? "未取得"}</dd>
+                  <dd>{formatOptional(outboundCallResult.callSid)}</dd>
                 </div>
                 <div>
                   <dt>agent phone</dt>
-                  <dd>{outboundCallResult.agentPhoneNumber ?? "未取得"}</dd>
+                  <dd>{formatOptional(outboundCallResult.agentPhoneNumber)}</dd>
                 </div>
               </dl>
             ) : null}
@@ -339,7 +485,7 @@ export function HomePage({
             <div className="section-heading">
               <h2>最新の電話会話を取り込む</h2>
               <p>
-                outbound-only 電話デモまたは将来の inbound デモ後に、最新 completed conversation を回収します。
+                outbound-only デモ向けです。直近の completed conversation を取得してメモ化します。
               </p>
             </div>
             <div className="button-row">
@@ -358,14 +504,16 @@ export function HomePage({
           <section className="card">
             <div className="section-heading">
               <h2>即日デモ手順</h2>
-              <p>Twilio 日本着信番号の審査前でも、outbound-only で今日中に電話デモできます。</p>
+              <p>
+                Twilio の Verified Caller ID を使った outbound-only の電話デモを前提にしています。
+              </p>
             </div>
             <ol className="ordered-list">
-              <li>`.env` を設定し、`npm run agent:apply-demo-config` で歯科受付用 prompt を反映する。</li>
-              <li>Twilio Verified Caller ID または既存番号を ElevenLabs に import する。</li>
-              <li>この画面の `AI から電話をかける` か、ElevenLabs ダッシュボードから outbound call を送る。</li>
-              <li>終話後にこの画面か CLI で最新通話を回収する。</li>
-              <li>`npm run demo:import-last-call` で Markdown 証跡を保存する。</li>
+              <li>`.env` を設定して `npm run agent:apply-demo-config` で prompt を反映する。</li>
+              <li>この画面の `AI から電話をかける` から発信する。</li>
+              <li>電話で予約会話を行う。</li>
+              <li>通話後に `最新の電話会話を取り込む` を実行する。</li>
+              <li>`npm run demo:import-last-call` で Markdown 記録も保存する。</li>
             </ol>
           </section>
 
@@ -386,23 +534,23 @@ export function HomePage({
                   </div>
                   <div>
                     <dt>startedAt</dt>
-                    <dd>{phoneDemoRun.callMeta.startedAt ?? "不明"}</dd>
+                    <dd>{formatOptional(phoneDemoRun.callMeta.startedAt)}</dd>
                   </div>
                   <div>
                     <dt>durationSecs</dt>
-                    <dd>{phoneDemoRun.callMeta.durationSecs ?? "不明"}</dd>
+                    <dd>{formatOptional(phoneDemoRun.callMeta.durationSecs)}</dd>
                   </div>
                   <div>
                     <dt>maskedCaller</dt>
-                    <dd>{phoneDemoRun.callMeta.maskedCaller ?? "不明"}</dd>
+                    <dd>{formatOptional(phoneDemoRun.callMeta.maskedCaller)}</dd>
                   </div>
                   <div>
                     <dt>reported cost</dt>
-                    <dd>{phoneDemoRun.cost ?? "不明"}</dd>
+                    <dd>{formatOptional(phoneDemoRun.cost)}</dd>
                   </div>
                 </dl>
               </section>
-              <MemoTable title="電話会話の仮受付メモ" memo={phoneDemoRun.memo} />
+              <MemoTable title="電話会話の受付メモ" memo={phoneDemoRun.memo} />
               <LatencyTable title="電話会話のレイテンシ" sample={phoneDemoRun.latency} />
             </>
           ) : null}

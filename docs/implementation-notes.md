@@ -107,3 +107,9 @@
 - `POST /api/demo/outbound-call` を追加し、ElevenLabs の `convai/twilio/outbound-call` をアプリから直接呼べるようにした。
 - `lib/elevenlabs/api.ts` に電話番号一覧取得と outbound-capable な `phone_number_id` 解決処理を追加し、`ELEVENLABS_AGENT_PHONE_NUMBER` に一致する imported number を優先して使う。
 - `components/home-page.tsx` には `AI から電話をかける` セクションを追加し、番号入力からテスト架電、続けて `最新の電話会話を取り込む` まで一画面で完結できるようにした。
+## 2026-04-05 Web 音声が聞こえない件の対処
+- `components/conversation-provider.tsx` にブラウザ音声アンロック処理を追加した。
+- `@elevenlabs/react` の `volume` と `outputDeviceId` を明示的に制御するようにした。
+- `onAudio` で agent 音声受信数を数え、`getInputVolume()` と `getOutputVolume()` を定期取得して UI に出すようにした。
+- `components/home-page.tsx` に `音声出力チェック` セクションを追加し、出力デバイス切替、スピーカーテスト、診断メトリクスを確認できるようにした。
+- Web 側で声が聞こえないときの確認手順は `docs/audio-troubleshooting.md` にまとめた。

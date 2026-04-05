@@ -4,7 +4,9 @@ import { useConversation } from "@elevenlabs/react";
 import {
   createContext,
   startTransition,
+  useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -13,11 +15,17 @@ import {
 
 import type {
   AnalyzeConversationResponse,
+  AudioDiagnostics,
+  AudioOutputDevice,
   ConversationLifecycleStatus,
+  ConversationTransport,
   LatencySample,
   TranscriptEntry,
-  ConversationTransport,
 } from "@/lib/types";
+
+const DESIRED_OUTPUT_VOLUME = 1;
+const AUDIO_LEVEL_POLL_MS = 180;
+const OUTPUT_DEVICE_SAMPLE_RATE = 48_000;
 
 type ConversationContextValue = {
   conversationId: string | null;
@@ -29,9 +37,15 @@ type ConversationContextValue = {
   isAnalyzing: boolean;
   lifecycleStatus: ConversationLifecycleStatus;
   sdkStatus: string;
+  audioDiagnostics: AudioDiagnostics;
+  availableOutputDevices: AudioOutputDevice[];
+  speakerSelectionSupported: boolean;
   startConversation: () => Promise<void>;
   stopConversation: () => Promise<void>;
   clearResult: () => void;
+  refreshOutputDevices: () => Promise<void>;
+  selectOutputDevice: (deviceId: string | null) => Promise<void>;
+  playSpeakerTest: () => Promise<void>;
 };
 
 type ConversationEvent = {
@@ -45,6 +59,8 @@ type SessionTimingState = {
   connectMs: number | null;
   firstAgentResponseMs: number | null;
 };
+
+let sharedAudioContext: AudioContext | null = null;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -91,6 +107,121 @@ function isPeerConnectionError(error: unknown): boolean {
   return /pc connection|peer.?connection|rtcpeerconnection/i.test(message);
 }
 
+function clampVolumeLevel(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, value));
+}
+
+function supportsSpeakerSelection() {
+  if (typeof HTMLMediaElement === "undefined") {
+    return false;
+  }
+
+  return "setSinkId" in HTMLMediaElement.prototype;
+}
+
+function getAudioContextCtor() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const extendedWindow = window as Window & {
+    webkitAudioContext?: typeof AudioContext;
+  };
+
+  return window.AudioContext ?? extendedWindow.webkitAudioContext ?? null;
+}
+
+async function unlockBrowserAudioPlayback() {
+  const AudioContextCtor = getAudioContextCtor();
+  if (!AudioContextCtor) {
+    return false;
+  }
+
+  if (!sharedAudioContext) {
+    sharedAudioContext = new AudioContextCtor();
+  }
+
+  if (sharedAudioContext.state === "suspended") {
+    await sharedAudioContext.resume();
+  }
+
+  const oscillator = sharedAudioContext.createOscillator();
+  const gain = sharedAudioContext.createGain();
+  gain.gain.value = 0.0001;
+  oscillator.connect(gain);
+  gain.connect(sharedAudioContext.destination);
+  oscillator.start();
+  oscillator.stop(sharedAudioContext.currentTime + 0.03);
+
+  await new Promise<void>((resolve) => {
+    oscillator.addEventListener(
+      "ended",
+      () => {
+        oscillator.disconnect();
+        gain.disconnect();
+        resolve();
+      },
+      { once: true }
+    );
+  });
+
+  return sharedAudioContext.state === "running";
+}
+
+async function playSpeakerTestTone() {
+  const AudioContextCtor = getAudioContextCtor();
+  if (!AudioContextCtor) {
+    throw new Error("This browser does not support the Web Audio API.");
+  }
+
+  if (!sharedAudioContext) {
+    sharedAudioContext = new AudioContextCtor();
+  }
+
+  if (sharedAudioContext.state === "suspended") {
+    await sharedAudioContext.resume();
+  }
+
+  const oscillator = sharedAudioContext.createOscillator();
+  const gain = sharedAudioContext.createGain();
+  oscillator.type = "sine";
+  oscillator.frequency.value = 880;
+  gain.gain.value = 0.06;
+  oscillator.connect(gain);
+  gain.connect(sharedAudioContext.destination);
+  oscillator.start();
+  oscillator.stop(sharedAudioContext.currentTime + 0.18);
+
+  await new Promise<void>((resolve) => {
+    oscillator.addEventListener(
+      "ended",
+      () => {
+        oscillator.disconnect();
+        gain.disconnect();
+        resolve();
+      },
+      { once: true }
+    );
+  });
+}
+
+async function listOutputDevices() {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) {
+    return [] satisfies AudioOutputDevice[];
+  }
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices
+    .filter((device) => device.kind === "audiooutput")
+    .map((device, index) => ({
+      id: device.deviceId,
+      label: device.label || `Speaker ${index + 1}`,
+    }));
+}
+
 const ConversationContext = createContext<ConversationContextValue | null>(null);
 
 export function ConversationProvider({ children }: { children: ReactNode }) {
@@ -102,8 +233,44 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [activeTransport, setActiveTransport] =
+    useState<ConversationTransport>("unknown");
+  const [availableOutputDevices, setAvailableOutputDevices] = useState<
+    AudioOutputDevice[]
+  >([]);
+  const [selectedOutputDeviceId, setSelectedOutputDeviceId] = useState<string | null>(
+    null
+  );
+  const [browserAudioUnlocked, setBrowserAudioUnlocked] = useState(false);
+  const [inputLevel, setInputLevel] = useState(0);
+  const [outputLevel, setOutputLevel] = useState(0);
+  const [receivedAudioEvents, setReceivedAudioEvents] = useState(0);
+  const [lastAudioEventAt, setLastAudioEventAt] = useState<string | null>(null);
   const nextTranscriptId = useRef(0);
   const sessionTiming = useRef<SessionTimingState | null>(null);
+
+  const refreshOutputDevices = useCallback(async () => {
+    try {
+      const devices = await listOutputDevices();
+      setAvailableOutputDevices(devices);
+      if (
+        selectedOutputDeviceId &&
+        !devices.some((device) => device.id === selectedOutputDeviceId)
+      ) {
+        setSelectedOutputDeviceId(null);
+      }
+    } catch (deviceError) {
+      setError(
+        deviceError instanceof Error
+          ? deviceError.message
+          : "Failed to enumerate audio output devices."
+      );
+    }
+  }, [selectedOutputDeviceId]);
+
+  useEffect(() => {
+    void refreshOutputDevices();
+  }, [refreshOutputDevices]);
 
   function recordFirstAgentResponse() {
     if (!sessionTiming.current || sessionTiming.current.firstAgentResponseMs !== null) {
@@ -116,6 +283,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   }
 
   const conversation = useConversation({
+    volume: DESIRED_OUTPUT_VOLUME,
+    outputDeviceId: selectedOutputDeviceId ?? undefined,
     onMessage: (event) => {
       if (!isConversationEvent(event)) {
         return;
@@ -149,6 +318,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         ];
       });
     },
+    onAudio: () => {
+      setReceivedAudioEvents((current) => current + 1);
+      setLastAudioEventAt(new Date().toISOString());
+    },
     onDebug: (event) => {
       if (!isRecord(event)) {
         return;
@@ -164,8 +337,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
               )
             : null;
 
-      const text = tentativeText;
-      if (!text) {
+      if (!tentativeText) {
         return;
       }
 
@@ -174,7 +346,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         const last = current[current.length - 1];
         if (last?.role === "agent" && last.tentative) {
           const copy = [...current];
-          copy[copy.length - 1] = { ...last, text };
+          copy[copy.length - 1] = { ...last, text: tentativeText };
           return copy;
         }
 
@@ -184,7 +356,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           {
             id: `line-${nextTranscriptId.current}`,
             role: "agent",
-            text,
+            text: tentativeText,
             tentative: true,
             timeInCallSecs: null,
           },
@@ -206,6 +378,23 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  useEffect(() => {
+    if (conversation.status !== "connected") {
+      setInputLevel(0);
+      setOutputLevel(0);
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setInputLevel(clampVolumeLevel(conversation.getInputVolume()));
+      setOutputLevel(clampVolumeLevel(conversation.getOutputVolume()));
+    }, AUDIO_LEVEL_POLL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [conversation, conversation.status]);
+
   const lifecycleStatus = useMemo<ConversationLifecycleStatus>(() => {
     if (error) {
       return "error";
@@ -221,6 +410,41 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     }
     return "idle";
   }, [conversation.isSpeaking, conversation.status, error, isAnalyzing, isStarting]);
+
+  const selectedOutputDeviceLabel = useMemo(() => {
+    if (!selectedOutputDeviceId) {
+      return null;
+    }
+
+    return (
+      availableOutputDevices.find((device) => device.id === selectedOutputDeviceId)?.label ??
+      null
+    );
+  }, [availableOutputDevices, selectedOutputDeviceId]);
+
+  const audioDiagnostics = useMemo<AudioDiagnostics>(
+    () => ({
+      transport: activeTransport,
+      requestedVolume: DESIRED_OUTPUT_VOLUME,
+      inputLevel,
+      outputLevel,
+      receivedAudioEvents,
+      lastAudioEventAt,
+      browserAudioUnlocked,
+      selectedOutputDeviceId,
+      selectedOutputDeviceLabel,
+    }),
+    [
+      activeTransport,
+      browserAudioUnlocked,
+      inputLevel,
+      lastAudioEventAt,
+      outputLevel,
+      receivedAudioEvents,
+      selectedOutputDeviceId,
+      selectedOutputDeviceLabel,
+    ]
+  );
 
   async function analyzeByConversationId(targetConversationId: string) {
     setIsAnalyzing(true);
@@ -282,12 +506,38 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function selectOutputDevice(deviceId: string | null) {
+    setSelectedOutputDeviceId(deviceId);
+
+    if (conversation.status !== "connected") {
+      return;
+    }
+
+    try {
+      await conversation.changeOutputDevice({
+        format: "pcm",
+        sampleRate: OUTPUT_DEVICE_SAMPLE_RATE,
+        ...(deviceId ? { outputDeviceId: deviceId } : {}),
+      });
+    } catch (deviceError) {
+      setError(
+        deviceError instanceof Error
+          ? deviceError.message
+          : "Failed to switch the output device."
+      );
+    }
+  }
+
   async function startConversation() {
     setError(null);
     setAnalysisResult(null);
     setLatencySample(null);
     setConversationId(null);
     setTranscript([]);
+    setInputLevel(0);
+    setOutputLevel(0);
+    setReceivedAudioEvents(0);
+    setLastAudioEventAt(null);
     nextTranscriptId.current = 0;
     sessionTiming.current = {
       startedAtMs: performance.now(),
@@ -295,10 +545,16 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       connectMs: null,
       firstAgentResponseMs: null,
     };
+    setActiveTransport("webrtc");
     setIsStarting(true);
 
     try {
+      const unlocked = await unlockBrowserAudioPlayback();
+      setBrowserAudioUnlocked(unlocked);
+
       await navigator.mediaDevices.getUserMedia({ audio: true });
+      await refreshOutputDevices();
+
       try {
         const response = await fetch("/api/eleven/conversation-token", {
           method: "GET",
@@ -320,6 +576,15 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           conversationToken: payload.token,
         });
 
+        conversation.setVolume({ volume: DESIRED_OUTPUT_VOLUME });
+        if (selectedOutputDeviceId) {
+          await conversation.changeOutputDevice({
+            format: "pcm",
+            sampleRate: OUTPUT_DEVICE_SAMPLE_RATE,
+            outputDeviceId: selectedOutputDeviceId,
+          });
+        }
+
         if (sessionTiming.current) {
           sessionTiming.current.connectMs = Math.round(
             performance.now() - sessionTiming.current.startedAtMs
@@ -334,6 +599,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         if (sessionTiming.current) {
           sessionTiming.current.transport = "websocket";
         }
+        setActiveTransport("websocket");
 
         const response = await fetch("/api/eleven/signed-url", {
           method: "GET",
@@ -354,6 +620,15 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           connectionType: "websocket",
           signedUrl: payload.signedUrl,
         });
+
+        conversation.setVolume({ volume: DESIRED_OUTPUT_VOLUME });
+        if (selectedOutputDeviceId) {
+          await conversation.changeOutputDevice({
+            format: "pcm",
+            sampleRate: OUTPUT_DEVICE_SAMPLE_RATE,
+            outputDeviceId: selectedOutputDeviceId,
+          });
+        }
 
         if (sessionTiming.current) {
           sessionTiming.current.connectMs = Math.round(
@@ -390,6 +665,22 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function playSpeakerTest() {
+    setError(null);
+
+    try {
+      const unlocked = await unlockBrowserAudioPlayback();
+      setBrowserAudioUnlocked(unlocked);
+      await playSpeakerTestTone();
+    } catch (speakerTestError) {
+      setError(
+        speakerTestError instanceof Error
+          ? speakerTestError.message
+          : "Failed to play the speaker test."
+      );
+    }
+  }
+
   function clearResult() {
     setAnalysisResult(null);
     setError(null);
@@ -407,9 +698,15 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         isAnalyzing,
         lifecycleStatus,
         sdkStatus: conversation.status,
+        audioDiagnostics,
+        availableOutputDevices,
+        speakerSelectionSupported: supportsSpeakerSelection(),
         startConversation,
         stopConversation,
         clearResult,
+        refreshOutputDevices,
+        selectOutputDevice,
+        playSpeakerTest,
       }}
     >
       {children}
