@@ -818,6 +818,9 @@ export function HomePage({
               <p className="helper-text">
                 E.164 形式です。`DEMO_OUTBOUND_TARGET_NUMBER` を入れると初期表示されます。発信元と同じ番号は指定しないでください。
               </p>
+              <p className="helper-text">
+                Twilio Trial アカウントでは、接続直後に英語の trial アナウンスが先に流れます。AI 本体はその後に始まるため、数秒はそのまま待ってください。英語案内なしで始めたい場合は Twilio を有料化する必要があります。
+              </p>
             </div>
             <div className="button-row">
               <button
@@ -862,7 +865,8 @@ export function HomePage({
             <ol className="ordered-list">
               <li>`.env` を設定して `npm run agent:apply-demo-config` で prompt を反映する。</li>
               <li>この画面の `AI から電話をかける` から発信する。</li>
-              <li>電話で予約会話を行う。</li>
+              <li>Twilio Trial の場合は、最初に英語の trial アナウンスが流れ終わるまで待つ。</li>
+              <li>その後に電話で予約会話を行う。</li>
               <li>通話後に `最新の電話会話を取り込む` を実行する。</li>
               <li>`npm run demo:import-last-call` で Markdown 記録も保存する。</li>
             </ol>

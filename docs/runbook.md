@@ -16,10 +16,11 @@
 3. Verified Caller ID は `outbound-only` のため agent には割り当てられない。電話番号詳細画面に `この電話番号は着信通話をサポートしておらず、エージェントに割り当てることはできません` と表示されたら想定どおり。
 4. `.env` の `DEMO_OUTBOUND_TARGET_NUMBER` か画面入力欄には、実際に受ける着信先番号を入れる。`TWILIO_CALLER_ID` や `ELEVENLABS_AGENT_PHONE_NUMBER` と同じ番号は使わない。
 5. アプリの `AI から電話をかける` から発信先番号を入力して outbound call を送る。ダッシュボードの `発信コール` を使ってもよい。
-6. 通話終了後、アプリの「最新の電話会話を取り込む」か `npm run demo:import-last-call` を実行する。
-7. 生成された `docs/demo-runs/*.md` を証跡として確認する。
-8. transcript に時刻情報があれば、電話の応答間隔も `docs/latency-report.md` に自動集計される。
-9. inbound デモが必要になったら、Twilio の購入番号か SIP trunk を別途用意する。
+6. Twilio アカウントが Trial のままなら、接続直後に英語の trial アナウンスが先に流れる。そこですぐ切ると ElevenLabs 側の会話が始まらないので、案内が終わるまで数秒待つ。
+7. 通話終了後、アプリの「最新の電話会話を取り込む」か `npm run demo:import-last-call` を実行する。
+8. 生成された `docs/demo-runs/*.md` を証跡として確認する。
+9. transcript に時刻情報があれば、電話の応答間隔も `docs/latency-report.md` に自動集計される。
+10. inbound デモが必要になったら、Twilio の購入番号か SIP trunk を別途用意する。
 10. Verified Caller ID に自分の携帯番号を使っている場合、自分の携帯そのものを着信先には使わない。自分で受けるには別の caller ID か Twilio 購入番号が必要。
 
 ## 将来の inbound 移行
@@ -38,7 +39,7 @@
 - `V3 会話型` を UI で選んだのに反映されない: まず UI で変更を公開し、画面をリロードして stale 表示を避ける。次に `npm run agent:apply-demo-config` を実行しても、その時点の live TTS 設定を保持できる。実際に反映されたかは live agent の再取得値で確認する。API から v3 を試す場合は `eleven_v3` ではなく `eleven_v3_conversational` を前提にし、それでも `feature_not_available` が返るなら plan / entitlement / rollout の確認が必要。詳細は `docs/agent/v3-availability-research.md` を参照。
 - `next start` で `Cannot find module './331.js'` が出る: 最新コードで `npm run build` をやり直す。build の最後に runtime patch が自動で入る。
 - `npm start` は毎回 runtime patch を先に実行するので、古い `.next` を持ったままでも `./331.js` に戻りにくい。
-- `AI から電話をかける` で英語メッセージだけ流れて切れる: 発信元番号と着信先番号が同じ可能性が高い。`DEMO_OUTBOUND_TARGET_NUMBER` か画面入力欄に、発信元とは別の番号を入れる。
+- `AI から電話をかける` で英語メッセージだけ流れて切れる: まず Twilio が Trial か確認する。Trial なら英語の trial アナウンスが先に流れるため、案内が終わるまで待つ。それでも会話が始まらない場合は、`DEMO_OUTBOUND_TARGET_NUMBER` か画面入力欄に、発信元とは別の番号を入れているか確認する。
 ## 2026-04-05 Web 音声が聞こえない場合
 1. `開始` を押して会話し、`現在のアクションログ` に接続完了や fallback が出るか確認する。
 2. `audio packets received` が増えない場合は agent 側から音声が届いていない。

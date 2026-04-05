@@ -174,3 +174,11 @@
 - この状態では AI 通話ではなく、キャリア側の自己発信挙動に落ちる可能性が高い。
 - 対策として `TWILIO_CALLER_ID` / `ELEVENLABS_AGENT_PHONE_NUMBER` を着信先の初期値に使う実装をやめ、`DEMO_OUTBOUND_TARGET_NUMBER` を新設した。
 - さらに `lib/elevenlabs/api.ts` で、発信先が caller ID や agent phone number と同一なら API 側で明示的にエラーにするようにした。
+
+## 2026-04-05 Twilio Trial の英語アナウンスが電話デモ開始前に入る件
+- `09047064087` を Verified Caller ID へ追加した後に再発信すると、Twilio 側では `completed` まで進み、未検証番号エラーは解消していた。
+- ただし Twilio アカウント自体はまだ `type=Trial` で、接続直後に英語の trial アナウンスが先に流れる条件だった。
+- Twilio Events では outbound call 作成時に `<Connect><Stream url=\"wss://api.elevenlabs.io/v1/convai/conversation\">` の TwiML が入っていたため、ElevenLabs への接続指示自体は作成されていた。
+- それでも ElevenLabs conversation `conv_9701kneyj9cefsnb1p9n7sxq20b8` は `initiated` のままで、`accepted_time_unix_secs=null`、`has_audio=false`、transcript 0 件だった。
+- したがって、今回ユーザーが聞いた英語は agent 設定ではなく Twilio Trial 側の案内である可能性が高い。英語案内の途中で切ると ElevenLabs 会話本体が始まらない。
+- UI と runbook には「Twilio Trial では英語案内が先に流れる。AI 会話はその後に始まるので数秒待つ」旨を追記した。
