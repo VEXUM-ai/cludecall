@@ -161,3 +161,9 @@
 - Web 音声の切り分けは、いまは `audio packets received`、`ライブ transcript`、`現在のアクションログ` の3軸で行う。
 - 旧 `next start` が複数ポートで残っていたため古い UI が表示され続けていた。古いプロセスを停止し、最新ビルドを `http://localhost:3000` の 1 本だけで再起動した。
 - 変更後に `npm run lint` と `npm run build` を通した。
+
+## 2026-04-05 音声モデル比較の優先順位整理
+- ルート直下の `音声モデルリサーチ.md` と `音声 API差.md` を確認し、現在のデモ優先順位を再整理した。
+- あわせて ElevenLabs と Google の公式 docs を見直し、`eleven_v3_conversational` と general TTS の `eleven_v3` を混同しない計画に改めた。
+- 現時点では `電話デモ成功` を最優先とし、`Agents v3 と API v3 の差分検証`、`Gemini 音声系の比較` は後続フェーズへ送る方針を `docs/phone-test-and-voice-eval-plan.md` にまとめた。
+- `docs/demo-plan.md` からも新計画書へ辿れるよう導線を追加した。

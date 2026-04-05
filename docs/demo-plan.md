@@ -166,3 +166,4 @@ Markdown には `日時` `conversation_id` `通話時間` `仮受付メモ` `要
 - Twilio 日本着信用番号の審査を進める
 - Vercel 本番環境へ env を投入する
 - 実会話ログを `docs/demo-runs` に蓄積して改善点を詰める
+- 音声モデル比較と電話デモ優先順位の詳細は `docs/phone-test-and-voice-eval-plan.md` を参照する
