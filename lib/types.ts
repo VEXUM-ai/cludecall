@@ -17,6 +17,13 @@ export type TranscriptEntry = {
   timeInCallSecs: number | null;
 };
 
+export type ConversationEventLogEntry = {
+  id: string;
+  at: string;
+  label: string;
+  level: "info" | "success" | "warning" | "error";
+};
+
 export type ReservationMemo = {
   patient_name: string | null;
   phone_number: string | null;
@@ -82,6 +89,26 @@ export type DemoRun = AnalyzeConversationResponse & {
   };
   cost: number | null;
   latency: LatencySample | null;
+};
+
+export type ConversationHistorySummary = {
+  conversationId: string;
+  channel: ConversationChannel;
+  source: string | null;
+  status: string | null;
+  durationSecs: number | null;
+  success: string | null;
+  startedAt: string | null;
+  analysisTitle: string | null;
+  transcriptSummary: string | null;
+  memo: ReservationMemo | null;
+  latency: LatencySample | null;
+  transcriptCount: number;
+};
+
+export type ConversationHistoryDetail = DemoRun & {
+  source: string | null;
+  status: string;
 };
 
 export type OutboundCallResult = {

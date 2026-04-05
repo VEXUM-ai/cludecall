@@ -17,6 +17,7 @@ import type {
   AnalyzeConversationResponse,
   AudioDiagnostics,
   AudioOutputDevice,
+  ConversationEventLogEntry,
   ConversationLifecycleStatus,
   ConversationTransport,
   LatencySample,
@@ -32,6 +33,7 @@ type ConversationContextValue = {
   transcript: TranscriptEntry[];
   analysisResult: AnalyzeConversationResponse | null;
   latencySample: LatencySample | null;
+  sessionEvents: ConversationEventLogEntry[];
   error: string | null;
   isStarting: boolean;
   isAnalyzing: boolean;
@@ -230,6 +232,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const [analysisResult, setAnalysisResult] =
     useState<AnalyzeConversationResponse | null>(null);
   const [latencySample, setLatencySample] = useState<LatencySample | null>(null);
+  const [sessionEvents, setSessionEvents] = useState<ConversationEventLogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -247,7 +250,24 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const [receivedAudioEvents, setReceivedAudioEvents] = useState(0);
   const [lastAudioEventAt, setLastAudioEventAt] = useState<string | null>(null);
   const nextTranscriptId = useRef(0);
+  const nextSessionEventId = useRef(0);
   const sessionTiming = useRef<SessionTimingState | null>(null);
+
+  const pushSessionEvent = useCallback(
+    (label: string, level: ConversationEventLogEntry["level"] = "info") => {
+      nextSessionEventId.current += 1;
+      setSessionEvents((current) => [
+        {
+          id: `session-event-${nextSessionEventId.current}`,
+          at: new Date().toISOString(),
+          label,
+          level,
+        },
+        ...current,
+      ]);
+    },
+    []
+  );
 
   const refreshOutputDevices = useCallback(async () => {
     try {
@@ -365,6 +385,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     },
     onConnect: ({ conversationId: connectedConversationId }) => {
       setConversationId(connectedConversationId);
+      pushSessionEvent(`会話に接続しました: ${connectedConversationId}`, "success");
     },
     onError: (event) => {
       const errorValue: unknown = event;
@@ -375,6 +396,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
             ? errorValue
             : "Conversation failed.";
       setError(message);
+      pushSessionEvent(`エラー: ${message}`, "error");
     },
   });
 
@@ -534,11 +556,13 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     setLatencySample(null);
     setConversationId(null);
     setTranscript([]);
+    setSessionEvents([]);
     setInputLevel(0);
     setOutputLevel(0);
     setReceivedAudioEvents(0);
     setLastAudioEventAt(null);
     nextTranscriptId.current = 0;
+    nextSessionEventId.current = 0;
     sessionTiming.current = {
       startedAtMs: performance.now(),
       transport: "webrtc",
@@ -547,12 +571,20 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     };
     setActiveTransport("webrtc");
     setIsStarting(true);
+    pushSessionEvent("Web 会話の接続を開始しました。");
 
     try {
       const unlocked = await unlockBrowserAudioPlayback();
       setBrowserAudioUnlocked(unlocked);
+      pushSessionEvent(
+        unlocked
+          ? "ブラウザ音声出力を有効化しました。"
+          : "ブラウザ音声出力の有効化を確認できませんでした。",
+        unlocked ? "success" : "warning"
+      );
 
       await navigator.mediaDevices.getUserMedia({ audio: true });
+      pushSessionEvent("マイクへのアクセスを確認しました。", "success");
       await refreshOutputDevices();
 
       try {
@@ -591,6 +623,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           );
         }
         setConversationId(startedConversationId);
+        pushSessionEvent("WebRTC で接続しました。", "success");
       } catch (webRtcError) {
         if (!isPeerConnectionError(webRtcError)) {
           throw webRtcError;
@@ -600,6 +633,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           sessionTiming.current.transport = "websocket";
         }
         setActiveTransport("websocket");
+        pushSessionEvent(
+          "WebRTC 接続に失敗したため WebSocket fallback に切り替えました。",
+          "warning"
+        );
 
         const response = await fetch("/api/eleven/signed-url", {
           method: "GET",
@@ -636,12 +673,19 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           );
         }
         setConversationId(startedConversationId);
+        pushSessionEvent("WebSocket fallback で接続しました。", "success");
       }
     } catch (startError) {
       setError(
         startError instanceof Error
           ? startError.message
           : "Failed to start conversation."
+      );
+      pushSessionEvent(
+        startError instanceof Error
+          ? `接続開始に失敗しました: ${startError.message}`
+          : "接続開始に失敗しました。",
+        "error"
       );
     } finally {
       setIsStarting(false);
@@ -652,15 +696,24 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     const targetConversationId = conversation.getId() ?? conversationId;
     if (!targetConversationId) {
       setError("No conversation ID is available for analysis.");
+      pushSessionEvent("conversationId が無いため解析できません。", "error");
       return;
     }
 
     try {
+      pushSessionEvent("会話を終了し、解析を開始します。");
       await conversation.endSession();
       await analyzeByConversationId(targetConversationId);
+      pushSessionEvent("解析が完了しました。", "success");
     } catch (endError) {
       setError(
         endError instanceof Error ? endError.message : "Failed to end conversation."
+      );
+      pushSessionEvent(
+        endError instanceof Error
+          ? `終了または解析に失敗しました: ${endError.message}`
+          : "終了または解析に失敗しました。",
+        "error"
       );
     }
   }
@@ -693,6 +746,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         transcript,
         analysisResult,
         latencySample,
+        sessionEvents,
         error,
         isStarting,
         isAnalyzing,

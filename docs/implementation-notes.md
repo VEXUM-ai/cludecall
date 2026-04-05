@@ -126,3 +126,9 @@
 - `docs/agent/japanese-phone-voice-design.md` には、電話でよく聞かれる定番質問は事務的に短く答えること、感情タグを使わず平静なトーンで案内することを追記した。
 - `docs/agent/pronunciation-dictionary-ja-demo.pls` には医院名、駅名、ビル名、住所表現、前日18時など読み間違えやすい語を追加した。
 - `lib/agent-demo-config.ts` の live prompt にも同じ医院プロフィールと FAQ handling を追加し、`npm run agent:apply-demo-config` を再実行して live agent へ反映した。
+
+## 2026-04-05 会話履歴ビューの追加
+- `components/home-page.tsx` を再構成し、`音声出力チェック` を削除して、ライブ transcript と過去会話 transcript を同じ画面で見られる構成にした。
+- `app/api/demo/conversations` を追加し、最近の会話一覧を Web / phone 混在で取得できるようにした。
+- `app/api/demo/conversations/[conversationId]` を追加し、選択した会話の transcript、要約、メモ、評価、遅延、通話メタデータを表示できるようにした。
+- `lib/elevenlabs/api.ts` に履歴用の読み取り関数を追加し、分析済み会話を UI から再取得できるようにした。

@@ -11,7 +11,13 @@ import {
   normalizeReservationMemo,
   normalizeTranscript,
 } from "@/lib/elevenlabs/memo";
-import type { AnalyzeConversationResponse, DemoRun, OutboundCallResult } from "@/lib/types";
+import type {
+  AnalyzeConversationResponse,
+  ConversationHistoryDetail,
+  ConversationHistorySummary,
+  DemoRun,
+  OutboundCallResult,
+} from "@/lib/types";
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
 
@@ -20,6 +26,7 @@ const listConversationsSchema = z.object({
     z.object({
       agent_id: z.string().optional(),
       conversation_id: z.string(),
+      conversation_initiation_source: z.string().optional(),
       start_time_unix_secs: z.number().nullable().optional(),
       call_duration_secs: z.number().nullable().optional(),
       status: z.string().optional(),
@@ -62,6 +69,7 @@ const outboundCallSchema = z.object({
 });
 
 type ConversationDetails = z.infer<typeof conversationDetailsSchema>;
+type ConversationListItem = z.infer<typeof listConversationsSchema>["conversations"][number];
 
 export class ElevenLabsApiError extends Error {
   constructor(
@@ -210,6 +218,19 @@ function normalizePhoneNumber(value: string): string {
   return value.replace(/[^\d+]/g, "");
 }
 
+function toNullableString(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return null;
+}
+
 function normalizeAnalyzeResponse(details: ConversationDetails): AnalyzeConversationResponse {
   const transcript = normalizeTranscript(details.transcript);
   const analysis = normalizeConversationAnalysis(details.analysis);
@@ -261,6 +282,65 @@ function normalizeDemoRun(details: ConversationDetails): DemoRun {
       transcript: base.transcript,
     }),
   };
+}
+
+function buildConversationSummary(
+  details: ConversationDetails,
+  source: string | null
+): ConversationHistorySummary {
+  const run = normalizeDemoRun(details);
+  const transcriptCount = Array.isArray(details.transcript) ? details.transcript.length : 0;
+
+  return {
+    conversationId: details.conversation_id,
+    channel: run.channel,
+    source,
+    status: details.status ?? null,
+    durationSecs:
+      typeof details.metadata?.call_duration_secs === "number"
+        ? details.metadata.call_duration_secs
+        : null,
+    success: run.analysis.callSuccessful,
+    startedAt: toIsoFromUnix(details.metadata?.start_time_unix_secs),
+    analysisTitle: toNullableString(
+      details.analysis && typeof details.analysis === "object"
+        ? (details.analysis as Record<string, unknown>).call_summary_title
+        : null
+    ),
+    transcriptSummary: run.analysis.transcriptSummary,
+    memo: run.memo,
+    latency: run.latency,
+    transcriptCount,
+  };
+}
+
+function summarizeConversationSource(item: ConversationListItem, details: ConversationDetails) {
+  if (typeof item.conversation_initiation_source === "string") {
+    return item.conversation_initiation_source;
+  }
+
+  if (
+    details.metadata &&
+    typeof details.metadata === "object" &&
+    "phone_call" in details.metadata &&
+    typeof details.metadata.phone_call === "object" &&
+    details.metadata.phone_call !== null
+  ) {
+    return "twilio";
+  }
+
+  return "web";
+}
+
+async function resolveConversationRun(conversationId: string): Promise<ConversationDetails> {
+  let details = await runConversationAnalysis(conversationId);
+
+  for (let attempt = 0; attempt < 10 && !hasAnalysis(details); attempt += 1) {
+    await sleep(1500);
+    details = await getConversationDetails(conversationId);
+  }
+
+  return details;
 }
 
 export async function getConversationToken(agentId?: string): Promise<string> {
@@ -387,14 +467,57 @@ export async function runConversationAnalysis(conversationId: string) {
 export async function analyzeConversation(
   conversationId: string
 ): Promise<AnalyzeConversationResponse> {
-  let details = await runConversationAnalysis(conversationId);
-
-  for (let attempt = 0; attempt < 10 && !hasAnalysis(details); attempt += 1) {
-    await sleep(1500);
-    details = await getConversationDetails(conversationId);
-  }
-
+  const details = await resolveConversationRun(conversationId);
   return normalizeAnalyzeResponse(details);
+}
+
+export async function getConversationHistoryDetail(
+  conversationId: string
+): Promise<ConversationHistoryDetail> {
+  const details = await resolveConversationRun(conversationId);
+  const recent = await listConversations(20);
+  const matched = recent.conversations.find(
+    (item) => item.conversation_id === conversationId
+  );
+
+  return {
+    ...normalizeDemoRun(details),
+    source: matched?.conversation_initiation_source ?? summarizeConversationSource(
+      {
+        conversation_id: conversationId,
+        conversation_initiation_source: undefined,
+        start_time_unix_secs: undefined,
+        call_duration_secs: undefined,
+        status: details.status,
+        call_successful: undefined,
+        agent_name: undefined,
+        agent_id: details.agent_id,
+      },
+      details
+    ),
+    status: details.status ?? "unknown",
+  };
+}
+
+export async function listConversationHistorySummaries(
+  pageSize = 8
+): Promise<ConversationHistorySummary[]> {
+  const recent = await listConversations(pageSize);
+  const conversations = [...recent.conversations].sort(
+    (left, right) =>
+      (right.start_time_unix_secs ?? 0) - (left.start_time_unix_secs ?? 0)
+  );
+
+  const completed = conversations.filter((candidate) => candidate.status?.toLowerCase() === "done");
+  const selected = completed.slice(0, pageSize);
+
+  const details = await Promise.all(
+    selected.map((candidate) => getConversationDetails(candidate.conversation_id))
+  );
+
+  return details.map((detail, index) =>
+    buildConversationSummary(detail, summarizeConversationSource(selected[index], detail))
+  );
 }
 
 async function findMostRecentPhoneConversationId(): Promise<string> {
@@ -429,13 +552,7 @@ async function findMostRecentPhoneConversationId(): Promise<string> {
 
 export async function importLatestPhoneCall(conversationId?: string): Promise<DemoRun> {
   const targetConversationId = conversationId ?? (await findMostRecentPhoneConversationId());
-  let details = await runConversationAnalysis(targetConversationId);
-
-  for (let attempt = 0; attempt < 10 && !hasAnalysis(details); attempt += 1) {
-    await sleep(1500);
-    details = await getConversationDetails(targetConversationId);
-  }
-
+  const details = await resolveConversationRun(targetConversationId);
   const run = normalizeDemoRun(details);
   if (run.latency) {
     await writeLatencySample(run.latency);
