@@ -127,6 +127,20 @@
 - `docs/agent/pronunciation-dictionary-ja-demo.pls` には医院名、駅名、ビル名、住所表現、前日18時など読み間違えやすい語を追加した。
 - `lib/agent-demo-config.ts` の live prompt にも同じ医院プロフィールと FAQ handling を追加し、`npm run agent:apply-demo-config` を再実行して live agent へ反映した。
 
+## 2026-04-05 transcript / 履歴 / 実行メタデータ UI の統合
+- `音声出力チェック` セクションはデモ向けに削除し、代わりに `実行メタデータ` と `現在のアクションログ` を表示する構成に変えた。
+- `components/home-page.tsx` を更新し、現在の Web transcript、最近の会話履歴、選択中会話の transcript・要約・評価・メモ・遅延を同じ画面で見られるようにした。
+- `components/conversation-provider.tsx` にセッションイベントログを追加し、接続開始、fallback、接続完了、解析完了、エラーを時系列で表示できるようにした。
+- `app/api/demo/conversations` と `app/api/demo/conversations/[conversationId]` を追加し、Web / 電話を区別せず最近の会話履歴と会話詳細を読み出せるようにした。
+- `lib/elevenlabs/api.ts` には会話履歴一覧用の整形処理を追加し、履歴から transcript / summary / latency / memo を再利用できるようにした。
+- 変更後に `npm run lint` と `npm run build` を通した。
+
+## 2026-04-05 過去 Web 会話の分析レポート
+- ElevenLabs に残っている直近 5 件の `react_sdk` / `done` 会話を分析し、`docs/web-conversation-analysis.md` にまとめた。
+- 保存済みの `docs/latency-report.md` はまだ空だったため、過去会話については transcript の `time_in_call_secs` から `ユーザー発話後に agent が返るまで` の実効応答時間を再計算した。
+- 直近 5 件では成功 1 件、失敗 4 件で、失敗の大半はモデル遅延ではなくユーザー無言または接続不成立だった。
+- 成功会話では agent 応答時間の中央値は 5 秒、平均は 8.1 秒で、複数情報や FAQ を一度に受けたターンで 15 秒、23 秒の長い区間が出ていた。
+
 ## 2026-04-05 会話履歴ビューの追加
 - `components/home-page.tsx` を再構成し、`音声出力チェック` を削除して、ライブ transcript と過去会話 transcript を同じ画面で見られる構成にした。
 - `app/api/demo/conversations` を追加し、最近の会話一覧を Web / phone 混在で取得できるようにした。
