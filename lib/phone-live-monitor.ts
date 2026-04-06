@@ -310,6 +310,9 @@ async function connectMonitor(monitor: ActivePhoneMonitor) {
   socket.on("close", (code, reasonBuffer) => {
     const reason = reasonBuffer.toString("utf8");
     const normalClosure = code === 1000;
+    const fatal =
+      code === 1008 ||
+      /not enabled|forbidden|unauthorized/i.test(reason);
 
     if (monitor.stopped) {
       return;
@@ -332,7 +335,7 @@ async function connectMonitor(monitor: ActivePhoneMonitor) {
     }
 
     maybeScheduleRetry(monitor, `close_${code}`, {
-      fatal: false,
+      fatal,
       details: {
         code,
         reason: reason || null,
