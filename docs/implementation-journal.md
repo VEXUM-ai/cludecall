@@ -61,3 +61,6 @@
 - Wired `app/api/demo/outbound-call/route.ts` so successful outbound calls immediately attempt to start phone realtime monitoring using the returned `conversationId`.
 - Added `app/api/demo/phone-monitor/start/route.ts` so an already-running phone call can be attached later by `conversationId`, or by resolving the latest active phone conversation automatically.
 - The terminal monitor now translates phone realtime monitor lifecycle messages into Japanese, including retries and auth/plan failures.
+### Checkpoint: agent monitoring can be enabled via API
+- Confirmed the current agent exposes `conversation_config.conversation.monitoring_enabled` via the ElevenLabs agent API, and it was `false`.
+- Updated `scripts/apply-agent-demo-config.ts` so future agent config syncs force `monitoring_enabled: true` and preserve `monitoring_events`.

@@ -164,6 +164,8 @@ async function main() {
     {}) as JsonObject) satisfies JsonObject;
   const currentAgentConfig = ((conversationConfig.agent ?? {}) as JsonObject) satisfies JsonObject;
   const currentPromptConfig = ((currentAgentConfig.prompt ?? {}) as JsonObject) satisfies JsonObject;
+  const currentConversationSettings =
+    ((conversationConfig.conversation ?? {}) as JsonObject) satisfies JsonObject;
   const currentTtsConfig = ((conversationConfig.tts ?? {}) as JsonObject) satisfies JsonObject;
   const currentTurnConfig = ((conversationConfig.turn ?? {}) as JsonObject) satisfies JsonObject;
   const currentPlatformSettings = ((currentAgent.platform_settings ?? {}) as JsonObject) satisfies JsonObject;
@@ -223,6 +225,13 @@ async function main() {
   const patchBody: JsonObject = {
     conversation_config: {
       ...conversationConfig,
+      conversation: {
+        ...currentConversationSettings,
+        monitoring_enabled: true,
+        monitoring_events: Array.isArray(currentConversationSettings.monitoring_events)
+          ? currentConversationSettings.monitoring_events
+          : ["user_transcript", "agent_response", "agent_response_correction"],
+      },
       turn: {
         ...currentTurnConfig,
         turn_timeout: resolvedTurnTimeoutSeconds,
@@ -294,6 +303,8 @@ async function main() {
   const updatedConversationConfig = (updatedAgent.conversation_config ?? {}) as JsonObject;
   const updatedAgentConfig = (updatedConversationConfig.agent ?? {}) as JsonObject;
   const updatedPromptConfig = (updatedAgentConfig.prompt ?? {}) as JsonObject;
+  const updatedConversationSettings =
+    (updatedConversationConfig.conversation ?? {}) as JsonObject;
   const updatedTtsConfig = (updatedConversationConfig.tts ?? {}) as JsonObject;
   const updatedPlatformSettings = (updatedAgent.platform_settings ?? {}) as JsonObject;
   const updatedDataCollection = (updatedPlatformSettings.data_collection ?? {}) as JsonObject;
@@ -317,6 +328,14 @@ async function main() {
   );
   console.log(`turnTimeout: ${String(((updatedConversationConfig.turn ?? {}) as JsonObject).turn_timeout ?? "")}`);
   console.log(`turnEagerness: ${String(((updatedConversationConfig.turn ?? {}) as JsonObject).turn_eagerness ?? "")}`);
+  console.log(`monitoringEnabled: ${String(updatedConversationSettings.monitoring_enabled ?? "")}`);
+  console.log(
+    `monitoringEvents: ${
+      Array.isArray(updatedConversationSettings.monitoring_events)
+        ? updatedConversationSettings.monitoring_events.join(",")
+        : ""
+    }`
+  );
   console.log(`defaultVoiceName: ${DENTAL_DEMO_VOICE_NAME}`);
   console.log(`dataCollectionItems: ${Object.keys(updatedDataCollection).length}`);
   console.log(`evaluationCriteria: ${updatedCriteria.length}`);
