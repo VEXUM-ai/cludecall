@@ -32,3 +32,6 @@
 ### Checkpoint: terminal monitor labels simplified to Japanese
 - Updated `scripts/live-monitor.ts` so the terminal now shows `患者`, `AI`, `応答速度`, `収集結果`, `発信`, `仮受付` as simple Japanese labels instead of developer-facing English tags.
 - The monitor now translates common session messages into plain Japanese and surfaces only the key fields people care about, such as `接続完了まで`, `AI初回応答まで`, `患者発話からAI平均応答まで`, and `通話後の収集時間`.
+### Checkpoint: every AI line now shows response time
+- Updated `components/conversation-provider.tsx` so tentative AI lines also publish `replyAfterUserMs`.
+- Updated `scripts/live-monitor.ts` so every AI line shows `応答まで: xxxms` before the rest of the detail block.

@@ -375,6 +375,12 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const nowMs = performance.now();
+      const replyAfterUserMs =
+        lastUserMessageAtMs.current !== null
+          ? Math.round(nowMs - lastUserMessageAtMs.current)
+          : null;
+
       recordFirstAgentResponse();
       if (lastLoggedTentativeAgentLine.current !== tentativeText) {
         lastLoggedTentativeAgentLine.current = tentativeText;
@@ -385,8 +391,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           message: tentativeText,
           details: {
             elapsedMs: sessionTiming.current
-              ? Math.round(performance.now() - sessionTiming.current.startedAtMs)
+              ? Math.round(nowMs - sessionTiming.current.startedAtMs)
               : null,
+            replyAfterUserMs,
             tentative: true,
           },
         });

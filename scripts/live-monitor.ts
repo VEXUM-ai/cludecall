@@ -213,10 +213,15 @@ function detailLinesForEvent(event: LiveMonitorEvent) {
     case "user":
     case "agent":
       return renderLines([
-        `経過: ${formatMs(details.elapsedMs)}`,
-        event.kind === "agent" && details.replyAfterUserMs !== undefined
-          ? `前の患者発話からAI応答まで: ${formatMs(details.replyAfterUserMs)}`
+        event.kind === "agent"
+          ? `応答まで: ${formatMs(details.replyAfterUserMs)}`
           : null,
+        `経過: ${formatMs(details.elapsedMs)}`,
+        event.kind === "agent" && details.tentative === true
+          ? "種類: 仮応答"
+          : event.kind === "agent"
+            ? "種類: 本応答"
+            : null,
       ]);
     case "latency":
       return renderLines([
