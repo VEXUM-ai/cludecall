@@ -1,4 +1,5 @@
 import { EMIHA_BOOKING_RULES, EMIHA_CLINIC_PROFILE } from "@/lib/clinic-config/emiha";
+import { resolvePreferredSlot } from "@/lib/date-preferences";
 import { getServerConfig } from "@/lib/env";
 import type {
   AppointmentDraft,
@@ -12,6 +13,9 @@ import type {
   TranscriptEntry,
   TriageLevel,
 } from "@/lib/types";
+
+type DraftPreferredSlot = AppointmentDraft["preferredSlots"][number];
+type ResolvedPreferredSlotEntry = NonNullable<ReturnType<typeof resolvePreferredSlot>>;
 
 const SERVICE_LINE_KEYWORDS: Array<{
   serviceLine: ServiceLine;
@@ -254,6 +258,38 @@ function buildPreferredSlots(memo: ReservationMemo) {
   ].filter((slot) => slot.date || slot.timeRange);
 }
 
+function buildNormalizedPreferredSlots(
+  memo: ReservationMemo,
+  anchorAt: string,
+  timeZone: string
+): ResolvedPreferredSlotEntry[] {
+  const candidates = [
+    {
+      label: "第1希望",
+      rawDateText: memo.preferred_date_1,
+      rawTimeRange: memo.preferred_time_range_1,
+    },
+    {
+      label: "第2希望",
+      rawDateText: memo.preferred_date_2,
+      rawTimeRange: memo.preferred_time_range_2,
+    },
+  ];
+
+  return candidates
+    .map((candidate) => resolvePreferredSlot({ ...candidate, anchorAt, timeZone }))
+    .filter((slot): slot is ResolvedPreferredSlotEntry => Boolean(slot));
+}
+
+function buildManualReviewReasonWithDateNotes(
+  memo: ReservationMemo,
+  serviceLine: ServiceLine,
+  preferredSlotNotes: string[]
+) {
+  const baseReason = summarizeManualReviewReason(memo, serviceLine);
+  return [baseReason, ...preferredSlotNotes].filter(Boolean).join(" / ") || null;
+}
+
 function summarizeManualReviewReason(memo: ReservationMemo, serviceLine: ServiceLine) {
   const reasons: string[] = [];
 
@@ -307,8 +343,25 @@ function buildHandoffSummary(
   return summaryParts.join(" / ");
 }
 
+function buildHandoffSummaryWithDateNotes(
+  memo: ReservationMemo,
+  serviceLine: ServiceLine,
+  triageLevel: TriageLevel,
+  lineFormStatus: LineFormStatus,
+  preferredSlotNotes: string[]
+) {
+  const baseSummary = buildHandoffSummary(memo, serviceLine, triageLevel, lineFormStatus);
+  if (preferredSlotNotes.length === 0) {
+    return baseSummary;
+  }
+
+  return `${baseSummary} / 希望解釈: ${preferredSlotNotes.join(" / ")}`;
+}
+
 function buildAppointmentToolPayload(args: {
   memo: ReservationMemo;
+  preferredSlots: DraftPreferredSlot[];
+  normalizedManualReviewReason: string | null;
   serviceLine: ServiceLine;
   triageLevel: TriageLevel;
   lineFormStatus: LineFormStatus;
@@ -330,7 +383,7 @@ function buildAppointmentToolPayload(args: {
     request: {
       serviceLine: args.serviceLine,
       visitReason: args.memo.visit_reason,
-      preferredSlots: buildPreferredSlots(args.memo),
+      preferredSlots: args.preferredSlots,
       callbackOk: args.memo.callback_ok,
       lineFormStatus: args.lineFormStatus,
       triageLevel: args.triageLevel,
@@ -339,9 +392,7 @@ function buildAppointmentToolPayload(args: {
       bookingStatus: args.memo.booking_status,
       notesForStaff: args.memo.notes_for_staff,
       unresolvedQuestions: args.memo.unresolved_questions,
-      manualReviewReason:
-        args.memo.manual_review_reason ??
-        summarizeManualReviewReason(args.memo, args.serviceLine),
+      manualReviewReason: args.normalizedManualReviewReason,
       handoffSummary: args.handoffSummary,
     },
     integration: {
@@ -371,9 +422,12 @@ export function buildAppointmentDraft(args: {
   memo: ReservationMemo;
   transcript: TranscriptEntry[];
   channel: ConversationChannel;
+  anchorAt?: string | null;
   storedDraft?: AppointmentDraft | null;
 }): AppointmentDraft {
   const combinedText = joinConversationText(args.memo, args.transcript);
+  const timeZone = getServerConfig().demoTimezone;
+  const anchorAt = args.anchorAt ?? new Date().toISOString();
   const serviceLine =
     normalizeServiceLine(
       args.memo.service_line,
@@ -397,11 +451,26 @@ export function buildAppointmentDraft(args: {
       args.memo.notes_for_staff,
       combinedText
     ) ?? "unknown";
-  const handoffSummary = buildHandoffSummary(
+  const preferredSlotEntries = buildNormalizedPreferredSlots(
+    args.memo,
+    anchorAt,
+    timeZone
+  );
+  const preferredSlots = preferredSlotEntries.map((entry) => entry.slot);
+  const preferredSlotNotes = preferredSlotEntries
+    .map((entry) => entry.reviewNote ?? entry.handoffNote)
+    .filter((note): note is string => Boolean(note));
+  const normalizedManualReviewReason = buildManualReviewReasonWithDateNotes(
+    args.memo,
+    serviceLine,
+    preferredSlotNotes
+  );
+  const handoffSummary = buildHandoffSummaryWithDateNotes(
     args.memo,
     serviceLine,
     triageLevel,
-    lineFormStatus
+    lineFormStatus,
+    preferredSlotNotes
   );
   const submissionMode = resolveSubmissionMode();
   const now = new Date().toISOString();
@@ -416,14 +485,12 @@ export function buildAppointmentDraft(args: {
     triageLevel,
     lineFormStatus,
     visitReason: args.memo.visit_reason,
-    preferredSlots: buildPreferredSlots(args.memo),
+    preferredSlots,
     callbackOk: args.memo.callback_ok,
     notesForStaff: args.memo.notes_for_staff,
     unresolvedQuestions: args.memo.unresolved_questions,
     bookingStatus: args.memo.booking_status,
-    manualReviewReason:
-      args.memo.manual_review_reason ??
-      summarizeManualReviewReason(args.memo, serviceLine),
+    manualReviewReason: normalizedManualReviewReason,
     handoffSummary,
     submissionMode,
     submissionState: "drafted",
@@ -431,6 +498,8 @@ export function buildAppointmentDraft(args: {
     lastUpdatedAt: now,
     appointmentToolPayload: buildAppointmentToolPayload({
       memo: args.memo,
+      preferredSlots,
+      normalizedManualReviewReason,
       serviceLine,
       triageLevel,
       lineFormStatus,

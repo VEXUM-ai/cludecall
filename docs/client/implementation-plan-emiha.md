@@ -22,6 +22,7 @@
 - `AnalyzeConversationResponse` `ConversationHistorySummary` `ConversationHistoryDetail` に `appointmentDraft` を追加。
 - `POST /api/demo/appointments/confirm` を追加。
 - UI に `確認してアポ登録` と payload 表示を追加。
+- 希望日時が `今週` `来週` `再来週` `平日` `土日` `午前` `午後` のような相対表現だった場合、会話開始時刻と `Asia/Tokyo` を基準に正規化し、`preferredSlots` の表示・`manualReviewReason`・`handoffSummary` に反映する。
 
 ## 4. アポツール連携の設計
 - モード
@@ -52,6 +53,7 @@
 - 重複予約のリアルタイム判定
 - inbound 電話の自動取り込み
 - webhook での業務レコード同期
+- `requestedPeriod` のような構造化フィールドを型として正式導入し、相対日時の原文・解釈結果・確認要否を分離する
 
 ## 8. 次段で追加するもの
 - `AppointmentDraft` の各項目に `confirmedByCaller` `confidence` `reviewReason` を持たせる

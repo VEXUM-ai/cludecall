@@ -311,6 +311,7 @@ async function normalizeAnalyzeResponse(
       memo: base.memo,
       transcript: base.transcript,
       channel: phoneCall ? "phone" : "web",
+      anchorAt: toIsoFromUnix(metadata.start_time_unix_secs),
       storedDraft,
     }),
   };
