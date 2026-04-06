@@ -1,6 +1,6 @@
 import { DENTAL_DEMO_CLINIC_PROFILE } from "./agent-demo-config";
 
-export const DENTAL_DEMO_FAST_TURN_TIMEOUT_SECONDS = 6;
+export const DENTAL_DEMO_FAST_TURN_TIMEOUT_SECONDS = 8;
 export const DENTAL_DEMO_FAST_TURN_EAGERNESS = "normal" as const;
 export const DENTAL_DEMO_FAST_SOFT_TIMEOUT_SECONDS = -1;
 export const DENTAL_DEMO_FAST_SOFT_TIMEOUT_MESSAGE = "少々お待ちください。";
@@ -19,6 +19,8 @@ export const DENTAL_DEMO_FAST_PROMPT = `# Speed notes
 - 同じ項目の確認は最大2回。確定しなければ unresolved_questions に残して次へ進む
 - 相手が日時や氏名を言い直したら、古い候補は捨てて最新の内容だけを1回確認する
 - 第2希望は任意。第1希望と折り返し先が取れていれば、第2希望が未確定でもループしない
+- 第2希望で日付だけ出たら、時間は1回だけ聞く。出なければ preferred_time_range_2 は null のまま次へ進む
+- 第2希望の確認中に第1希望を持ち出して再確認しない
 
 # Known facts
 - 医院名: ${DENTAL_DEMO_CLINIC_PROFILE.clinicName}

@@ -2,6 +2,11 @@
 
 ## 2026-04-07
 
+### Checkpoint: rapid-fire reprompt guard added for telephony
+- Refined the phone bug analysis after the user's note that the agent started talking `間髪入れず連発` near the end.
+- Updated [`lib/agent-speed-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-speed-config.ts) to raise the phone turn timeout from `6s` to `8s` while keeping `turn_eagerness = normal`.
+- Updated [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts) and [`lib/agent-speed-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-speed-config.ts) to state two additional runtime rules explicitly: if only `preferred_date_2` is collected, ask the time once and then move on with `preferred_time_range_2 = null`; while collecting the second choice, do not resurrect `preferred_date_1`.
+
 ### Checkpoint: recording-backed confirmation of the end-of-call loop
 - Transcribed the local recording [`通話記録 通知不可能_260407_002955.m4a`](/C:/Dev/Work/デンタル%20一次受付AI/通話記録%20通知不可能_260407_002955.m4a) with Eleven Scribe and confirmed that the missing final `37s` were not just a monitor gap.
 - The recording shows the agent looping between `その日のご希望のお時間はございますでしょうか` and the stale reconfirmation `4月16日木曜日の十六時でいいですか`, while the caller keeps repeating `再来週の月曜日とかどうですか`.

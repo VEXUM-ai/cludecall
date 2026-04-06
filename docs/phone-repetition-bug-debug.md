@@ -70,11 +70,12 @@ Result:
 
 ### 2. Turn setting favored interruption-sensitive behavior
 
-The fast config had `turn_eagerness = eager`.
+The fast config had `turn_eagerness = eager`, and the phone turn timeout was short enough that hesitations could be treated as a finished turn too early.
 
 Result:
 
 - On telephony, with hesitations like `えっと`, self-corrections, and mid-flow FAQ, the agent was more likely to react on partial turns.
+- This matches the user report that the agent started firing multiple utterances with almost no pause between them.
 - In the target call, the first preferred slot confirmation was interrupted by a user correction, which is the exact shape that tends to produce repeated or truncated confirmations later in the call.
 
 ### 3. Monitoring design failed to preserve the decisive tail segment
@@ -100,10 +101,13 @@ Result:
 2. Added a rule: same-field clarification is capped at two attempts, after which the issue goes to `unresolved_questions`.
 3. Reordered the flow so callback phone number is collected before the optional second preferred slot.
 4. Changed fast turn eagerness from `eager` to `normal`.
-5. Updated the prompt to discard old slot candidates when the caller corrects themselves and to confirm only the latest value.
-6. Made phone realtime monitoring fail fast and skip future attempts once the agent is known to reject monitoring.
-7. Added transcript tail-gap detection during phone import so under-observed call endings are surfaced immediately.
-8. Fixed post-call date parsing so Japanese numeral dates like `四月十六日` are parsed and weekday detection no longer mistakes month markers for weekdays.
+5. Increased phone turn timeout from `6s` to `8s` so the agent waits longer before deciding the caller finished speaking.
+6. Added a rule: if the caller gives only the second-choice date, ask the time once and then leave `preferred_time_range_2 = null` rather than looping.
+7. Added a rule: while collecting the second choice, never resurrect the first-choice confirmation.
+8. Updated the prompt to discard old slot candidates when the caller corrects themselves and to confirm only the latest value.
+9. Made phone realtime monitoring fail fast and skip future attempts once the agent is known to reject monitoring.
+10. Added transcript tail-gap detection during phone import so under-observed call endings are surfaced immediately.
+11. Fixed post-call date parsing so Japanese numeral dates like `四月十六日` are parsed and weekday detection no longer mistakes month markers for weekdays.
 
 ## Remaining operational step
 
