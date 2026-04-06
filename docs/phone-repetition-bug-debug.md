@@ -39,6 +39,7 @@ Implication:
 Official monitor note:
 
 - ElevenLabs docs describe real-time conversation monitoring as an Enterprise feature over `wss://api.elevenlabs.io/v1/convai/conversations/{id}/monitor`.
+- Direct API verification on `2026-04-07`: patching `monitoring_enabled=true` returns `403` with `feature_not_available` / `monitoring_enterprise_only` and the message `Real-time monitoring is an enterprise-only feature. Please upgrade your subscription.`
 
 Recording-derived excerpt from `152s` onward:
 
@@ -84,12 +85,13 @@ Result:
 
 ### 3. Monitoring design failed to preserve the decisive tail segment
 
-The phone realtime monitor was attempted even when monitoring was unavailable for the agent and returned `close_1008`.
+The phone realtime monitor was attempted even though the current ElevenLabs subscription cannot enable realtime monitoring for this agent. The remote agent also had `conversation_config.conversation.monitoring_enabled = false`.
 
 Result:
 
 - The system did not capture the end-of-call behavior with enough fidelity.
 - This made the bug harder to diagnose than it should have been.
+- The previous `agent:apply-demo-config` failure was not a generic permission mystery. The concrete blocker was the enterprise-only monitor feature being included in the same PATCH as the rest of the prompt and speed updates.
 
 ### 4. Date normalization had a separate parsing bug
 
@@ -113,17 +115,11 @@ Result:
 10. Added transcript tail-gap detection during phone import so under-observed call endings are surfaced immediately.
 11. Fixed post-call date parsing so Japanese numeral dates like `四月十六日` are parsed and weekday detection no longer mistakes month markers for weekdays.
 
-## Remaining operational step
+## Current remote state
 
-`npm run agent:apply-demo-config` is currently failing with `403`, so the local prompt / turn-setting fixes are implemented in code but not yet re-applied to the remote ElevenLabs agent branch.
-
-Official 403 buckets that match this failure mode:
-
-- `forbidden`
-- `insufficient_permissions`
-- `workspace_access_denied`
-- `feature_not_available`
-- `subscription_required`
+- `npm run agent:apply-demo-config` now succeeds by retrying without `monitoring_enabled` when ElevenLabs returns `monitoring_enterprise_only`.
+- The remote agent is updated with `turn_timeout = 8`, `turn_eagerness = normal`, `tts.speed = 0.95`, and `expressive_mode = false`.
+- Realtime monitoring remains unavailable on the current plan, so phone monitoring is now skipped proactively instead of opening a WebSocket that immediately dies with `close_1008`.
 
 Branch/versioning notes from the docs:
 
@@ -133,10 +129,10 @@ Branch/versioning notes from the docs:
 
 ## Next validation
 
-1. Recover ElevenLabs permissions and re-apply the agent config.
-2. Run at least 3 real phone calls with deliberate hesitations, mid-intake FAQ, slot change, and no-second-choice cases.
-3. Confirm that:
+1. Run at least 3 real phone calls with deliberate hesitations, mid-intake FAQ, slot change, and no-second-choice cases.
+2. Confirm that:
    - the agent stops after one unresolved second-choice clarification,
    - callback phone is collected earlier,
    - no repeated question loop appears near the end,
-   - phone import warns immediately if transcript coverage ends well before call duration.
+   - phone import warns immediately if transcript coverage ends well before call duration,
+   - outbound logs say `phone realtime monitor skipped` with `remote_monitoring_disabled` instead of showing repeated websocket failures.

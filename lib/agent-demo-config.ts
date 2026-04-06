@@ -22,7 +22,7 @@ export const DENTAL_DEMO_TIMEZONE = "Asia/Tokyo";
 export const DENTAL_DEMO_TTS_MODEL_ID = "eleven_v3_conversational";
 export const DENTAL_DEMO_VOICE_ID = "hpp4J3VqNfWAUOO0d1Us";
 export const DENTAL_DEMO_VOICE_NAME = "Bella - Professional, Bright, Warm";
-export const DENTAL_DEMO_EXPRESSIVE_MODE = true;
+export const DENTAL_DEMO_EXPRESSIVE_MODE = false;
 export const DENTAL_DEMO_SUGGESTED_AUDIO_TAGS: string[] = [];
 
 export const DENTAL_DEMO_FIRST_MESSAGE =

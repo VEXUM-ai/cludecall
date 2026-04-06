@@ -2,6 +2,14 @@
 
 ## 2026-04-07
 
+### Checkpoint: monitor root cause confirmed and remote config fallback added
+- Verified against the live ElevenLabs agent API that the remote agent still had `conversation_config.conversation.monitoring_enabled = false`, `turn_eagerness = eager`, and the old phone prompt before re-apply.
+- Proved the monitor failure cause directly by sending a minimal PATCH with `monitoring_enabled = true`, which returned `403` with `feature_not_available` / `monitoring_enterprise_only` and the message `Real-time monitoring is an enterprise-only feature. Please upgrade your subscription.`
+- Updated [`scripts/apply-agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/scripts/apply-agent-demo-config.ts) so config sync now retries without monitoring when ElevenLabs rejects the enterprise-only feature, instead of aborting the whole update.
+- Updated [`lib/phone-live-monitor.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/phone-live-monitor.ts) so phone monitoring first probes the remote agent config and skips immediately when realtime monitoring is disabled, rather than opening a websocket that predictably dies.
+- Updated [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts) and [`lib/agent-speed-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-speed-config.ts) to make the overall conversation speed more normal: `expressive_mode = false`, `tts_speed = 0.95`, `turn_timeout = 8`, `turn_eagerness = normal`, plus an explicit “do not rapid-fire after hesitations” rule.
+- Validation: `npm run lint`, `npm run build`, and `npm run agent:apply-demo-config` now succeed. The remote agent reflects `turn_timeout = 8`, `turn_eagerness = normal`, `tts.speed = 0.95`, `expressive_mode = false`, while `monitoringEnabled` remains `false` by plan limitation.
+
 ### Checkpoint: rapid-fire reprompt guard added for telephony
 - Refined the phone bug analysis after the user's note that the agent started talking `間髪入れず連発` near the end.
 - Updated [`lib/agent-speed-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-speed-config.ts) to raise the phone turn timeout from `6s` to `8s` while keeping `turn_eagerness = normal`.

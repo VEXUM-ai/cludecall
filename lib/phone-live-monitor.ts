@@ -50,6 +50,7 @@ const MONITOR_UNAVAILABLE_COOLDOWN_MS = 10 * 60 * 1000;
 const activeMonitors = new Map<string, ActivePhoneMonitor>();
 let monitorCapabilityReason: string | null = null;
 let monitorCapabilityDetectedAtMs: number | null = null;
+let monitorCapabilityProbePromise: Promise<string | null> | null = null;
 
 function buildMonitorUrl(conversationId: string) {
   return `wss://api.elevenlabs.io/v1/convai/conversations/${conversationId}/monitor`;
@@ -103,6 +104,53 @@ function shouldSkipMonitorStart() {
   }
 
   return Date.now() - monitorCapabilityDetectedAtMs < MONITOR_UNAVAILABLE_COOLDOWN_MS;
+}
+
+async function probeMonitorCapability() {
+  if (monitorCapabilityReason && shouldSkipMonitorStart()) {
+    return monitorCapabilityReason;
+  }
+
+  if (monitorCapabilityProbePromise) {
+    return monitorCapabilityProbePromise;
+  }
+
+  monitorCapabilityProbePromise = (async () => {
+    try {
+      const { apiKey, agentId } = getServerConfig();
+      const response = await fetch(`https://api.elevenlabs.io/v1/convai/agents/${agentId}`, {
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": apiKey,
+        },
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const payload = (await response.json()) as {
+        conversation_config?: {
+          conversation?: {
+            monitoring_enabled?: boolean;
+          };
+        };
+      };
+      const enabled = payload.conversation_config?.conversation?.monitoring_enabled === true;
+      if (!enabled) {
+        markMonitorUnavailable("remote_monitoring_disabled");
+        return "remote_monitoring_disabled";
+      }
+
+      return null;
+    } catch {
+      return null;
+    } finally {
+      monitorCapabilityProbePromise = null;
+    }
+  })();
+
+  return monitorCapabilityProbePromise;
 }
 
 function maybeScheduleRetry(
@@ -366,6 +414,26 @@ async function connectMonitor(monitor: ActivePhoneMonitor) {
 export async function startPhoneConversationMonitor(
   conversationId: string
 ): Promise<MonitorStartResult> {
+  const probedReason = await probeMonitorCapability();
+  if (probedReason) {
+    await appendLiveMonitorEvent({
+      kind: "session",
+      channel: "phone",
+      level: "warning",
+      conversationId,
+      message: "phone realtime monitor skipped",
+      details: {
+        reason: probedReason,
+      },
+    });
+    return {
+      conversationId,
+      started: false,
+      alreadyActive: false,
+      reason: probedReason,
+    };
+  }
+
   if (monitorCapabilityReason) {
     if (!shouldSkipMonitorStart()) {
       monitorCapabilityReason = null;

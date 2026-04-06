@@ -28,6 +28,26 @@ import { loadDotenvFile } from "./load-dotenv";
 
 type JsonObject = Record<string, unknown>;
 
+type RequestJsonErrorDetail =
+  | string
+  | {
+      type?: string;
+      code?: string;
+      message?: string;
+      status?: string;
+      request_id?: string;
+    };
+
+class RequestJsonError extends Error {
+  detail: RequestJsonErrorDetail | null;
+
+  constructor(message: string, detail: RequestJsonErrorDetail | null) {
+    super(message);
+    this.name = "RequestJsonError";
+    this.detail = detail;
+  }
+}
+
 function requestJson(
   url: URL,
   init: {
@@ -57,11 +77,17 @@ function requestJson(
         response.on("end", () => {
           const payload = rawBody ? JSON.parse(rawBody) : {};
           if ((response.statusCode ?? 500) >= 400) {
+            const detail =
+              typeof payload?.detail === "string" || typeof payload?.detail === "object"
+                ? (payload.detail as RequestJsonErrorDetail)
+                : null;
             const message =
               typeof payload?.detail === "string"
                 ? payload.detail
+                : typeof payload?.detail?.message === "string"
+                  ? payload.detail.message
                 : `ElevenLabs request failed with ${response.statusCode ?? 500}`;
-            reject(new Error(message));
+            reject(new RequestJsonError(message, detail));
             return;
           }
 
@@ -150,6 +176,113 @@ function readOptionalStringArrayEnv(name: string): string[] | null {
     .filter((item) => item.length > 0);
 }
 
+function isMonitoringEnterpriseOnlyError(error: unknown) {
+  if (!(error instanceof RequestJsonError)) {
+    return false;
+  }
+
+  return (
+    typeof error.detail === "object" &&
+    error.detail !== null &&
+    error.detail.code === "feature_not_available" &&
+    error.detail.status === "monitoring_enterprise_only"
+  );
+}
+
+function buildPatchBody(args: {
+  conversationConfig: JsonObject;
+  currentConversationSettings: JsonObject;
+  currentTurnConfig: JsonObject;
+  currentTtsConfig: JsonObject;
+  currentAgentConfig: JsonObject;
+  currentPromptConfig: JsonObject;
+  currentPlatformSettings: JsonObject;
+  currentGuardrails: JsonObject;
+  currentFocusGuardrail: JsonObject;
+  resolvedTtsModelId: string;
+  resolvedVoiceId: string;
+  resolvedExpressiveMode: boolean;
+  resolvedSuggestedAudioTags: string[];
+  resolvedTurnTimeoutSeconds: number;
+  resolvedTurnEagerness: string;
+  resolvedSoftTimeoutSeconds: number;
+  resolvedSoftTimeoutMessage: string;
+  resolvedTtsSpeed: number;
+  resolvedMaxTokens: number;
+  resolvedCascadeTimeoutSeconds: number;
+  resolvedDisableFirstMessageInterruptions: boolean;
+  includeMonitoring: boolean;
+}) {
+  const conversationSettings: JsonObject = {
+    ...args.currentConversationSettings,
+  };
+
+  if (args.includeMonitoring) {
+    conversationSettings.monitoring_enabled = true;
+    conversationSettings.monitoring_events = Array.isArray(
+      args.currentConversationSettings.monitoring_events
+    )
+      ? args.currentConversationSettings.monitoring_events
+      : ["user_transcript", "agent_response", "agent_response_correction"];
+  }
+
+  return {
+    conversation_config: {
+      ...args.conversationConfig,
+      conversation: conversationSettings,
+      turn: {
+        ...args.currentTurnConfig,
+        turn_timeout: args.resolvedTurnTimeoutSeconds,
+        turn_eagerness: args.resolvedTurnEagerness,
+        soft_timeout_config: {
+          ...((args.currentTurnConfig.soft_timeout_config ?? {}) as JsonObject),
+          timeout_seconds: args.resolvedSoftTimeoutSeconds,
+          message: args.resolvedSoftTimeoutMessage,
+          use_llm_generated_message: false,
+        },
+      },
+      tts: {
+        ...args.currentTtsConfig,
+        model_id: args.resolvedTtsModelId,
+        voice_id: args.resolvedVoiceId,
+        expressive_mode: args.resolvedExpressiveMode,
+        suggested_audio_tags: args.resolvedSuggestedAudioTags,
+        speed: args.resolvedTtsSpeed,
+      },
+      agent: {
+        ...args.currentAgentConfig,
+        first_message: DENTAL_DEMO_FAST_FIRST_MESSAGE,
+        language: DENTAL_DEMO_LANGUAGE,
+        disable_first_message_interruptions: args.resolvedDisableFirstMessageInterruptions,
+        prompt: {
+          ...args.currentPromptConfig,
+          prompt: `${DENTAL_DEMO_PROMPT}\n\n${DENTAL_DEMO_FAST_PROMPT}`,
+          llm: "gemini-3-flash-preview",
+          temperature: 0.1,
+          max_tokens: args.resolvedMaxTokens,
+          cascade_timeout_seconds: args.resolvedCascadeTimeoutSeconds,
+          timezone: DENTAL_DEMO_TIMEZONE,
+        },
+      },
+    },
+    platform_settings: {
+      ...args.currentPlatformSettings,
+      summary_language: DENTAL_DEMO_LANGUAGE,
+      data_collection: buildDataCollectionConfig(),
+      evaluation: {
+        criteria: buildEvaluationCriteriaConfig(),
+      },
+      guardrails: {
+        ...args.currentGuardrails,
+        focus: {
+          ...args.currentFocusGuardrail,
+          is_enabled: true,
+        },
+      },
+    },
+  } satisfies JsonObject;
+}
+
 async function main() {
   loadDotenvFile();
   const { apiKey, agentId } = getServerConfig();
@@ -222,68 +355,6 @@ async function main() {
       ? currentAgentConfig.disable_first_message_interruptions
       : false);
 
-  const patchBody: JsonObject = {
-    conversation_config: {
-      ...conversationConfig,
-      conversation: {
-        ...currentConversationSettings,
-        monitoring_enabled: true,
-        monitoring_events: Array.isArray(currentConversationSettings.monitoring_events)
-          ? currentConversationSettings.monitoring_events
-          : ["user_transcript", "agent_response", "agent_response_correction"],
-      },
-      turn: {
-        ...currentTurnConfig,
-        turn_timeout: resolvedTurnTimeoutSeconds,
-        turn_eagerness: resolvedTurnEagerness,
-        soft_timeout_config: {
-          ...((currentTurnConfig.soft_timeout_config ?? {}) as JsonObject),
-          timeout_seconds: resolvedSoftTimeoutSeconds,
-          message: resolvedSoftTimeoutMessage,
-          use_llm_generated_message: false,
-        },
-      },
-      tts: {
-        ...currentTtsConfig,
-        model_id: resolvedTtsModelId,
-        voice_id: resolvedVoiceId,
-        expressive_mode: resolvedExpressiveMode,
-        suggested_audio_tags: resolvedSuggestedAudioTags,
-        speed: resolvedTtsSpeed,
-      },
-      agent: {
-        ...currentAgentConfig,
-        first_message: DENTAL_DEMO_FAST_FIRST_MESSAGE,
-        language: DENTAL_DEMO_LANGUAGE,
-        disable_first_message_interruptions: resolvedDisableFirstMessageInterruptions,
-        prompt: {
-          ...currentPromptConfig,
-          prompt: `${DENTAL_DEMO_PROMPT}\n\n${DENTAL_DEMO_FAST_PROMPT}`,
-          llm: "gemini-3-flash-preview",
-          temperature: 0.1,
-          max_tokens: resolvedMaxTokens,
-          cascade_timeout_seconds: resolvedCascadeTimeoutSeconds,
-          timezone: DENTAL_DEMO_TIMEZONE,
-        },
-      },
-    },
-    platform_settings: {
-      ...currentPlatformSettings,
-      summary_language: DENTAL_DEMO_LANGUAGE,
-      data_collection: buildDataCollectionConfig(),
-      evaluation: {
-        criteria: buildEvaluationCriteriaConfig(),
-      },
-      guardrails: {
-        ...currentGuardrails,
-        focus: {
-          ...currentFocusGuardrail,
-          is_enabled: true,
-        },
-      },
-    },
-  };
-
   const branchId =
     typeof currentAgent.branch_id === "string" && currentAgent.branch_id.length > 0
       ? currentAgent.branch_id
@@ -294,11 +365,76 @@ async function main() {
     patchUrl.searchParams.set("branch_id", branchId);
   }
 
-  const updatedAgent = await requestJson(patchUrl, {
-    method: "PATCH",
-    apiKey,
-    body: patchBody,
-  });
+  let monitoringApplied = true;
+  let updatedAgent: JsonObject;
+
+  try {
+    updatedAgent = await requestJson(patchUrl, {
+      method: "PATCH",
+      apiKey,
+      body: buildPatchBody({
+        conversationConfig,
+        currentConversationSettings,
+        currentTurnConfig,
+        currentTtsConfig,
+        currentAgentConfig,
+        currentPromptConfig,
+        currentPlatformSettings,
+        currentGuardrails,
+        currentFocusGuardrail,
+        resolvedTtsModelId,
+        resolvedVoiceId,
+        resolvedExpressiveMode,
+        resolvedSuggestedAudioTags,
+        resolvedTurnTimeoutSeconds,
+        resolvedTurnEagerness,
+        resolvedSoftTimeoutSeconds,
+        resolvedSoftTimeoutMessage,
+        resolvedTtsSpeed,
+        resolvedMaxTokens,
+        resolvedCascadeTimeoutSeconds,
+        resolvedDisableFirstMessageInterruptions,
+        includeMonitoring: true,
+      }),
+    });
+  } catch (error) {
+    if (!isMonitoringEnterpriseOnlyError(error)) {
+      throw error;
+    }
+
+    monitoringApplied = false;
+    console.warn(
+      "Real-time monitoring is not available on this ElevenLabs plan. Retrying without monitoring."
+    );
+    updatedAgent = await requestJson(patchUrl, {
+      method: "PATCH",
+      apiKey,
+      body: buildPatchBody({
+        conversationConfig,
+        currentConversationSettings,
+        currentTurnConfig,
+        currentTtsConfig,
+        currentAgentConfig,
+        currentPromptConfig,
+        currentPlatformSettings,
+        currentGuardrails,
+        currentFocusGuardrail,
+        resolvedTtsModelId,
+        resolvedVoiceId,
+        resolvedExpressiveMode,
+        resolvedSuggestedAudioTags,
+        resolvedTurnTimeoutSeconds,
+        resolvedTurnEagerness,
+        resolvedSoftTimeoutSeconds,
+        resolvedSoftTimeoutMessage,
+        resolvedTtsSpeed,
+        resolvedMaxTokens,
+        resolvedCascadeTimeoutSeconds,
+        resolvedDisableFirstMessageInterruptions,
+        includeMonitoring: false,
+      }),
+    });
+  }
 
   const updatedConversationConfig = (updatedAgent.conversation_config ?? {}) as JsonObject;
   const updatedAgentConfig = (updatedConversationConfig.agent ?? {}) as JsonObject;
@@ -329,6 +465,7 @@ async function main() {
   console.log(`turnTimeout: ${String(((updatedConversationConfig.turn ?? {}) as JsonObject).turn_timeout ?? "")}`);
   console.log(`turnEagerness: ${String(((updatedConversationConfig.turn ?? {}) as JsonObject).turn_eagerness ?? "")}`);
   console.log(`monitoringEnabled: ${String(updatedConversationSettings.monitoring_enabled ?? "")}`);
+  console.log(`monitoringApplied: ${String(monitoringApplied)}`);
   console.log(
     `monitoringEvents: ${
       Array.isArray(updatedConversationSettings.monitoring_events)
