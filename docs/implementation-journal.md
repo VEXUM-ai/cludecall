@@ -2,6 +2,12 @@
 
 ## 2026-04-07
 
+### Checkpoint: recording-backed confirmation of the end-of-call loop
+- Transcribed the local recording [`通話記録 通知不可能_260407_002955.m4a`](/C:/Dev/Work/デンタル%20一次受付AI/通話記録%20通知不可能_260407_002955.m4a) with Eleven Scribe and confirmed that the missing final `37s` were not just a monitor gap.
+- The recording shows the agent looping between `その日のご希望のお時間はございますでしょうか` and the stale reconfirmation `4月16日木曜日の十六時でいいですか`, while the caller keeps repeating `再来週の月曜日とかどうですか`.
+- This validated that the earlier fix set in [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts) and [`lib/agent-speed-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-speed-config.ts) is aimed at the right runtime failure mode: stale-slot resurrection plus over-persistent second-choice collection.
+- Validation rerun: `npm run lint` and `npm run build` still succeed. `npm run agent:apply-demo-config` still fails with `403`, so the runtime fix is still blocked on ElevenLabs-side permissions/publication.
+
 ### Checkpoint: repeated end-of-call phone bug analyzed and hardened
 - Investigated the latest phone call `conv_1101knhpm2hnf8a949ax2teetp5g` and documented the findings in [`docs/phone-repetition-bug-debug.md`](/C:/Dev/Work/デンタル%20一次受付AI/docs/phone-repetition-bug-debug.md).
 - Confirmed that the imported transcript ended at `163s` while the call duration was `200s`, leaving a `37s` tail gap around the segment where the user reported repeated / broken behavior.

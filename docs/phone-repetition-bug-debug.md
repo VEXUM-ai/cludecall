@@ -25,15 +25,37 @@ Observed sequence:
 
 - `firstAgentReplyAfterUserMs = 7000`
 - `averageAgentReplyAfterUserMs = 5500`
-- `analysisMs = 9656`
+- `analysisMs = 10183`
 - transcript lines imported: `21`
 - transcript tail gap: about `37s`
 - phone realtime monitor failed with `close_1008` / `Monitoring is not enabled for this agent`
+- local recording (`通話記録 通知不可能_260407_002955.m4a`) was transcribed with Eleven Scribe and confirms the loop in the missing tail segment
 
 Implication:
 
 - The call tail where the user heard the repeated / broken behavior is not captured in realtime monitor logs.
 - The imported transcript also ends significantly before call completion, so the final segment was under-observed.
+
+Recording-derived excerpt from `152s` onward:
+
+```text
+二希望の日時も教えていただけますでしょうか。
+えっと、じゃあ再来週の月曜日とかどうですか？
+2026年4月20日の月曜日ですね。その日のご希望のお時間はございますでしょうか。
+4月16日木曜日の十六時でいいですか？
+えっと、じゃあ再来週の月曜日とかどうですか？
+4月16日木曜日の十六時でいいですか？
+2026年4月中に突きたばですね。その日のご希望のお時間はございますでよ。
+えっと、じゃあ再来週の月曜日とかどうですか？
+4月16日木曜日の十六時でいいですか。
+```
+
+Interpretation:
+
+- This was not only a logging blind spot. The actual phone audio contains a loop where the agent keeps mixing:
+  - second-choice time collection (`その日のご希望のお時間はございますでしょうか`)
+  - stale first-choice reconfirmation (`4月16日木曜日の十六時でいいですか`)
+- The caller then repeats the second-choice date again instead of answering with a time, which keeps the conversation on the same unresolved field until the call degrades.
 
 ## Root-cause analysis
 
@@ -44,6 +66,7 @@ The intake flow treated the second preferred slot as part of the normal sequence
 Result:
 
 - If the user hesitated, changed their mind, or wanted to end after one viable candidate, the agent could keep pulling the conversation back to the same unresolved field.
+- The recording confirms the exact failure mode: after the user supplied `再来週の月曜日`, the agent asked for the time but also resurrected the already-updated first preferred slot, which reset the conversation instead of advancing it.
 
 ### 2. Turn setting favored interruption-sensitive behavior
 
