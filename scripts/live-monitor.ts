@@ -71,6 +71,10 @@ function formatBool(value: unknown, truthy: string, falsy: string) {
   return "不明";
 }
 
+function formatOptionalNumber(value: unknown) {
+  return typeof value === "number" ? `${value}` : "不明";
+}
+
 function toRecord(details: Record<string, unknown> | null) {
   return details ?? {};
 }
@@ -235,6 +239,24 @@ function detailLinesForEvent(event: LiveMonitorEvent) {
         typeof details.transcriptSummary === "string"
           ? `要約: ${details.transcriptSummary}`
           : null,
+        details.analysisTotalMs !== undefined
+          ? `分析完了まで: ${formatMs(details.analysisTotalMs)}`
+          : null,
+        details.analysisRequestMs !== undefined
+          ? `analysis/run 応答まで: ${formatMs(details.analysisRequestMs)}`
+          : null,
+        details.pollingAttempts !== undefined
+          ? `ポーリング回数: ${formatOptionalNumber(details.pollingAttempts)}回`
+          : null,
+        details.pollingWaitMs !== undefined
+          ? `ポーリング待ち合計: ${formatMs(details.pollingWaitMs)}`
+          : null,
+        details.detailFetchCount !== undefined
+          ? `詳細取得回数: ${formatOptionalNumber(details.detailFetchCount)}回`
+          : null,
+        details.detailFetchMs !== undefined
+          ? `詳細取得合計: ${formatMs(details.detailFetchMs)}`
+          : null,
         typeof details.serviceLine === "string" ? `受付区分: ${details.serviceLine}` : null,
         typeof details.triageLevel === "string" ? `緊急度: ${details.triageLevel}` : null,
         typeof details.patientName === "string" ? `患者名: ${details.patientName}` : null,
@@ -254,6 +276,21 @@ function detailLinesForEvent(event: LiveMonitorEvent) {
         typeof details.transcriptCount === "number"
           ? `文字起こし行数: ${details.transcriptCount}`
           : null,
+        details.analysisRequestMs !== undefined
+          ? `analysis/run 応答まで: ${formatMs(details.analysisRequestMs)}`
+          : null,
+        details.pollingAttempts !== undefined
+          ? `ポーリング回数: ${formatOptionalNumber(details.pollingAttempts)}回`
+          : null,
+        details.pollingWaitMs !== undefined
+          ? `ポーリング待ち合計: ${formatMs(details.pollingWaitMs)}`
+          : null,
+        details.detailFetchCount !== undefined
+          ? `詳細取得回数: ${formatOptionalNumber(details.detailFetchCount)}回`
+          : null,
+        details.detailFetchMs !== undefined
+          ? `詳細取得合計: ${formatMs(details.detailFetchMs)}`
+          : null,
         typeof details.serviceLine === "string" ? `受付区分: ${details.serviceLine}` : null,
         typeof details.triageLevel === "string" ? `緊急度: ${details.triageLevel}` : null,
         typeof details.patientName === "string" ? `患者名: ${details.patientName}` : null,
@@ -263,6 +300,16 @@ function detailLinesForEvent(event: LiveMonitorEvent) {
         typeof details.toNumber === "string" ? `発信先: ${details.toNumber}` : null,
         typeof details.message === "string" ? `結果: ${details.message}` : null,
         typeof details.callSid === "string" ? `Call SID: ${details.callSid}` : null,
+        details.resolvePhoneNumberMs !== undefined
+          ? `発信番号解決まで: ${formatMs(details.resolvePhoneNumberMs)}`
+          : null,
+        details.twilioAccountLookupMs !== undefined
+          ? `Twilio 種別確認まで: ${formatMs(details.twilioAccountLookupMs)}`
+          : null,
+        details.outboundRequestMs !== undefined
+          ? `発信 API 応答まで: ${formatMs(details.outboundRequestMs)}`
+          : null,
+        details.totalMs !== undefined ? `発信処理合計: ${formatMs(details.totalMs)}` : null,
       ]);
     case "appointment":
       return renderLines([

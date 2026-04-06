@@ -39,6 +39,12 @@ export async function POST(request: Request) {
         patientName: result.memo.patient_name,
         bookingStatus: result.memo.booking_status,
         appointmentState: result.appointmentDraft?.submissionState ?? null,
+        analysisRequestMs: result.analysisResolution?.analysisRequestMs ?? null,
+        pollingAttempts: result.analysisResolution?.pollingAttempts ?? null,
+        pollingWaitMs: result.analysisResolution?.pollingWaitMs ?? null,
+        detailFetchCount: result.analysisResolution?.detailFetchCount ?? null,
+        detailFetchMs: result.analysisResolution?.detailFetchMs ?? null,
+        analysisTotalMs: result.analysisResolution?.totalMs ?? null,
       },
     });
 

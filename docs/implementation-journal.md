@@ -2,6 +2,13 @@
 
 ## 2026-04-06
 
+### Checkpoint: 電話発信と analysis polling の時間内訳を可視化
+- Updated [`lib/types.ts`](/C:/Dev/Work/デンタル 一次受付AI/lib/types.ts) to add `outboundMetrics` and `analysisResolution` so timing breakdowns can move through the API layer.
+- Updated [`lib/elevenlabs/api.ts`](/C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/api.ts) so outbound calls now measure `resolvePhoneNumberMs`, `twilioAccountLookupMs`, `outboundRequestMs`, `totalMs`, and conversation analysis now records `analysisRequestMs`, polling attempts, polling wait total, detail fetch total, and overall analysis resolution time.
+- Updated [`app/api/demo/outbound-call/route.ts`](/C:/Dev/Work/デンタル 一次受付AI/app/api/demo/outbound-call/route.ts), [`app/api/eleven/analyze/route.ts`](/C:/Dev/Work/デンタル 一次受付AI/app/api/eleven/analyze/route.ts), and [`app/api/demo/import-last-call/route.ts`](/C:/Dev/Work/デンタル 一次受付AI/app/api/demo/import-last-call/route.ts) to emit those timing details into the live monitor.
+- Updated [`scripts/live-monitor.ts`](/C:/Dev/Work/デンタル 一次受付AI/scripts/live-monitor.ts) and [`components/home-page.tsx`](/C:/Dev/Work/デンタル 一次受付AI/components/home-page.tsx) so the new timing breakdown is visible from the terminal and the outbound result card.
+- Next: cache phone-number resolution and remove Twilio account type lookup from the synchronous outbound critical path.
+
 ### Checkpoint: outbound default number reflects runtime env
 - Added `export const dynamic = "force-dynamic";` to [`app/page.tsx`](/C:/Dev/Work/デンタル 一次受付AI/app/page.tsx) so the top page reads `DEMO_OUTBOUND_TARGET_NUMBER` at request time.
 - Verified `http://localhost:3000` renders `+819047464087` in the outbound number input after restart.

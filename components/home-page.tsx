@@ -1128,6 +1128,22 @@ export function HomePage({
                 {outboundCallResult.warnings.length > 0 ? (
                   <div className="stack-tight">
                     {outboundCallResult.warnings.map((warning) => (
+                  <div>
+                    <dt>resolve phone ms</dt>
+                    <dd>{formatMillis(outboundCallResult.outboundMetrics.resolvePhoneNumberMs)}</dd>
+                  </div>
+                  <div>
+                    <dt>twilio lookup ms</dt>
+                    <dd>{formatMillis(outboundCallResult.outboundMetrics.twilioAccountLookupMs)}</dd>
+                  </div>
+                  <div>
+                    <dt>outbound request ms</dt>
+                    <dd>{formatMillis(outboundCallResult.outboundMetrics.outboundRequestMs)}</dd>
+                  </div>
+                  <div>
+                    <dt>outbound total ms</dt>
+                    <dd>{formatMillis(outboundCallResult.outboundMetrics.totalMs)}</dd>
+                  </div>
                       <p key={warning} className="warning-text">
                         {warning}
                       </p>

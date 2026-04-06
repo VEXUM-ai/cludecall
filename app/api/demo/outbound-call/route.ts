@@ -36,6 +36,10 @@ export async function POST(request: Request) {
         message: result.message,
         twilioAccountType: result.twilioAccountType,
         warnings: result.warnings,
+        resolvePhoneNumberMs: result.outboundMetrics.resolvePhoneNumberMs,
+        twilioAccountLookupMs: result.outboundMetrics.twilioAccountLookupMs,
+        outboundRequestMs: result.outboundMetrics.outboundRequestMs,
+        totalMs: result.outboundMetrics.totalMs,
       },
     });
 

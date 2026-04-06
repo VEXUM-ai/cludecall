@@ -204,6 +204,7 @@ export type AnalyzeConversationResponse = {
   analysis: ConversationAnalysis;
   memo: ReservationMemo;
   appointmentDraft: AppointmentDraft | null;
+  analysisResolution: AnalysisResolutionMetrics | null;
 };
 
 export type LatencySample = {
@@ -265,6 +266,25 @@ export type OutboundCallResult = {
   toNumber: string;
   twilioAccountType: string | null;
   warnings: string[];
+  outboundMetrics: OutboundCallMetrics;
+};
+
+export type AnalysisResolutionMetrics = {
+  analysisRequestMs: number;
+  pollingAttempts: number;
+  pollingWaitMs: number;
+  detailFetchCount: number;
+  detailFetchMs: number;
+  totalMs: number;
+};
+
+export type OutboundCallMetrics = {
+  resolvePhoneNumberMs: number;
+  phoneNumberCacheHit: boolean;
+  twilioAccountLookupMs: number | null;
+  twilioAccountTypeCacheHit: boolean | null;
+  outboundRequestMs: number;
+  totalMs: number;
 };
 
 export type AudioDiagnostics = {

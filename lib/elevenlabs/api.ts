@@ -15,6 +15,7 @@ import {
 } from "@/lib/elevenlabs/memo";
 import type {
   AnalyzeConversationResponse,
+  AnalysisResolutionMetrics,
   ConversationHistoryDetail,
   ConversationHistorySummary,
   DemoRun,
@@ -78,6 +79,10 @@ const twilioAccountSchema = z.object({
 
 type ConversationDetails = z.infer<typeof conversationDetailsSchema>;
 type ConversationListItem = z.infer<typeof listConversationsSchema>["conversations"][number];
+type TimedResult<T> = {
+  result: T;
+  elapsedMs: number;
+};
 
 export class ElevenLabsApiError extends Error {
   constructor(
@@ -161,6 +166,15 @@ function nodeRequestJson(
 
     request.end();
   });
+}
+
+async function measureAsync<T>(operation: () => Promise<T>): Promise<TimedResult<T>> {
+  const startedAt = Date.now();
+  const result = await operation();
+  return {
+    result,
+    elapsedMs: Date.now() - startedAt,
+  };
 }
 
 async function elevenLabsFetch<T>(
@@ -293,7 +307,8 @@ function buildBaseAnalyzeResponse(details: ConversationDetails) {
 }
 
 async function normalizeAnalyzeResponse(
-  details: ConversationDetails
+  details: ConversationDetails,
+  analysisResolution: AnalysisResolutionMetrics | null = null
 ): Promise<AnalyzeConversationResponse> {
   const base = buildBaseAnalyzeResponse(details);
   const metadata =
@@ -314,11 +329,15 @@ async function normalizeAnalyzeResponse(
       anchorAt: toIsoFromUnix(metadata.start_time_unix_secs),
       storedDraft,
     }),
+    analysisResolution,
   };
 }
 
-async function normalizeDemoRun(details: ConversationDetails): Promise<DemoRun> {
-  const base = await normalizeAnalyzeResponse(details);
+async function normalizeDemoRun(
+  details: ConversationDetails,
+  analysisResolution: AnalysisResolutionMetrics | null = null
+): Promise<DemoRun> {
+  const base = await normalizeAnalyzeResponse(details, analysisResolution);
   const metadata =
     details.metadata && typeof details.metadata === "object" ? details.metadata : {};
   const phoneCall =
@@ -352,6 +371,7 @@ async function normalizeDemoRun(details: ConversationDetails): Promise<DemoRun> 
       channel: phoneCall ? "phone" : "web",
       transport: phoneCall ? "telephony" : "unknown",
       transcript: base.transcript,
+      analysisMs: analysisResolution?.totalMs ?? null,
     }),
   };
 }
@@ -405,15 +425,42 @@ function summarizeConversationSource(item: ConversationListItem, details: Conver
   return "web";
 }
 
-async function resolveConversationRun(conversationId: string): Promise<ConversationDetails> {
-  let details = await runConversationAnalysis(conversationId);
+async function resolveConversationRun(
+  conversationId: string
+): Promise<{
+  details: ConversationDetails;
+  analysisResolution: AnalysisResolutionMetrics;
+}> {
+  const totalStartedAt = Date.now();
+  const initial = await measureAsync(() => runConversationAnalysis(conversationId));
+  let details = initial.result;
+  let pollingAttempts = 0;
+  let pollingWaitMs = 0;
+  let detailFetchCount = 0;
+  let detailFetchMs = 0;
 
   for (let attempt = 0; attempt < 10 && !hasAnalysis(details); attempt += 1) {
+    pollingAttempts += 1;
+    const waitStartedAt = Date.now();
     await sleep(1500);
-    details = await getConversationDetails(conversationId);
+    pollingWaitMs += Date.now() - waitStartedAt;
+    const detailResponse = await measureAsync(() => getConversationDetails(conversationId));
+    detailFetchCount += 1;
+    detailFetchMs += detailResponse.elapsedMs;
+    details = detailResponse.result;
   }
 
-  return details;
+  return {
+    details,
+    analysisResolution: {
+      analysisRequestMs: initial.elapsedMs,
+      pollingAttempts,
+      pollingWaitMs,
+      detailFetchCount,
+      detailFetchMs,
+      totalMs: Date.now() - totalStartedAt,
+    },
+  };
 }
 
 export async function getConversationToken(agentId?: string): Promise<string> {
@@ -511,6 +558,7 @@ async function getTwilioAccountType(): Promise<string | null> {
 }
 
 export async function startOutboundCall(toNumber: string): Promise<OutboundCallResult> {
+  const totalStartedAt = Date.now();
   const config = getServerConfig();
   if (isSamePhoneNumber(toNumber, config.agentPhoneNumber) || isSamePhoneNumber(toNumber, config.twilioCallerId)) {
     throw new Error(
@@ -518,20 +566,26 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
     );
   }
 
-  const phoneNumber = await resolveAgentPhoneNumber();
-  const twilioAccountType = await getTwilioAccountType();
-  const response = await elevenLabsFetch(
-    buildApiUrl("convai/twilio/outbound-call"),
-    {
-      method: "POST",
-      body: JSON.stringify({
-        agent_id: config.agentId,
-        agent_phone_number_id: phoneNumber.phone_number_id,
-        to_number: toNumber,
-      }),
-    },
-    outboundCallSchema
+  const phoneNumberResult = await measureAsync(() => resolveAgentPhoneNumber());
+  const twilioAccountTypeResult = await measureAsync(() => getTwilioAccountType());
+  const outboundResponse = await measureAsync(() =>
+    elevenLabsFetch(
+      buildApiUrl("convai/twilio/outbound-call"),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          agent_id: config.agentId,
+          agent_phone_number_id: phoneNumberResult.result.phone_number_id,
+          to_number: toNumber,
+        }),
+      },
+      outboundCallSchema
+    )
   );
+  const response = outboundResponse.result;
+  const phoneNumber = phoneNumberResult.result;
+  const twilioAccountType = twilioAccountTypeResult.result;
+  const totalMs = Date.now() - totalStartedAt;
 
   const warnings: string[] = [];
   if (twilioAccountType?.toLowerCase() === "trial") {
@@ -550,6 +604,14 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
     toNumber,
     twilioAccountType,
     warnings,
+    outboundMetrics: {
+      resolvePhoneNumberMs: phoneNumberResult.elapsedMs,
+      phoneNumberCacheHit: false,
+      twilioAccountLookupMs: twilioAccountTypeResult.elapsedMs,
+      twilioAccountTypeCacheHit: false,
+      outboundRequestMs: outboundResponse.elapsedMs,
+      totalMs,
+    },
   };
 }
 
@@ -575,19 +637,19 @@ export async function runConversationAnalysis(conversationId: string) {
 export async function analyzeConversation(
   conversationId: string
 ): Promise<AnalyzeConversationResponse> {
-  const details = await resolveConversationRun(conversationId);
-  return normalizeAnalyzeResponse(details);
+  const resolved = await resolveConversationRun(conversationId);
+  return normalizeAnalyzeResponse(resolved.details, resolved.analysisResolution);
 }
 
 export async function getConversationHistoryDetail(
   conversationId: string
 ): Promise<ConversationHistoryDetail> {
-  const details = await resolveConversationRun(conversationId);
+  const resolved = await resolveConversationRun(conversationId);
   const recent = await listConversations(20);
   const matched = recent.conversations.find(
     (item) => item.conversation_id === conversationId
   );
-  const run = await normalizeDemoRun(details);
+  const run = await normalizeDemoRun(resolved.details, resolved.analysisResolution);
 
   return {
     ...run,
@@ -597,14 +659,14 @@ export async function getConversationHistoryDetail(
         conversation_initiation_source: undefined,
         start_time_unix_secs: undefined,
         call_duration_secs: undefined,
-        status: details.status,
+        status: resolved.details.status,
         call_successful: undefined,
         agent_name: undefined,
-        agent_id: details.agent_id,
+        agent_id: resolved.details.agent_id,
       },
-      details
+      resolved.details
     ),
-    status: details.status ?? "unknown",
+    status: resolved.details.status ?? "unknown",
   };
 }
 
@@ -663,8 +725,8 @@ async function findMostRecentPhoneConversationId(): Promise<string> {
 
 export async function importLatestPhoneCall(conversationId?: string): Promise<DemoRun> {
   const targetConversationId = conversationId ?? (await findMostRecentPhoneConversationId());
-  const details = await resolveConversationRun(targetConversationId);
-  const run = await normalizeDemoRun(details);
+  const resolved = await resolveConversationRun(targetConversationId);
+  const run = await normalizeDemoRun(resolved.details, resolved.analysisResolution);
   if (run.latency) {
     await writeLatencySample(run.latency);
   }
