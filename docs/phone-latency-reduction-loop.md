@@ -348,3 +348,38 @@
 - Gemini Live API overview: https://ai.google.dev/gemini-api/docs/live
 - Gemini Live API capabilities guide: https://ai.google.dev/gemini-api/docs/live-guide
 - Gemini ephemeral tokens: https://ai.google.dev/gemini-api/docs/ephemeral-tokens
+
+## 2026-04-07 update
+
+- Latest phone samples still show meaningful headroom in mid-call latency: `avg_reply_after_user_ms = 4905`, with recent runs at `3167 / 5063 / 5500 / 5889ms` and one `firstAgentReplyAfterUserMs = 12000`.
+- Current outbound setup is already relatively small: recent `totalMs` is roughly `530-818ms`, and the remaining local miss on `resolveAgentPhoneNumber()` is about `0.2s`.
+- The live agent was still heavier before this update: `turn_timeout = 8`, `turn_eagerness = normal`, `max_tokens = 180`, `tts.speed = 0.95`, `tts.model_id = eleven_v3_conversational`, `monitoring_enabled = false`, and the applied prompt length was about `9749` characters.
+
+### What still looks reducible without architecture change
+
+- Shorten the agent prompt and keep the fast overlay concise. ElevenLabs recommends concise prompts, and Google recommends shorter prompts plus tighter output limits for lower TTFT/TTLT.
+- Reduce output length first. In this repo, `max_tokens` is a direct and low-risk lever compared with reintroducing `eager`.
+- Keep conversational pacing normal, but avoid artificially slow speech. `tts.speed = 0.95` makes the call feel slower even when backend latency is unchanged.
+- Keep `turn_eagerness = normal` globally, and reserve more patient turn-taking only for structured collection turns such as names, phone numbers, and appointment slots.
+- Separate live call latency from post-call analysis latency. The current `analysisMs` is often `9-19s`, but that is not the same KPI as user-perceived response time.
+
+### What likely needs architecture change
+
+- Twilio edge/media-path tuning becomes much more meaningful only after moving to Twilio-controlled streaming telephony such as ConversationRelay or Media Streams.
+- If we want direct control over `connect_ms`, `first_audio_ms`, barge-in, and regional media placement, the next step is a Twilio streaming bridge rather than more patching around managed ElevenLabs outbound telephony.
+
+### Implemented this round
+
+- Reduced the repo default `max_tokens` from `180` to `120`.
+- Rewrote the speed overlay prompt into a much shorter rule set focused on one-question turns, no rapid-fire after hesitations, and no repeated confirmations.
+- Kept repo default TTS speed at `1.0` and preserved `turn_eagerness = normal`.
+- Made phone import stop waiting on transcript mirroring before responding.
+- Added optional Twilio region-aware REST base URL support through `TWILIO_API_EDGE` + `TWILIO_API_REGION`.
+- Re-applied the agent config, and the live agent now reflects `turn_timeout = 7`, `turn_eagerness = normal`, `max_tokens = 120`, `tts.speed = 1.0`, and `monitoring_enabled = false`.
+
+### Recommended next experiments
+
+1. Apply the updated branch config and publish it, then run 3-5 real phone calls with the same script.
+2. Compare `max_tokens = 120` against the previous branch with the same call script and record `firstAgentReplyAfterUserMs`, `averageAgentReplyAfterUserMs`, and subjective pacing.
+3. If the call still feels slightly slow after prompt/output slimming, test `eleven_flash_v2_5` against `eleven_v3_conversational` as a latency-first branch.
+4. Only after the above, decide whether Twilio ConversationRelay / Media Streams PoC is justified.

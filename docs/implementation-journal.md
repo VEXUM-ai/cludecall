@@ -100,3 +100,13 @@
 ### Checkpoint: agent monitoring can be enabled via API
 - Confirmed the current agent exposes `conversation_config.conversation.monitoring_enabled` via the ElevenLabs agent API, and it was `false`.
 - Updated `scripts/apply-agent-demo-config.ts` so future agent config syncs force `monitoring_enabled: true` and preserve `monitoring_events`.
+
+### Checkpoint: latency headroom review after six-way parallel research
+- Pulled six parallel research tracks across repo analysis plus official ElevenLabs, Twilio, and Google docs, then compared them against the current phone metrics.
+- Confirmed that outbound setup is already relatively small in the current architecture, while the largest remaining user-facing delay is mid-call `reply_after_user` latency.
+- Queried the live ElevenLabs agent before the update and confirmed it was still heavier than the repo defaults: `turn_timeout = 8`, `turn_eagerness = normal`, `max_tokens = 180`, `tts.speed = 0.95`, `tts.model_id = eleven_v3_conversational`, `monitoring_enabled = false`, and prompt length was about `9749` characters.
+- Updated [`lib/agent-speed-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-speed-config.ts) to trim the speed overlay significantly and reduce `DENTAL_DEMO_FAST_MAX_TOKENS` from `180` to `120` while keeping normal pacing defaults.
+- Updated [`app/api/demo/import-last-call/route.ts`](/C:/Dev/Work/デンタル%20一次受付AI/app/api/demo/import-last-call/route.ts) so phone import no longer blocks on transcript mirroring before returning the API response.
+- Updated [`lib/elevenlabs/api.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/elevenlabs/api.ts) to allow optional Twilio region-aware REST calls via `TWILIO_API_EDGE` and `TWILIO_API_REGION`.
+- Re-ran `npm run agent:apply-demo-config` successfully. The live agent now reflects `turn_timeout = 7`, `turn_eagerness = normal`, `max_tokens = 120`, `tts.speed = 1.0`, `tts.model_id = eleven_v3_conversational`, and `monitoring_enabled = false`.
+- Decision: stay on the current managed telephony path for now, apply the lighter branch config, and only escalate to Twilio ConversationRelay / Media Streams if the slimmer prompt and shorter outputs still miss the latency target.

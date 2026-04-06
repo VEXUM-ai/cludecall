@@ -23,7 +23,7 @@ import type {
 } from "@/lib/types";
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
-const TWILIO_API_BASE = "https://api.twilio.com/2010-04-01";
+const TWILIO_DEFAULT_API_BASE = "https://api.twilio.com/2010-04-01";
 const ELEVENLABS_HTTPS_AGENT = new HttpsAgent({ keepAlive: true });
 const OUTBOUND_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -126,7 +126,14 @@ function buildApiUrl(
 }
 
 function buildTwilioApiUrl(pathname: string) {
-  return new URL(pathname, `${TWILIO_API_BASE}/`);
+  const edge = process.env.TWILIO_API_EDGE?.trim();
+  const region = process.env.TWILIO_API_REGION?.trim();
+  const baseUrl =
+    edge && region
+      ? `https://api.${edge}.${region}.twilio.com/2010-04-01`
+      : TWILIO_DEFAULT_API_BASE;
+
+  return new URL(pathname, `${baseUrl}/`);
 }
 
 function readCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {

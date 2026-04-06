@@ -12,6 +12,33 @@ const requestSchema = z
   })
   .optional();
 
+function queueTranscriptMirror(run: Awaited<ReturnType<typeof importLatestPhoneCall>>) {
+  void appendLiveMonitorEvents(
+    run.transcript.map((entry) => ({
+      kind: entry.role === "agent" ? "agent" : "user",
+      channel: "phone" as const,
+      level: "info" as const,
+      conversationId: run.conversationId,
+      message: entry.text,
+      details: {
+        tentative: entry.tentative,
+        timeInCallSecs: entry.timeInCallSecs,
+      },
+    }))
+  ).catch(async (error) => {
+    await appendLiveMonitorEvent({
+      kind: "error",
+      channel: "phone",
+      level: "error",
+      conversationId: run.conversationId,
+      message: `phone transcript mirror failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      details: null,
+    });
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const json =
@@ -76,19 +103,7 @@ export async function POST(request: Request) {
       });
     }
 
-    await appendLiveMonitorEvents(
-      run.transcript.map((entry) => ({
-        kind: entry.role === "agent" ? "agent" : "user",
-        channel: "phone" as const,
-        level: "info" as const,
-        conversationId: run.conversationId,
-        message: entry.text,
-        details: {
-          tentative: entry.tentative,
-          timeInCallSecs: entry.timeInCallSecs,
-        },
-      }))
-    );
+    queueTranscriptMirror(run);
 
     return NextResponse.json(run);
   } catch (error) {

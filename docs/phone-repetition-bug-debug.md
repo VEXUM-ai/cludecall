@@ -118,7 +118,7 @@ Result:
 ## Current remote state
 
 - `npm run agent:apply-demo-config` now succeeds by retrying without `monitoring_enabled` when ElevenLabs returns `monitoring_enterprise_only`.
-- The remote agent is updated with `turn_timeout = 8`, `turn_eagerness = normal`, `tts.speed = 0.95`, and `expressive_mode = false`.
+- The remote agent is updated with `turn_timeout = 7`, `turn_eagerness = normal`, `tts.speed = 1.0`, `max_tokens = 120`, and `expressive_mode = false`.
 - Realtime monitoring remains unavailable on the current plan, so phone monitoring is now skipped proactively instead of opening a WebSocket that immediately dies with `close_1008`.
 
 Branch/versioning notes from the docs:
