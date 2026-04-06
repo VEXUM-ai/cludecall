@@ -29,3 +29,6 @@
 - Updated the analysis, latency, phone import, outbound, and appointment confirm API routes to emit readable monitor events with structured details for analysis, collection, outbound, appointment, and latency stages.
 - Updated `scripts/live-monitor.ts` to expand `details` as multi-line blocks inside `npm run monitor:live`, so response metrics are visible in the terminal without opening the UI.
 - Validation: `npm run lint` and `npm run build` succeeded. The app is serving again at `http://localhost:3000`, and a fresh `npm run monitor:live -- --history` terminal was launched with a `monitor ready` event.
+### Checkpoint: terminal monitor labels simplified to Japanese
+- Updated `scripts/live-monitor.ts` so the terminal now shows `患者`, `AI`, `応答速度`, `収集結果`, `発信`, `仮受付` as simple Japanese labels instead of developer-facing English tags.
+- The monitor now translates common session messages into plain Japanese and surfaces only the key fields people care about, such as `接続完了まで`, `AI初回応答まで`, `患者発話からAI平均応答まで`, and `通話後の収集時間`.

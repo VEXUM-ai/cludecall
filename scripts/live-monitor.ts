@@ -31,36 +31,6 @@ function timestampLabel(at: string) {
   }).format(new Date(at));
 }
 
-function kindLabel(event: LiveMonitorEvent) {
-  switch (event.kind) {
-    case "user":
-      return colorize("USER ", "cyan");
-    case "agent":
-      return colorize("AGENT", "green");
-    case "latency":
-      return colorize("LAT  ", "magenta");
-    case "analysis":
-      return colorize("ANALY", "yellow");
-    case "collection":
-      return colorize("COLL ", "yellow");
-    case "outbound":
-      return colorize("CALL ", "cyan");
-    case "appointment":
-      return colorize("APPT ", "magenta");
-    case "error":
-      return colorize("ERROR", "red");
-    default:
-      return colorize("INFO ", "dim");
-  }
-}
-
-function formatConversationId(conversationId: string | null) {
-  if (!conversationId) {
-    return colorize("------------", "dim");
-  }
-  return colorize(conversationId.slice(0, 12).padEnd(12, "."), "dim");
-}
-
 function wrapText(text: string, width = MAX_TEXT_WIDTH) {
   const normalized = text.replace(/\s+/g, " ").trim();
   if (normalized.length <= width) {
@@ -87,90 +57,253 @@ function wrapText(text: string, width = MAX_TEXT_WIDTH) {
   return lines.filter(Boolean);
 }
 
-function formatValue(value: unknown, indent = 2): string[] {
-  const prefix = " ".repeat(indent);
-
-  if (value === null) {
-    return [`${prefix}null`];
-  }
-
-  if (typeof value === "string") {
-    return wrapText(value).map((line, index) =>
-      index === 0 ? `${prefix}${line}` : `${prefix}${line}`
-    );
-  }
-
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return [`${prefix}${String(value)}`];
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return [`${prefix}[]`];
-    }
-
-    const lines: string[] = [];
-    for (const item of value) {
-      const rendered = formatValue(item, indent + 2);
-      lines.push(`${prefix}- ${rendered[0]?.trimStart() ?? ""}`);
-      for (const continuation of rendered.slice(1)) {
-        lines.push(continuation);
-      }
-    }
-    return lines;
-  }
-
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length === 0) {
-      return [`${prefix}{}`];
-    }
-
-    const lines: string[] = [];
-    for (const [key, item] of entries) {
-      const rendered = formatValue(item, indent + 2);
-      lines.push(`${prefix}${key}: ${rendered[0]?.trimStart() ?? ""}`);
-      for (const continuation of rendered.slice(1)) {
-        lines.push(continuation);
-      }
-    }
-    return lines;
-  }
-
-  return [`${prefix}${String(value)}`];
+function formatMs(value: unknown) {
+  return typeof value === "number" ? `${value}ms` : "不明";
 }
 
-function formatDetails(details: Record<string, unknown> | null) {
-  if (!details || Object.keys(details).length === 0) {
-    return [];
+function formatBool(value: unknown, truthy: string, falsy: string) {
+  if (value === true) {
+    return truthy;
   }
-
-  const lines: string[] = [colorize("  details", "white")];
-  for (const [key, value] of Object.entries(details)) {
-    const rendered = formatValue(value, 4);
-    lines.push(`${colorize("    " + key + ":", "dim")} ${rendered[0]?.trimStart() ?? ""}`);
-    for (const continuation of rendered.slice(1)) {
-      lines.push(continuation);
-    }
+  if (value === false) {
+    return falsy;
   }
-  return lines;
+  return "不明";
 }
 
-function formatMessage(event: LiveMonitorEvent) {
-  const raw = event.message.trim();
-  if (!raw) {
-    return ["  (no message)"];
+function toRecord(details: Record<string, unknown> | null) {
+  return details ?? {};
+}
+
+function labelColor(event: LiveMonitorEvent) {
+  switch (event.kind) {
+    case "user":
+      return "cyan";
+    case "agent":
+      return "green";
+    case "latency":
+      return "magenta";
+    case "analysis":
+    case "collection":
+    case "session":
+      return "yellow";
+    case "outbound":
+      return "cyan";
+    case "appointment":
+      return "magenta";
+    case "error":
+      return "red";
+    default:
+      return "white";
   }
-  return wrapText(raw).map((line) => `  ${line}`);
+}
+
+function eventLabel(event: LiveMonitorEvent) {
+  switch (event.kind) {
+    case "user":
+      return "患者";
+    case "agent":
+      return event.details?.tentative === true ? "AI(仮応答)" : "AI";
+    case "latency":
+      return "応答速度";
+    case "analysis":
+      return "収集結果";
+    case "collection":
+      return "電話取込";
+    case "outbound":
+      return "発信";
+    case "appointment":
+      return "仮受付";
+    case "error":
+      return "エラー";
+    default:
+      return "状態";
+  }
+}
+
+function translateMessage(message: string) {
+  const exact: Record<string, string> = {
+    "web conversation start requested": "Web会話を開始",
+    "browser audio unlocked": "ブラウザ音声の準備完了",
+    "browser audio still locked": "ブラウザ音声の準備待ち",
+    "microphone permission granted": "マイク許可済み",
+    "session started via webrtc": "WebRTCで接続開始",
+    "session started via websocket": "WebSocketで接続開始",
+    "webrtc failed, falling back to websocket": "WebRTC失敗のためWebSocketに切替",
+    "websocket fallback connected": "WebSocketで接続完了",
+    "conversation connected": "会話に接続",
+    "conversation stop requested": "会話終了を要求",
+    "analysis requested": "通話後の収集を開始",
+    "analysis completed": "収集完了",
+    "conversation fully processed": "処理完了",
+    "web analysis requested": "Web会話の収集を開始",
+    "phone import requested": "電話会話の取込を開始",
+    "phone analysis imported": "電話会話の取込完了",
+    "outbound requested": "発信を開始",
+    "outbound accepted": "発信API受付完了",
+    "appointment confirmation requested": "仮受付の確認を開始",
+    "appointment draft confirmed": "仮受付の確認完了",
+    "latency sample recorded": "応答速度を記録",
+    "monitor ready": "モニター準備完了",
+  };
+
+  if (exact[message]) {
+    return exact[message];
+  }
+  if (message.startsWith("conversation error: ")) {
+    return `会話エラー: ${message.replace("conversation error: ", "")}`;
+  }
+  if (message.startsWith("analysis failed: ")) {
+    return `収集失敗: ${message.replace("analysis failed: ", "")}`;
+  }
+  if (message.startsWith("start failed: ")) {
+    return `開始失敗: ${message.replace("start failed: ", "")}`;
+  }
+  if (message.startsWith("stop or analysis failed: ")) {
+    return `終了または収集失敗: ${message.replace("stop or analysis failed: ", "")}`;
+  }
+  if (message.startsWith("phone import failed: ")) {
+    return `電話取込失敗: ${message.replace("phone import failed: ", "")}`;
+  }
+  if (message.startsWith("outbound failed: ")) {
+    return `発信失敗: ${message.replace("outbound failed: ", "")}`;
+  }
+  if (message.startsWith("appointment confirmation failed: ")) {
+    return `仮受付確認失敗: ${message.replace("appointment confirmation failed: ", "")}`;
+  }
+  return message;
+}
+
+function formatConversationId(conversationId: string | null) {
+  if (!conversationId) {
+    return "";
+  }
+  return `  会話ID: ${conversationId.slice(0, 12)}`;
+}
+
+function renderLines(lines: Array<string | null | undefined>) {
+  return lines
+    .filter((line): line is string => Boolean(line && line.trim()))
+    .flatMap((line) => wrapText(line).map((wrapped) => `  ${wrapped}`));
+}
+
+function preferredSlotsSummary(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null;
+  }
+  const labels = value
+    .map((slot) => {
+      if (!slot || typeof slot !== "object") {
+        return null;
+      }
+      const entry = slot as Record<string, unknown>;
+      const date = typeof entry.date === "string" ? entry.date : null;
+      const timeRange = typeof entry.timeRange === "string" ? entry.timeRange : null;
+      return [date, timeRange].filter(Boolean).join(" ");
+    })
+    .filter((entry): entry is string => Boolean(entry));
+
+  return labels.length > 0 ? labels.join(" / ") : null;
+}
+
+function detailLinesForEvent(event: LiveMonitorEvent) {
+  const details = toRecord(event.details);
+
+  switch (event.kind) {
+    case "user":
+    case "agent":
+      return renderLines([
+        `経過: ${formatMs(details.elapsedMs)}`,
+        event.kind === "agent" && details.replyAfterUserMs !== undefined
+          ? `前の患者発話からAI応答まで: ${formatMs(details.replyAfterUserMs)}`
+          : null,
+      ]);
+    case "latency":
+      return renderLines([
+        `接続完了まで: ${formatMs(details.connectMs)}`,
+        `AI初回応答まで: ${formatMs(details.firstAgentResponseMs)}`,
+        `患者発話からAI平均応答まで: ${formatMs(details.averageAgentReplyAfterUserMs)}`,
+        `通話後の収集時間: ${formatMs(details.analysisMs)}`,
+      ]);
+    case "analysis":
+      return renderLines([
+        typeof details.transcriptSummary === "string"
+          ? `要約: ${details.transcriptSummary}`
+          : null,
+        typeof details.serviceLine === "string" ? `受付区分: ${details.serviceLine}` : null,
+        typeof details.triageLevel === "string" ? `緊急度: ${details.triageLevel}` : null,
+        typeof details.patientName === "string" ? `患者名: ${details.patientName}` : null,
+        typeof details.bookingStatus === "string" ? `予約状態: ${details.bookingStatus}` : null,
+        typeof details.appointmentState === "string"
+          ? `仮受付ステータス: ${details.appointmentState}`
+          : null,
+      ]);
+    case "collection":
+      return renderLines([
+        typeof details.requestedConversationId === "string"
+          ? `指定会話ID: ${details.requestedConversationId}`
+          : null,
+        typeof details.durationSecs === "number"
+          ? `通話時間: ${details.durationSecs}秒`
+          : null,
+        typeof details.transcriptCount === "number"
+          ? `文字起こし行数: ${details.transcriptCount}`
+          : null,
+        typeof details.serviceLine === "string" ? `受付区分: ${details.serviceLine}` : null,
+        typeof details.triageLevel === "string" ? `緊急度: ${details.triageLevel}` : null,
+        typeof details.patientName === "string" ? `患者名: ${details.patientName}` : null,
+      ]);
+    case "outbound":
+      return renderLines([
+        typeof details.toNumber === "string" ? `発信先: ${details.toNumber}` : null,
+        typeof details.message === "string" ? `結果: ${details.message}` : null,
+        typeof details.callSid === "string" ? `Call SID: ${details.callSid}` : null,
+      ]);
+    case "appointment":
+      return renderLines([
+        typeof details.patientName === "string" ? `患者名: ${details.patientName}` : null,
+        typeof details.serviceLine === "string" ? `受付区分: ${details.serviceLine}` : null,
+        typeof details.triageLevel === "string" ? `緊急度: ${details.triageLevel}` : null,
+        typeof details.submissionState === "string"
+          ? `登録状態: ${details.submissionState}`
+          : null,
+        preferredSlotsSummary(details.preferredSlots)
+          ? `希望日時: ${preferredSlotsSummary(details.preferredSlots)}`
+          : null,
+      ]);
+    case "session":
+      return renderLines([
+        typeof details.requestedTransport === "string"
+          ? `接続方式: ${details.requestedTransport}`
+          : null,
+        typeof details.transport === "string" ? `接続方式: ${details.transport}` : null,
+        details.connectMs !== undefined ? `接続完了まで: ${formatMs(details.connectMs)}` : null,
+        Array.isArray(details.responseMetrics)
+          ? `表示指標: ${details.responseMetrics.join(", ")}`
+          : null,
+        Array.isArray(details.transcript)
+          ? `表示内容: ${details.transcript.join(", ")}`
+          : null,
+        typeof details.note === "string" ? details.note : null,
+      ]);
+    case "error":
+      return renderLines([
+        typeof details.message === "string" ? details.message : null,
+      ]);
+    default:
+      return [];
+  }
 }
 
 function renderEvent(event: LiveMonitorEvent) {
   const time = timestampLabel(event.at);
-  const channel = event.channel.toUpperCase().padEnd(6, " ");
-  const header = `${colorize(`[${time}]`, "dim")} ${kindLabel(event)} ${colorize(channel, "bold")} ${formatConversationId(event.conversationId)}`;
-  const messageLines = formatMessage(event);
-  const detailLines = formatDetails(event.details);
-  return [header, ...messageLines, ...detailLines].join("\n");
+  const header = `${colorize(`[${time}]`, "dim")} ${colorize(eventLabel(event), labelColor(event))}`;
+  const lines = [
+    header,
+    ...renderLines([translateMessage(event.message), formatConversationId(event.conversationId)]),
+    ...detailLinesForEvent(event),
+  ];
+  return lines.join("\n");
 }
 
 async function ensureLogFile() {
@@ -195,9 +328,9 @@ async function main() {
   let position = showHistory ? 0 : initialStats.size;
   let remainder = "";
 
-  process.stdout.write(`${colorize("Dental Live Monitor", "green")} ${colorize(logPath, "dim")}\n`);
+  process.stdout.write(`${colorize("会話モニター", "green")} ${colorize(logPath, "dim")}\n`);
   process.stdout.write(
-    `${colorize("Mode:", "yellow")} ${showHistory ? "history + tail" : "tail only"}  ${colorize("Ctrl+C", "yellow")} to stop\n\n`
+    `${colorize("表示モード:", "yellow")} ${showHistory ? "履歴あり" : "新着のみ"}  ${colorize("Ctrl+C", "yellow")} で停止\n\n`
   );
 
   async function readNewContent() {
@@ -229,7 +362,7 @@ async function main() {
           const event = JSON.parse(trimmed) as LiveMonitorEvent;
           process.stdout.write(`${renderEvent(event)}\n\n`);
         } catch {
-          process.stdout.write(`${colorize("PARSE", "red")} ${trimmed}\n\n`);
+          process.stdout.write(`${colorize("ログ解析失敗", "red")} ${trimmed}\n\n`);
         }
       }
     } finally {
@@ -247,7 +380,7 @@ async function main() {
 
   process.on("SIGINT", () => {
     clearInterval(interval);
-    process.stdout.write(`\n${colorize("Live monitor stopped.", "yellow")}\n`);
+    process.stdout.write(`\n${colorize("会話モニターを停止しました。", "yellow")}\n`);
     process.exit(0);
   });
 }
