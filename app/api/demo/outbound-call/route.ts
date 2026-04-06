@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { ElevenLabsApiError, startOutboundCall } from "@/lib/elevenlabs/api";
+import { appendLiveMonitorEvent } from "@/lib/live-monitor";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,28 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   try {
     const body = requestSchema.parse(await request.json());
+    await appendLiveMonitorEvent({
+      kind: "outbound",
+      channel: "phone",
+      level: "info",
+      conversationId: null,
+      message: `発信開始: ${body.toNumber}`,
+      details: { toNumber: body.toNumber },
+    });
     const result = await startOutboundCall(body.toNumber);
+    await appendLiveMonitorEvent({
+      kind: "outbound",
+      channel: "phone",
+      level: result.success ? "success" : "warning",
+      conversationId: result.conversationId,
+      message: `発信結果: ${result.message}`,
+      details: {
+        callSid: result.callSid,
+        toNumber: result.toNumber,
+        twilioAccountType: result.twilioAccountType,
+        warnings: result.warnings,
+      },
+    });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -25,6 +47,14 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error ? error.message : "Failed to start the outbound call.";
     const status = error instanceof ElevenLabsApiError ? error.status : 500;
+    await appendLiveMonitorEvent({
+      kind: "error",
+      channel: "phone",
+      level: "error",
+      conversationId: null,
+      message: `発信失敗: ${message}`,
+      details: null,
+    });
 
     return NextResponse.json(
       { error: message },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { analyzeConversation, ElevenLabsApiError } from "@/lib/elevenlabs/api";
+import { appendLiveMonitorEvent } from "@/lib/live-monitor";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,26 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   try {
     const body = requestSchema.parse(await request.json());
+    await appendLiveMonitorEvent({
+      kind: "collection",
+      channel: "web",
+      level: "info",
+      conversationId: body.conversationId,
+      message: "Web会話の収集を開始",
+      details: null,
+    });
     const result = await analyzeConversation(body.conversationId);
+    await appendLiveMonitorEvent({
+      kind: "analysis",
+      channel: "web",
+      level: "success",
+      conversationId: body.conversationId,
+      message: result.analysis.transcriptSummary ?? "Web会話の収集が完了",
+      details: {
+        serviceLine: result.memo.service_line,
+        triageLevel: result.memo.triage_level,
+      },
+    });
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -25,6 +45,14 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error ? error.message : "Failed to analyze conversation.";
     const status = error instanceof ElevenLabsApiError ? error.status : 500;
+    await appendLiveMonitorEvent({
+      kind: "error",
+      channel: "web",
+      level: "error",
+      conversationId: null,
+      message: `Web会話の収集失敗: ${message}`,
+      details: null,
+    });
 
     return NextResponse.json(
       { error: message },

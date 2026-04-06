@@ -9,10 +9,12 @@
     "patch:next-runtime": "tsx scripts/patch-next-runtime.ts",
     "start": "tsx scripts/patch-next-runtime.ts && next start",
     "lint": "eslint .",
-    "demo:import-last-call": "tsx scripts/import-last-call.ts"
+    "demo:import-last-call": "tsx scripts/import-last-call.ts",
+    "monitor:live": "tsx scripts/live-monitor.ts"
   },
   "dependencies": {
     "@elevenlabs/react": "^0.14.3",
+    "@google/genai": "^1.48.0",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

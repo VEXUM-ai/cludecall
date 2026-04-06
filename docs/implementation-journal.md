@@ -17,3 +17,10 @@
 - Wired [`lib/elevenlabs/api.ts`](/C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/api.ts) to use conversation start time as the normalization anchor when available.
 - Updated [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル 一次受付AI/lib/agent-demo-config.ts) so the agent restates relative dates as absolute windows and asks one narrowing follow-up.
 - Validation: `npm run lint`, `npm run build`, `npm run agent:apply-demo-config` all succeeded after the relative date changes.
+
+### In progress: terminal live monitor
+- Added [`lib/live-monitor.ts`](/C:/Dev/Work/デンタル 一次受付AI/lib/live-monitor.ts) and [`app/api/demo/live-monitor/route.ts`](/C:/Dev/Work/デンタル 一次受付AI/app/api/demo/live-monitor/route.ts) to collect realtime monitor events into `artifacts/live-monitor/events.ndjson`.
+- Wired [`components/conversation-provider.tsx`](/C:/Dev/Work/デンタル 一次受付AI/components/conversation-provider.tsx) to stream Web session events, final user lines, final agent lines, analysis completion, and latency summaries into the live monitor.
+- Wired server routes for outbound call, Web analysis, phone import, appointment confirmation, and latency persistence to append monitor events for post-call collection visibility.
+- Added [`scripts/live-monitor.ts`](/C:/Dev/Work/デンタル 一次受付AI/scripts/live-monitor.ts) and `npm run monitor:live` to follow the NDJSON log from a terminal window in realtime.
+- Validation: `npm run lint` and `npm run build` succeeded after the live monitor wiring. The server was restarted and a visible PowerShell window was launched with the monitor script.

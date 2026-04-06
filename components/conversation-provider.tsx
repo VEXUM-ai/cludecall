@@ -181,6 +181,32 @@ function persistLastWorkingTransport(transport: ConversationTransport) {
   }
 }
 
+async function postLiveMonitorEvent(payload: {
+  kind: "session" | "user" | "agent" | "analysis" | "latency" | "error";
+  level?: "info" | "success" | "warning" | "error";
+  conversationId?: string | null;
+  message: string;
+  details?: Record<string, unknown> | null;
+}) {
+  try {
+    await fetch("/api/demo/live-monitor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel: "web",
+        level: payload.level ?? "info",
+        conversationId: payload.conversationId ?? null,
+        kind: payload.kind,
+        message: payload.message,
+        details: payload.details ?? null,
+      }),
+      keepalive: true,
+    });
+  } catch {
+    // Monitoring must not interfere with the conversation flow.
+  }
+}
+
 const ConversationContext = createContext<ConversationContextValue | null>(null);
 
 export function ConversationProvider({ children }: { children: ReactNode }) {
@@ -205,21 +231,33 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const nextTranscriptId = useRef(0);
   const nextSessionEventId = useRef(0);
   const sessionTiming = useRef<SessionTimingState | null>(null);
+  const lastLoggedTranscriptLine = useRef<string | null>(null);
 
   const pushSessionEvent = useCallback(
-    (label: string, level: ConversationEventLogEntry["level"] = "info") => {
+    (
+      label: string,
+      level: ConversationEventLogEntry["level"] = "info",
+      eventConversationId?: string | null
+    ) => {
+      const at = new Date().toISOString();
       nextSessionEventId.current += 1;
       setSessionEvents((current) => [
         {
           id: `session-event-${nextSessionEventId.current}`,
-          at: new Date().toISOString(),
+          at,
           label,
           level,
         },
         ...current,
       ]);
+      void postLiveMonitorEvent({
+        kind: level === "error" ? "error" : "session",
+        level,
+        conversationId: eventConversationId ?? conversationId,
+        message: label,
+      });
     },
-    []
+    [conversationId]
   );
 
   useEffect(() => {
@@ -251,6 +289,17 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       const role = event.source === "ai" ? "agent" : "user";
       if (role === "agent") {
         recordFirstAgentResponse();
+      }
+
+      const transcriptLogKey = `${role}:${text}`;
+      if (lastLoggedTranscriptLine.current !== transcriptLogKey) {
+        lastLoggedTranscriptLine.current = transcriptLogKey;
+        void postLiveMonitorEvent({
+          kind: role,
+          level: "info",
+          conversationId: conversation.getId() ?? conversationId,
+          message: text,
+        });
       }
 
       setTranscript((current) => {
@@ -407,6 +456,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     setIsAnalyzing(true);
     setError(null);
     const analysisStartedAtMs = performance.now();
+    pushSessionEvent(`会話終了後の収集を開始: ${targetConversationId}`);
 
     try {
       const response = await fetch("/api/eleven/analyze", {
@@ -429,6 +479,20 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       startTransition(() => {
         setAnalysisResult(payload as AnalyzeConversationResponse);
       });
+      pushSessionEvent(`収集完了: ${targetConversationId}`, "success");
+      void postLiveMonitorEvent({
+        kind: "analysis",
+        level: "success",
+        conversationId: targetConversationId,
+        message:
+          (payload as AnalyzeConversationResponse).analysis.transcriptSummary ??
+          "分析完了",
+        details: {
+          status: (payload as AnalyzeConversationResponse).status,
+          serviceLine: (payload as AnalyzeConversationResponse).memo.service_line,
+          triageLevel: (payload as AnalyzeConversationResponse).memo.triage_level,
+        },
+      });
 
       const latencyResponse = await fetch("/api/demo/latency", {
         method: "POST",
@@ -450,14 +514,22 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         };
         if (latencyPayload.sample) {
           setLatencySample(latencyPayload.sample);
+          void postLiveMonitorEvent({
+            kind: "latency",
+            level: "info",
+            conversationId: targetConversationId,
+            message: `latency connect=${latencyPayload.sample.connectMs ?? "n/a"}ms / firstAgent=${latencyPayload.sample.firstAgentResponseMs ?? "n/a"}ms / avgReply=${latencyPayload.sample.averageAgentReplyAfterUserMs ?? "n/a"}ms / analysis=${latencyPayload.sample.analysisMs ?? "n/a"}ms`,
+            details: latencyPayload.sample as unknown as Record<string, unknown>,
+          });
         }
       }
     } catch (analysisError) {
-      setError(
+      const message =
         analysisError instanceof Error
           ? analysisError.message
-          : "Failed to analyze conversation."
-      );
+          : "Failed to analyze conversation.";
+      setError(message);
+      pushSessionEvent(`収集失敗: ${message}`, "error");
     } finally {
       setIsAnalyzing(false);
     }
@@ -476,6 +548,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     setLastAudioEventAt(null);
     nextTranscriptId.current = 0;
     nextSessionEventId.current = 0;
+    lastLoggedTranscriptLine.current = null;
 
     const initialTransport = preferredTransport === "websocket" ? "websocket" : "webrtc";
     sessionTiming.current = {

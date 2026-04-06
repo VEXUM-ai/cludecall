@@ -7,6 +7,7 @@ import {
   ElevenLabsApiError,
   getConversationHistoryDetail,
 } from "@/lib/elevenlabs/api";
+import { appendLiveMonitorEvent } from "@/lib/live-monitor";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,14 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   try {
     const body = requestSchema.parse(await request.json());
+    await appendLiveMonitorEvent({
+      kind: "appointment",
+      channel: "system",
+      level: "info",
+      conversationId: body.conversationId,
+      message: "アポツールドラフト確認を開始",
+      details: null,
+    });
     const detail = await getConversationHistoryDetail(body.conversationId);
 
     if (!detail.appointmentDraft) {
@@ -28,6 +37,17 @@ export async function POST(request: Request) {
 
     const draft = confirmAppointmentDraft(detail.appointmentDraft);
     const result = await writeStoredAppointmentDraft(draft);
+    await appendLiveMonitorEvent({
+      kind: "appointment",
+      channel: detail.channel,
+      level: "success",
+      conversationId: body.conversationId,
+      message: `アポツールドラフト確認済み: ${draft.submissionState}`,
+      details: {
+        serviceLine: draft.serviceLine,
+        submissionState: draft.submissionState,
+      },
+    });
 
     return NextResponse.json({
       appointmentDraft: result.draft,
@@ -44,6 +64,14 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error ? error.message : "Failed to confirm the appointment draft.";
     const status = error instanceof ElevenLabsApiError ? error.status : 500;
+    await appendLiveMonitorEvent({
+      kind: "error",
+      channel: "system",
+      level: "error",
+      conversationId: null,
+      message: `アポツールドラフト確認失敗: ${message}`,
+      details: null,
+    });
 
     return NextResponse.json(
       { error: message },
