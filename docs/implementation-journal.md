@@ -1,5 +1,13 @@
 # Implementation Journal
 
+## 2026-04-07
+
+### Checkpoint: Japanese name pronunciation research documented
+- Added [`docs/agent/japanese-name-pronunciation-research.md`](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/japanese-name-pronunciation-research.md) to capture the 2026-04-07 research on how other systems handle Japanese name readings in phone AI.
+- Compared ElevenLabs, Google Cloud, Azure AI Speech, AWS, Twilio, Dialogflow CX, and OpenAI Realtime from primary sources.
+- Conclusion: mainstream stacks do not expose a public `hiragana only transcript` mode for arbitrary Japanese names; the common pattern is to separate STT transcript from the speech-safe reading field and confirm `patient_name_yomi` explicitly.
+- Next: implement `patient_name_yomi`, add a prompt guardrail that blocks kana-unconfirmed kanji name readback, and keep pronunciation dictionaries limited to fixed clinic vocabulary.
+
 ## 2026-04-06
 
 ### Checkpoint: 発信番号解決を cache 化し Twilio 種別確認を並列化
