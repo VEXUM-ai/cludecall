@@ -36,6 +36,10 @@ Implication:
 - The call tail where the user heard the repeated / broken behavior is not captured in realtime monitor logs.
 - The imported transcript also ends significantly before call completion, so the final segment was under-observed.
 
+Official monitor note:
+
+- ElevenLabs docs describe real-time conversation monitoring as an Enterprise feature over `wss://api.elevenlabs.io/v1/convai/conversations/{id}/monitor`.
+
 Recording-derived excerpt from `152s` onward:
 
 ```text
@@ -101,7 +105,7 @@ Result:
 2. Added a rule: same-field clarification is capped at two attempts, after which the issue goes to `unresolved_questions`.
 3. Reordered the flow so callback phone number is collected before the optional second preferred slot.
 4. Changed fast turn eagerness from `eager` to `normal`.
-5. Increased phone turn timeout from `6s` to `8s` so the agent waits longer before deciding the caller finished speaking.
+5. Increased phone turn timeout from `6s` to `7s` so the agent waits longer before deciding the caller finished speaking, while staying close to normal cadence.
 6. Added a rule: if the caller gives only the second-choice date, ask the time once and then leave `preferred_time_range_2 = null` rather than looping.
 7. Added a rule: while collecting the second choice, never resurrect the first-choice confirmation.
 8. Updated the prompt to discard old slot candidates when the caller corrects themselves and to confirm only the latest value.
@@ -112,6 +116,20 @@ Result:
 ## Remaining operational step
 
 `npm run agent:apply-demo-config` is currently failing with `403`, so the local prompt / turn-setting fixes are implemented in code but not yet re-applied to the remote ElevenLabs agent branch.
+
+Official 403 buckets that match this failure mode:
+
+- `forbidden`
+- `insufficient_permissions`
+- `workspace_access_denied`
+- `feature_not_available`
+- `subscription_required`
+
+Branch/versioning notes from the docs:
+
+- versioning is opt-in and must be enabled before branch workflows work as expected
+- branches can be protected with `writer_perms_required` or `admin_perms_required`
+- the update-agent API supports `enable_versioning_if_not_enabled` and branch-scoped updates
 
 ## Next validation
 
