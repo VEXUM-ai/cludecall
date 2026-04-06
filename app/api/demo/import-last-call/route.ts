@@ -54,12 +54,15 @@ export async function POST(request: Request) {
     });
 
     const run = await importLatestPhoneCall(body?.conversationId);
+    const lastTranscriptEntry = run.transcript.length > 0 ? run.transcript[run.transcript.length - 1] : null;
     const lastTranscriptTimeInCallSecs =
-      run.transcript.length > 0 ? run.transcript[run.transcript.length - 1]?.timeInCallSecs : null;
+      lastTranscriptEntry?.timeInCallSecs ?? null;
     const transcriptTailGapSecs =
       typeof run.callMeta.durationSecs === "number" && typeof lastTranscriptTimeInCallSecs === "number"
         ? Math.max(run.callMeta.durationSecs - lastTranscriptTimeInCallSecs, 0)
         : null;
+    const lastTranscriptRole = lastTranscriptEntry?.role ?? null;
+    const lastTranscriptPreview = lastTranscriptEntry?.text?.slice(0, 160) ?? null;
 
     await appendLiveMonitorEvent({
       kind: "collection",
@@ -85,6 +88,8 @@ export async function POST(request: Request) {
         patientNameYomi: run.memo.patient_name_yomi,
         lastTranscriptTimeInCallSecs,
         transcriptTailGapSecs,
+        lastTranscriptRole,
+        lastTranscriptPreview,
       },
     });
 
@@ -99,6 +104,28 @@ export async function POST(request: Request) {
           durationSecs: run.callMeta.durationSecs,
           lastTranscriptTimeInCallSecs,
           transcriptTailGapSecs,
+          lastTranscriptRole,
+          lastTranscriptPreview,
+        },
+      });
+    }
+
+    if (
+      typeof transcriptTailGapSecs === "number" &&
+      transcriptTailGapSecs >= 15 &&
+      lastTranscriptRole === "agent"
+    ) {
+      await appendLiveMonitorEvent({
+        kind: "collection",
+        channel: "phone",
+        level: "warning",
+        conversationId: run.conversationId,
+        message: "phone transcript ended during agent playback",
+        details: {
+          durationSecs: run.callMeta.durationSecs,
+          lastTranscriptTimeInCallSecs,
+          transcriptTailGapSecs,
+          lastTranscriptPreview,
         },
       });
     }

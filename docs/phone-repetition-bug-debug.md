@@ -121,6 +121,32 @@ Result:
 - The remote agent is updated with `turn_timeout = 7`, `turn_eagerness = normal`, `tts.speed = 1.0`, `max_tokens = 120`, and `expressive_mode = false`.
 - Realtime monitoring remains unavailable on the current plan, so phone monitoring is now skipped proactively instead of opening a WebSocket that immediately dies with `close_1008`.
 
+## Recurrence check
+
+- The same family of failure appeared again in `conv_8601knhy0bfef33sqh2fr0w8dn1f`.
+- In that newer call, the imported transcript shows the agent literally saying `お名前の読み方をひらがなで...`, which was traced to our own prompt wording rather than to a model-side hallucination.
+- That call also ended with a `39s` transcript tail gap and the final imported line was an agent closing utterance, which is consistent with a broken end-of-call sequence that kept talking after the user experience had already degraded.
+- Taken together with `conv_1101knhpm2hnf8a949ax2teetp5g`, this is no longer a one-off. We have a recurring class of telephony turn-taking and closing-control failure.
+
+## Similar industry-wide failure modes
+
+These symptoms are not unique to this repo.
+
+- Twilio's latency guide explicitly warns that end-of-turn detection often becomes the longest part of the pipeline and that aggressive endpoint thresholds backfire by making the agent interrupt natural pauses. That is the same failure class as `えっと` or self-corrections being mistaken for a finished turn.
+- ElevenLabs' conversation-flow docs expose dedicated controls for `turn timeout`, `interruptions`, and `turn eagerness`, and explicitly recommend more patient settings for structured information collection such as phone numbers and addresses. The existence of those controls is itself evidence that interruption-sensitive turn-taking is a common production problem.
+- Google's Gemini Live best-practices docs state that when the user interrupts while the model is replying, the client must immediately discard buffered output audio. If you do not clear the already-buffered reply, the agent can keep talking over the user even though the server has already marked the response as interrupted.
+- OpenAI's Realtime VAD docs similarly expose `server_vad` and `semantic_vad` with configurable eagerness and interruption behavior, and note that shorter silence thresholds increase responsiveness but also increase the risk of jumping in on short user pauses.
+- ElevenLabs' TTS help center also notes that excessive break syntax can make speech speed up or introduce artifacts. That is not the main root cause here, but it is a known general class of "suddenly sounds too fast / strange" behavior in voice systems.
+
+## General best-practice countermeasures
+
+1. Treat turn-taking errors as a first-class production risk, not a rare edge case.
+2. Prefer balanced or patient turn-taking during structured intake, even if casual small talk can be more eager.
+3. Keep closing behavior short and idempotent: one short summary, one final close, no repeated close if the line goes quiet.
+4. Clear or cancel any queued audio immediately when the user interrupts.
+5. Skip optional end-of-call questions when silence, hesitation, or line quality deterioration appears.
+6. Make prompt instructions terse and explicit so the model is not simultaneously told to be fast, polite, detailed, and exhaustive at the same time.
+
 Branch/versioning notes from the docs:
 
 - versioning is opt-in and must be enabled before branch workflows work as expected

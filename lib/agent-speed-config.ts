@@ -19,7 +19,10 @@ export const DENTAL_DEMO_FAST_PROMPT = `# Speed notes
 - For structured intake fields such as patient_name, phone_number, dates, and time ranges, confirm once and move on.
 - If the second preference is still unclear after one follow-up, set unresolved_questions and continue.
 - Never read an unconfirmed kanji name aloud. Use patient_name_yomi for spoken playback.
+- Never ask the caller to answer in hiragana, katakana, or kanji. Ask for the pronunciation only.
 - Do not restate the first preference while collecting the second preference.
+- Near the end of the call, skip optional items if the caller sounds tired, confused, or the line is unstable.
+- Use one short closing only. Do not repeat the summary if the caller stays silent.
 # Known facts
 - Clinic: ${DENTAL_DEMO_CLINIC_PROFILE.clinicName}
 - Business hours: ${DENTAL_DEMO_CLINIC_PROFILE.businessHours}

@@ -44,6 +44,14 @@
 - Conclusion: mainstream stacks do not expose a public `hiragana only transcript` mode for arbitrary Japanese names; the common pattern is to separate STT transcript from the speech-safe reading field and confirm `patient_name_yomi` explicitly.
 - Next: implement `patient_name_yomi`, add a prompt guardrail that blocks kana-unconfirmed kanji name readback, and keep pronunciation dictionaries limited to fixed clinic vocabulary.
 
+### Checkpoint: 音声向けの氏名確認文言と終話ガードを修正
+- Latest phone import for `conv_8601knhy0bfef33sqh2fr0w8dn1f` confirmed that the agent literally said `お名前の読み方をひらがなで...`, which was traced back to the prompt in [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts).
+- Updated [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts) so caller-facing wording now asks only for `読み方` when needed, never asks the caller to answer in hiragana / katakana / kanji, and skips optional end-of-call items when the line is degrading.
+- Tightened the closing rule in [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts) so the summary is delivered once, in up to three sentences, with long optional-item recap avoided.
+- Updated [`lib/agent-speed-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-speed-config.ts) to mirror the same behavior in the speed overlay: pronunciation-only name confirmation, no script-type instructions, skip optional items near the end, and no repeated closing.
+- Updated [`app/api/demo/import-last-call/route.ts`](/C:/Dev/Work/デンタル%20一次受付AI/app/api/demo/import-last-call/route.ts) so phone import now records `lastTranscriptRole` / `lastTranscriptPreview` and emits `phone transcript ended during agent playback` when a long tail gap ends on an agent utterance.
+- Search across current evidence confirms the same family of issue has recurred at least twice: the previously documented `conv_1101knhpm2hnf8a949ax2teetp5g` loop and the newer `conv_8601knhy0bfef33sqh2fr0w8dn1f` tail-gap case.
+
 ## 2026-04-06
 
 ### Checkpoint: 発信番号解決を cache 化し Twilio 種別確認を並列化
