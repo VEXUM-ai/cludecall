@@ -100,6 +100,7 @@ export type EscalationRule = {
 
 export type ReservationMemo = {
   patient_name: string | null;
+  patient_name_yomi: string | null;
   phone_number: string | null;
   is_new_patient: boolean | null;
   visit_reason: string | null;
@@ -140,6 +141,7 @@ export type AppointmentToolPayload = {
   };
   patient: {
     name: string | null;
+    nameYomi: string | null;
     phoneNumber: string | null;
     isNewPatient: boolean | null;
   };
@@ -173,6 +175,7 @@ export type AppointmentDraft = {
   conversationId: string;
   clinicName: string;
   patientName: string | null;
+  patientNameYomi: string | null;
   phoneNumber: string | null;
   isNewPatient: boolean | null;
   serviceLine: ServiceLine;

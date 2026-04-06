@@ -66,6 +66,7 @@ export function renderDemoRunMarkdown(run: DemoRun, timeZone: string): string {
 
 ## 仮受付メモ
 - patient_name: ${stringifyValue(run.memo.patient_name)}
+- patient_name_yomi: ${stringifyValue(run.memo.patient_name_yomi)}
 - phone_number: ${stringifyValue(run.memo.phone_number)}
 - is_new_patient: ${stringifyValue(run.memo.is_new_patient)}
 - visit_reason: ${stringifyValue(run.memo.visit_reason)}

@@ -61,9 +61,11 @@ v3 の利用可否と `eleven_v3` / `eleven_v3_conversational` の違いは [doc
 - `医療判断をしない`
 - `予約確定を言わない`
 - `不明点を推測しない`
+- `読み未確認の漢字氏名は復唱しない`
 
 ## Data Collection
 - `patient_name`
+- `patient_name_yomi`
 - `phone_number`
 - `is_new_patient`
 - `visit_reason`

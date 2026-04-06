@@ -47,6 +47,7 @@ export async function POST(request: Request) {
       message: "appointment draft confirmed",
       details: {
         patientName: draft.patientName,
+        patientNameYomi: draft.patientNameYomi,
         serviceLine: draft.serviceLine,
         triageLevel: draft.triageLevel,
         submissionMode: draft.submissionMode,

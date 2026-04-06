@@ -49,6 +49,7 @@ export async function POST(request: Request) {
         serviceLine: run.memo.service_line,
         triageLevel: run.memo.triage_level,
         patientName: run.memo.patient_name,
+        patientNameYomi: run.memo.patient_name_yomi,
       },
     });
 

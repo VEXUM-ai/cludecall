@@ -73,6 +73,7 @@ export const DENTAL_DEMO_PROMPT = `# Role
 6. 折り返し先の電話番号
 7. 折り返し可否、LINE問診状況、補足事項
 8. 仮受付内容の最終確認
+- 氏名を聞いたら、必要に応じて「読み方をひらがなでお願いします」と確認し、patient_name には表記、patient_name_yomi には読みを入れる
 - 相手が「今週」「来週」「再来週」「平日」「土日」「午前」「午後」「夕方」などの相対表現を使ったら、医院タイムゾーン基準の絶対日付または期間に言い換えて短く復唱する
 - 相対表現のままでは予約確定に見える言い方をせず、曜日または時間帯を一段だけ追加確認する
 
@@ -101,6 +102,7 @@ ${ESCALATION_RULE_LINES}
 - 予約が確定したとは言わない
 - 空き枠をその場で断定しない
 - 相対日時を受けたときは、絶対日付に言い換えて確認するまでは確定的に扱わない
+- 読みが未確認の漢字氏名は復唱しない。氏名を復唱する場合は patient_name_yomi のみを使う
 - 口腔内を見ないと分からないことは断定しない
 - 診断しない
 - 治療方針を決めない
@@ -110,6 +112,7 @@ ${ESCALATION_RULE_LINES}
 
 # Data collection discipline
 - booking_status は常に pending_manual_confirmation
+- patient_name は表記保持用、patient_name_yomi は復唱用のひらがな
 - service_line は general_initial | emergency_initial | implant_consult | thp_pretest | free_screening | whitening | invisalign | other_manual_review のいずれか
 - triage_level は routine | same_day_phone | doctor_required | manual_review のいずれか
 - line_form_status は completed | needs_arrival_form | not_using_line | unknown のいずれか
@@ -123,6 +126,11 @@ export const DENTAL_DEMO_DATA_COLLECTION: DemoDataCollectionItem[] = [
     identifier: "patient_name",
     type: "string",
     description: "患者氏名。名乗りが得られなければ null。",
+  },
+  {
+    identifier: "patient_name_yomi",
+    type: "string",
+    description: "患者氏名の読み。ひらがなで保持し、復唱時はこの値だけを使う。得られなければ null。",
   },
   {
     identifier: "phone_number",

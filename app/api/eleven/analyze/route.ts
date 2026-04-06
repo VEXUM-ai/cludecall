@@ -37,6 +37,7 @@ export async function POST(request: Request) {
         serviceLine: result.memo.service_line,
         triageLevel: result.memo.triage_level,
         patientName: result.memo.patient_name,
+        patientNameYomi: result.memo.patient_name_yomi,
         bookingStatus: result.memo.booking_status,
         appointmentState: result.appointmentDraft?.submissionState ?? null,
         analysisRequestMs: result.analysisResolution?.analysisRequestMs ?? null,

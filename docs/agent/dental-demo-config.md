@@ -43,6 +43,7 @@ npm run agent:apply-demo-config
 - 一次受付、公開情報案内、仮受付メモ作成に徹する。
 - 1ターン1質問、1〜2文で短く返す。
 - `booking_status` は常に `pending_manual_confirmation`。
+- 氏名は `patient_name` と `patient_name_yomi` を分け、復唱時は `patient_name_yomi` だけを使う。
 - `service_line` `triage_level` `line_form_status` `manual_review_reason` も data collection に含める。
 - 支払い方法のような未確認情報は案内しない。
 - LINEグループ、内部URL、ログイン情報、担当者個人名依存の運用は患者向け会話に出さない。
@@ -52,6 +53,7 @@ npm run agent:apply-demo-config
 | identifier | type | description |
 | --- | --- | --- |
 | `patient_name` | string | 患者氏名 |
+| `patient_name_yomi` | string | 患者氏名の読み。ひらがなで保持し、復唱時はこの値だけを使う |
 | `phone_number` | string | 折り返し先電話番号 |
 | `is_new_patient` | boolean | 新患なら `true` |
 | `visit_reason` | string | 主訴・相談内容 |

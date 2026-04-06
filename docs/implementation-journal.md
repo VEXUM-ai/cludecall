@@ -2,6 +2,14 @@
 
 ## 2026-04-07
 
+### Checkpoint: patient_name_yomi added to prevent kanji name readback
+- Updated [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts) to add `patient_name_yomi` to data collection and to state two guardrails explicitly: names should be confirmed in hiragana when needed, and kana-unconfirmed kanji names must not be read back.
+- Updated [`lib/types.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/types.ts), [`lib/elevenlabs/memo.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/elevenlabs/memo.ts), and [`lib/appointments.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/appointments.ts) so the phonetic name now flows through the normalized memo, appointment draft, and appointment-tool payload.
+- Updated [`app/api/eleven/analyze/route.ts`](/C:/Dev/Work/デンタル%20一次受付AI/app/api/eleven/analyze/route.ts), [`app/api/demo/import-last-call/route.ts`](/C:/Dev/Work/デンタル%20一次受付AI/app/api/demo/import-last-call/route.ts), and [`app/api/demo/appointments/confirm/route.ts`](/C:/Dev/Work/デンタル%20一次受付AI/app/api/demo/appointments/confirm/route.ts) so live monitor details include the phonetic name when available.
+- Updated [`lib/demo-runs.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/demo-runs.ts), [`docs/agent/README.md`](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/README.md), and [`docs/agent/dental-demo-config.md`](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/dental-demo-config.md) to document the new field and the “do not read back unconfirmed kanji names” rule.
+- Validation: `npm run lint` and `npm run build` succeeded. `npm run agent:apply-demo-config` failed with `ElevenLabs request failed with 403`, so the local code is ready but the remote agent config still needs credential or permission recovery before re-applying.
+- Next: re-apply the agent config, run a few real calls, and verify that names are stored as `patient_name` + `patient_name_yomi` while all spoken readback uses the yomi field only.
+
 ### Checkpoint: Japanese name pronunciation research documented
 - Added [`docs/agent/japanese-name-pronunciation-research.md`](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/japanese-name-pronunciation-research.md) to capture the 2026-04-07 research on how other systems handle Japanese name readings in phone AI.
 - Compared ElevenLabs, Google Cloud, Azure AI Speech, AWS, Twilio, Dialogflow CX, and OpenAI Realtime from primary sources.

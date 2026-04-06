@@ -296,6 +296,9 @@ function summarizeManualReviewReason(memo: ReservationMemo, serviceLine: Service
   if (!memo.patient_name) {
     reasons.push("患者名未取得");
   }
+  if (!memo.patient_name_yomi) {
+    reasons.push("患者名の読み未取得");
+  }
   if (!memo.phone_number) {
     reasons.push("電話番号未取得");
   }
@@ -332,6 +335,9 @@ function buildHandoffSummary(
 
   if (memo.visit_reason) {
     summaryParts.push(`主訴: ${memo.visit_reason}`);
+  }
+  if (memo.patient_name_yomi) {
+    summaryParts.push(`氏名読み: ${memo.patient_name_yomi}`);
   }
   if (memo.notes_for_staff) {
     summaryParts.push(`メモ: ${memo.notes_for_staff}`);
@@ -377,6 +383,7 @@ function buildAppointmentToolPayload(args: {
     },
     patient: {
       name: args.memo.patient_name,
+      nameYomi: args.memo.patient_name_yomi,
       phoneNumber: args.memo.phone_number,
       isNewPatient: args.memo.is_new_patient,
     },
@@ -479,6 +486,7 @@ export function buildAppointmentDraft(args: {
     conversationId: args.conversationId,
     clinicName: EMIHA_CLINIC_PROFILE.clinicName,
     patientName: args.memo.patient_name,
+    patientNameYomi: args.memo.patient_name_yomi,
     phoneNumber: args.memo.phone_number,
     isNewPatient: args.memo.is_new_patient,
     serviceLine,
