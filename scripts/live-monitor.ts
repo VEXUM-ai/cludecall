@@ -4,6 +4,7 @@ import process from "node:process";
 import { getLiveMonitorLogPaths, type LiveMonitorEvent } from "@/lib/live-monitor";
 
 const POLL_INTERVAL_MS = 600;
+const MAX_TEXT_WIDTH = 96;
 
 const COLORS = {
   reset: "\u001b[0m",
@@ -13,6 +14,8 @@ const COLORS = {
   yellow: "\u001b[33m",
   red: "\u001b[31m",
   magenta: "\u001b[35m",
+  white: "\u001b[37m",
+  bold: "\u001b[1m",
 } as const;
 
 function colorize(text: string, color: keyof typeof COLORS) {
@@ -53,15 +56,121 @@ function kindLabel(event: LiveMonitorEvent) {
 
 function formatConversationId(conversationId: string | null) {
   if (!conversationId) {
-    return "------------";
+    return colorize("------------", "dim");
   }
-  return conversationId.slice(0, 12).padEnd(12, ".");
+  return colorize(conversationId.slice(0, 12).padEnd(12, "."), "dim");
+}
+
+function wrapText(text: string, width = MAX_TEXT_WIDTH) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= width) {
+    return [normalized];
+  }
+
+  const lines: string[] = [];
+  let cursor = 0;
+  while (cursor < normalized.length) {
+    let end = Math.min(cursor + width, normalized.length);
+    if (end < normalized.length) {
+      const lastSpace = normalized.lastIndexOf(" ", end);
+      if (lastSpace > cursor + width * 0.55) {
+        end = lastSpace;
+      }
+    }
+    lines.push(normalized.slice(cursor, end).trim());
+    cursor = end;
+    while (normalized[cursor] === " ") {
+      cursor += 1;
+    }
+  }
+
+  return lines.filter(Boolean);
+}
+
+function formatValue(value: unknown, indent = 2): string[] {
+  const prefix = " ".repeat(indent);
+
+  if (value === null) {
+    return [`${prefix}null`];
+  }
+
+  if (typeof value === "string") {
+    return wrapText(value).map((line, index) =>
+      index === 0 ? `${prefix}${line}` : `${prefix}${line}`
+    );
+  }
+
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return [`${prefix}${String(value)}`];
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return [`${prefix}[]`];
+    }
+
+    const lines: string[] = [];
+    for (const item of value) {
+      const rendered = formatValue(item, indent + 2);
+      lines.push(`${prefix}- ${rendered[0]?.trimStart() ?? ""}`);
+      for (const continuation of rendered.slice(1)) {
+        lines.push(continuation);
+      }
+    }
+    return lines;
+  }
+
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) {
+      return [`${prefix}{}`];
+    }
+
+    const lines: string[] = [];
+    for (const [key, item] of entries) {
+      const rendered = formatValue(item, indent + 2);
+      lines.push(`${prefix}${key}: ${rendered[0]?.trimStart() ?? ""}`);
+      for (const continuation of rendered.slice(1)) {
+        lines.push(continuation);
+      }
+    }
+    return lines;
+  }
+
+  return [`${prefix}${String(value)}`];
+}
+
+function formatDetails(details: Record<string, unknown> | null) {
+  if (!details || Object.keys(details).length === 0) {
+    return [];
+  }
+
+  const lines: string[] = [colorize("  details", "white")];
+  for (const [key, value] of Object.entries(details)) {
+    const rendered = formatValue(value, 4);
+    lines.push(`${colorize("    " + key + ":", "dim")} ${rendered[0]?.trimStart() ?? ""}`);
+    for (const continuation of rendered.slice(1)) {
+      lines.push(continuation);
+    }
+  }
+  return lines;
+}
+
+function formatMessage(event: LiveMonitorEvent) {
+  const raw = event.message.trim();
+  if (!raw) {
+    return ["  (no message)"];
+  }
+  return wrapText(raw).map((line) => `  ${line}`);
 }
 
 function renderEvent(event: LiveMonitorEvent) {
   const time = timestampLabel(event.at);
   const channel = event.channel.toUpperCase().padEnd(6, " ");
-  return `[${time}] ${kindLabel(event)} ${channel} ${formatConversationId(event.conversationId)} ${event.message}`;
+  const header = `${colorize(`[${time}]`, "dim")} ${kindLabel(event)} ${colorize(channel, "bold")} ${formatConversationId(event.conversationId)}`;
+  const messageLines = formatMessage(event);
+  const detailLines = formatDetails(event.details);
+  return [header, ...messageLines, ...detailLines].join("\n");
 }
 
 async function ensureLogFile() {
@@ -86,11 +195,9 @@ async function main() {
   let position = showHistory ? 0 : initialStats.size;
   let remainder = "";
 
+  process.stdout.write(`${colorize("Dental Live Monitor", "green")} ${colorize(logPath, "dim")}\n`);
   process.stdout.write(
-    `${colorize("Dental Live Monitor", "green")}  ${colorize(logPath, "dim")}\n`
-  );
-  process.stdout.write(
-    `${colorize("Ctrl+C", "yellow")} で停止します。新しいイベントを待機します。\n\n`
+    `${colorize("Mode:", "yellow")} ${showHistory ? "history + tail" : "tail only"}  ${colorize("Ctrl+C", "yellow")} to stop\n\n`
   );
 
   async function readNewContent() {
@@ -120,9 +227,9 @@ async function main() {
 
         try {
           const event = JSON.parse(trimmed) as LiveMonitorEvent;
-          process.stdout.write(`${renderEvent(event)}\n`);
+          process.stdout.write(`${renderEvent(event)}\n\n`);
         } catch {
-          process.stdout.write(`${colorize("PARSE ", "red")} ${trimmed}\n`);
+          process.stdout.write(`${colorize("PARSE", "red")} ${trimmed}\n\n`);
         }
       }
     } finally {

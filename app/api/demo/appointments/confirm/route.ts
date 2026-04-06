@@ -23,9 +23,10 @@ export async function POST(request: Request) {
       channel: "system",
       level: "info",
       conversationId: body.conversationId,
-      message: "アポツールドラフト確認を開始",
+      message: "appointment confirmation requested",
       details: null,
     });
+
     const detail = await getConversationHistoryDetail(body.conversationId);
 
     if (!detail.appointmentDraft) {
@@ -37,15 +38,20 @@ export async function POST(request: Request) {
 
     const draft = confirmAppointmentDraft(detail.appointmentDraft);
     const result = await writeStoredAppointmentDraft(draft);
+
     await appendLiveMonitorEvent({
       kind: "appointment",
       channel: detail.channel,
       level: "success",
       conversationId: body.conversationId,
-      message: `アポツールドラフト確認済み: ${draft.submissionState}`,
+      message: "appointment draft confirmed",
       details: {
+        patientName: draft.patientName,
         serviceLine: draft.serviceLine,
+        triageLevel: draft.triageLevel,
+        submissionMode: draft.submissionMode,
         submissionState: draft.submissionState,
+        preferredSlots: draft.preferredSlots,
       },
     });
 
@@ -69,7 +75,7 @@ export async function POST(request: Request) {
       channel: "system",
       level: "error",
       conversationId: null,
-      message: `アポツールドラフト確認失敗: ${message}`,
+      message: `appointment confirmation failed: ${message}`,
       details: null,
     });
 

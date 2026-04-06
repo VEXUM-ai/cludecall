@@ -82,6 +82,27 @@ function extractMessageText(value: unknown): string | null {
   return null;
 }
 
+function extractTentativeAgentText(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (value.type === "tentative_agent_response") {
+    return extractMessageText(value.response);
+  }
+
+  if (
+    value.type === "internal_tentative_agent_response" &&
+    isRecord(value.tentative_agent_response_internal_event)
+  ) {
+    return extractMessageText(
+      value.tentative_agent_response_internal_event.tentative_agent_response
+    );
+  }
+
+  return null;
+}
+
 function isConversationEvent(value: unknown): value is ConversationEvent {
   if (!isRecord(value)) {
     return false;
@@ -232,12 +253,16 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const nextSessionEventId = useRef(0);
   const sessionTiming = useRef<SessionTimingState | null>(null);
   const lastLoggedTranscriptLine = useRef<string | null>(null);
+  const lastLoggedTentativeAgentLine = useRef<string | null>(null);
+  const lastUserMessageAtMs = useRef<number | null>(null);
+  const turnCounter = useRef(0);
 
   const pushSessionEvent = useCallback(
     (
       label: string,
       level: ConversationEventLogEntry["level"] = "info",
-      eventConversationId?: string | null
+      eventConversationId?: string | null,
+      details?: Record<string, unknown> | null
     ) => {
       const at = new Date().toISOString();
       nextSessionEventId.current += 1;
@@ -255,6 +280,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         level,
         conversationId: eventConversationId ?? conversationId,
         message: label,
+        details: details ?? null,
       });
     },
     [conversationId]
@@ -287,8 +313,20 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       }
 
       const role = event.source === "ai" ? "agent" : "user";
+      const nowMs = performance.now();
+      const elapsedMs = sessionTiming.current
+        ? Math.round(nowMs - sessionTiming.current.startedAtMs)
+        : null;
+      const replyAfterUserMs =
+        role === "agent" && lastUserMessageAtMs.current !== null
+          ? Math.round(nowMs - lastUserMessageAtMs.current)
+          : null;
+
       if (role === "agent") {
         recordFirstAgentResponse();
+      } else {
+        lastUserMessageAtMs.current = nowMs;
+        turnCounter.current += 1;
       }
 
       const transcriptLogKey = `${role}:${text}`;
@@ -299,6 +337,12 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           level: "info",
           conversationId: conversation.getId() ?? conversationId,
           message: text,
+          details: {
+            elapsedMs,
+            replyAfterUserMs,
+            turnIndex: turnCounter.current,
+            tentative: false,
+          },
         });
       }
 
@@ -326,25 +370,28 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       setLastAudioEventAt(new Date().toISOString());
     },
     onDebug: (event) => {
-      if (!isRecord(event)) {
-        return;
-      }
-
-      const tentativeText =
-        event.type === "tentative_agent_response"
-          ? extractMessageText(event.response)
-          : event.type === "internal_tentative_agent_response" &&
-              isRecord(event.tentative_agent_response_internal_event)
-            ? extractMessageText(
-                event.tentative_agent_response_internal_event.tentative_agent_response
-              )
-            : null;
-
+      const tentativeText = extractTentativeAgentText(event);
       if (!tentativeText) {
         return;
       }
 
       recordFirstAgentResponse();
+      if (lastLoggedTentativeAgentLine.current !== tentativeText) {
+        lastLoggedTentativeAgentLine.current = tentativeText;
+        void postLiveMonitorEvent({
+          kind: "agent",
+          level: "info",
+          conversationId: conversation.getId() ?? conversationId,
+          message: tentativeText,
+          details: {
+            elapsedMs: sessionTiming.current
+              ? Math.round(performance.now() - sessionTiming.current.startedAtMs)
+              : null,
+            tentative: true,
+          },
+        });
+      }
+
       setTranscript((current) => {
         const last = current[current.length - 1];
         if (last?.role === "agent" && last.tentative) {
@@ -367,13 +414,17 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       });
     },
     onConnect: ({ conversationId: connectedConversationId }) => {
+      const connectMs = sessionTiming.current
+        ? Math.round(performance.now() - sessionTiming.current.startedAtMs)
+        : null;
       if (sessionTiming.current && sessionTiming.current.connectMs === null) {
-        sessionTiming.current.connectMs = Math.round(
-          performance.now() - sessionTiming.current.startedAtMs
-        );
+        sessionTiming.current.connectMs = connectMs;
       }
       setConversationId(connectedConversationId);
-      pushSessionEvent(`会話に接続しました: ${connectedConversationId}`, "success");
+      pushSessionEvent("conversation connected", "success", connectedConversationId, {
+        connectMs,
+        transport: sessionTiming.current?.transport ?? activeTransport,
+      });
     },
     onError: (event) => {
       const errorValue: unknown = event;
@@ -384,7 +435,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
             ? errorValue
             : "Conversation failed.";
       setError(message);
-      pushSessionEvent(`エラー: ${message}`, "error");
+      pushSessionEvent(`conversation error: ${message}`, "error");
     },
   });
 
@@ -456,7 +507,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     setIsAnalyzing(true);
     setError(null);
     const analysisStartedAtMs = performance.now();
-    pushSessionEvent(`会話終了後の収集を開始: ${targetConversationId}`);
+    pushSessionEvent("analysis requested", "info", targetConversationId);
 
     try {
       const response = await fetch("/api/eleven/analyze", {
@@ -479,20 +530,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       startTransition(() => {
         setAnalysisResult(payload as AnalyzeConversationResponse);
       });
-      pushSessionEvent(`収集完了: ${targetConversationId}`, "success");
-      void postLiveMonitorEvent({
-        kind: "analysis",
-        level: "success",
-        conversationId: targetConversationId,
-        message:
-          (payload as AnalyzeConversationResponse).analysis.transcriptSummary ??
-          "分析完了",
-        details: {
-          status: (payload as AnalyzeConversationResponse).status,
-          serviceLine: (payload as AnalyzeConversationResponse).memo.service_line,
-          triageLevel: (payload as AnalyzeConversationResponse).memo.triage_level,
-        },
-      });
+      pushSessionEvent("analysis completed", "success", targetConversationId);
 
       const latencyResponse = await fetch("/api/demo/latency", {
         method: "POST",
@@ -514,13 +552,6 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         };
         if (latencyPayload.sample) {
           setLatencySample(latencyPayload.sample);
-          void postLiveMonitorEvent({
-            kind: "latency",
-            level: "info",
-            conversationId: targetConversationId,
-            message: `latency connect=${latencyPayload.sample.connectMs ?? "n/a"}ms / firstAgent=${latencyPayload.sample.firstAgentResponseMs ?? "n/a"}ms / avgReply=${latencyPayload.sample.averageAgentReplyAfterUserMs ?? "n/a"}ms / analysis=${latencyPayload.sample.analysisMs ?? "n/a"}ms`,
-            details: latencyPayload.sample as unknown as Record<string, unknown>,
-          });
         }
       }
     } catch (analysisError) {
@@ -529,7 +560,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           ? analysisError.message
           : "Failed to analyze conversation.";
       setError(message);
-      pushSessionEvent(`収集失敗: ${message}`, "error");
+      pushSessionEvent(`analysis failed: ${message}`, "error", targetConversationId);
     } finally {
       setIsAnalyzing(false);
     }
@@ -549,6 +580,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     nextTranscriptId.current = 0;
     nextSessionEventId.current = 0;
     lastLoggedTranscriptLine.current = null;
+    lastLoggedTentativeAgentLine.current = null;
+    lastUserMessageAtMs.current = null;
+    turnCounter.current = 0;
 
     const initialTransport = preferredTransport === "websocket" ? "websocket" : "webrtc";
     sessionTiming.current = {
@@ -559,7 +593,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     };
     setActiveTransport(initialTransport);
     setIsStarting(true);
-    pushSessionEvent("Web 会話の接続を開始しました。");
+    pushSessionEvent("web conversation start requested", "info", null, {
+      requestedTransport: initialTransport,
+    });
 
     async function getConversationToken() {
       const response = await fetch("/api/eleven/conversation-token", {
@@ -624,14 +660,12 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       const unlocked = await unlockPromise;
       setBrowserAudioUnlocked(unlocked);
       pushSessionEvent(
-        unlocked
-          ? "ブラウザ音声出力を事前準備しました。"
-          : "ブラウザ音声出力の事前準備を環境依存で完了できませんでした。",
+        unlocked ? "browser audio unlocked" : "browser audio still locked",
         unlocked ? "success" : "warning"
       );
 
       await microphonePromise;
-      pushSessionEvent("マイクへのアクセスを確認しました。", "success");
+      pushSessionEvent("microphone permission granted", "success");
 
       try {
         const { startedConversationId, transport } =
@@ -644,9 +678,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         setConversationId(startedConversationId);
         pushSessionEvent(
           transport === "websocket"
-            ? "WebSocket で接続しました。"
-            : "WebRTC で接続しました。",
-          "success"
+            ? "session started via websocket"
+            : "session started via webrtc",
+          "success",
+          startedConversationId,
+          { transport }
         );
       } catch (transportError) {
         if (initialTransport !== "webrtc" || !isPeerConnectionError(transportError)) {
@@ -657,10 +693,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           sessionTiming.current.transport = "websocket";
         }
         setActiveTransport("websocket");
-        pushSessionEvent(
-          "WebRTC 接続に失敗したため、WebSocket fallback に切り替えました。",
-          "warning"
-        );
+        pushSessionEvent("webrtc failed, falling back to websocket", "warning");
 
         const { startedConversationId } = await startWithTransport("websocket");
 
@@ -668,7 +701,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         persistLastWorkingTransport("websocket");
         setPreferredTransport("websocket");
         setConversationId(startedConversationId);
-        pushSessionEvent("WebSocket fallback で接続しました。", "success");
+        pushSessionEvent("websocket fallback connected", "success", startedConversationId, {
+          transport: "websocket",
+        });
       }
     } catch (startError) {
       setError(
@@ -678,8 +713,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       );
       pushSessionEvent(
         startError instanceof Error
-          ? `接続開始に失敗しました: ${startError.message}`
-          : "接続開始に失敗しました。",
+          ? `start failed: ${startError.message}`
+          : "start failed",
         "error"
       );
     } finally {
@@ -691,23 +726,23 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     const targetConversationId = conversation.getId() ?? conversationId;
     if (!targetConversationId) {
       setError("No conversation ID is available for analysis.");
-      pushSessionEvent("conversationId が無いため分析できません。", "error");
+      pushSessionEvent("stop requested without conversationId", "error");
       return;
     }
 
     try {
-      pushSessionEvent("会話を終了し、分析を開始します。");
+      pushSessionEvent("conversation stop requested", "info", targetConversationId);
       await conversation.endSession();
       await analyzeByConversationId(targetConversationId);
-      pushSessionEvent("分析が完了しました。", "success");
+      pushSessionEvent("conversation fully processed", "success", targetConversationId);
     } catch (endError) {
       setError(
         endError instanceof Error ? endError.message : "Failed to end conversation."
       );
       pushSessionEvent(
         endError instanceof Error
-          ? `終了または分析に失敗しました: ${endError.message}`
-          : "終了または分析に失敗しました。",
+          ? `stop or analysis failed: ${endError.message}`
+          : "stop or analysis failed",
         "error"
       );
     }

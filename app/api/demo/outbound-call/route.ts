@@ -18,23 +18,27 @@ export async function POST(request: Request) {
       channel: "phone",
       level: "info",
       conversationId: null,
-      message: `発信開始: ${body.toNumber}`,
+      message: "outbound requested",
       details: { toNumber: body.toNumber },
     });
+
     const result = await startOutboundCall(body.toNumber);
+
     await appendLiveMonitorEvent({
       kind: "outbound",
       channel: "phone",
       level: result.success ? "success" : "warning",
       conversationId: result.conversationId,
-      message: `発信結果: ${result.message}`,
+      message: "outbound accepted",
       details: {
         callSid: result.callSid,
         toNumber: result.toNumber,
+        message: result.message,
         twilioAccountType: result.twilioAccountType,
         warnings: result.warnings,
       },
     });
+
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -52,7 +56,7 @@ export async function POST(request: Request) {
       channel: "phone",
       level: "error",
       conversationId: null,
-      message: `発信失敗: ${message}`,
+      message: `outbound failed: ${message}`,
       details: null,
     });
 

@@ -29,14 +29,16 @@ export async function POST(request: Request) {
     const body = requestSchema.parse(await request.json());
     const sample = buildLatencySample(body);
     const result = await writeLatencySample(sample);
+
     await appendLiveMonitorEvent({
       kind: "latency",
       channel: body.channel,
       level: "info",
       conversationId: body.conversationId,
-      message: `latency connect=${sample.connectMs ?? "n/a"}ms / firstAgent=${sample.firstAgentResponseMs ?? "n/a"}ms / avgReply=${sample.averageAgentReplyAfterUserMs ?? "n/a"}ms / analysis=${sample.analysisMs ?? "n/a"}ms`,
+      message: "latency sample recorded",
       details: sample as unknown as Record<string, unknown>,
     });
+
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {

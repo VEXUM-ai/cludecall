@@ -24,3 +24,8 @@
 - Wired server routes for outbound call, Web analysis, phone import, appointment confirmation, and latency persistence to append monitor events for post-call collection visibility.
 - Added [`scripts/live-monitor.ts`](/C:/Dev/Work/デンタル 一次受付AI/scripts/live-monitor.ts) and `npm run monitor:live` to follow the NDJSON log from a terminal window in realtime.
 - Validation: `npm run lint` and `npm run build` succeeded after the live monitor wiring. The server was restarted and a visible PowerShell window was launched with the monitor script.
+### Checkpoint: monitor:live now shows response timing and detail blocks
+- Updated `components/conversation-provider.tsx` so user and agent transcript lines publish `elapsedMs`, per-turn `replyAfterUserMs`, and tentative/final state into the live monitor stream.
+- Updated the analysis, latency, phone import, outbound, and appointment confirm API routes to emit readable monitor events with structured details for analysis, collection, outbound, appointment, and latency stages.
+- Updated `scripts/live-monitor.ts` to expand `details` as multi-line blocks inside `npm run monitor:live`, so response metrics are visible in the terminal without opening the UI.
+- Validation: `npm run lint` and `npm run build` succeeded. The app is serving again at `http://localhost:3000`, and a fresh `npm run monitor:live -- --history` terminal was launched with a `monitor ready` event.

@@ -18,21 +18,30 @@ export async function POST(request: Request) {
       channel: "web",
       level: "info",
       conversationId: body.conversationId,
-      message: "Web会話の収集を開始",
+      message: "web analysis requested",
       details: null,
     });
+
     const result = await analyzeConversation(body.conversationId);
+
     await appendLiveMonitorEvent({
       kind: "analysis",
       channel: "web",
       level: "success",
       conversationId: body.conversationId,
-      message: result.analysis.transcriptSummary ?? "Web会話の収集が完了",
+      message: "analysis completed",
       details: {
+        status: result.status,
+        success: result.analysis.callSuccessful,
+        transcriptSummary: result.analysis.transcriptSummary,
         serviceLine: result.memo.service_line,
         triageLevel: result.memo.triage_level,
+        patientName: result.memo.patient_name,
+        bookingStatus: result.memo.booking_status,
+        appointmentState: result.appointmentDraft?.submissionState ?? null,
       },
     });
+
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -50,7 +59,7 @@ export async function POST(request: Request) {
       channel: "web",
       level: "error",
       conversationId: null,
-      message: `Web会話の収集失敗: ${message}`,
+      message: `analysis failed: ${message}`,
       details: null,
     });
 

@@ -22,22 +22,31 @@ export async function POST(request: Request) {
       channel: "phone",
       level: "info",
       conversationId: body?.conversationId ?? null,
-      message: "最新の電話会話の収集を開始",
+      message: "phone import requested",
       details: { requestedConversationId: body?.conversationId ?? null },
     });
+
     const run = await importLatestPhoneCall(body?.conversationId);
+
     await appendLiveMonitorEvent({
       kind: "collection",
       channel: "phone",
       level: "success",
       conversationId: run.conversationId,
-      message: run.analysis.transcriptSummary ?? "電話会話の収集が完了",
+      message: "phone analysis imported",
       details: {
         durationSecs: run.callMeta.durationSecs,
         source: run.channel,
+        status: run.status,
+        success: run.analysis.callSuccessful,
+        transcriptCount: run.transcript.length,
         analysisMs: run.latency?.analysisMs ?? null,
+        serviceLine: run.memo.service_line,
+        triageLevel: run.memo.triage_level,
+        patientName: run.memo.patient_name,
       },
     });
+
     await appendLiveMonitorEvents(
       run.transcript.map((entry) => ({
         kind: entry.role === "agent" ? "agent" : "user",
@@ -51,6 +60,7 @@ export async function POST(request: Request) {
         },
       }))
     );
+
     return NextResponse.json(run);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -68,7 +78,7 @@ export async function POST(request: Request) {
       channel: "phone",
       level: "error",
       conversationId: null,
-      message: `電話会話の収集失敗: ${message}`,
+      message: `phone import failed: ${message}`,
       details: null,
     });
 
