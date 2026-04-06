@@ -24,6 +24,7 @@
 10. transcript に時刻情報があれば、電話の応答間隔も `docs/latency-report.md` に自動集計される。
 11. inbound デモが必要になったら、Twilio の購入番号か SIP trunk を別途用意する。
 12. Verified Caller ID に自分の携帯番号を使っている場合、自分の携帯そのものを着信先には使わない。自分で受けるには別の caller ID か Twilio 購入番号が必要。
+13. 発信後は UI の outbound result か `npm run monitor:live` で `resolvePhoneNumberMs`、`twilioAccountLookupMs`、`outboundRequestMs`、`totalMs` を確認する。2 本目以降は cache hit になっているかも見る。
 
 ## 将来の inbound 移行
 1. Twilio 日本 `national number` の規制申請を通す。

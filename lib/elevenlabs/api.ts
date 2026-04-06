@@ -25,6 +25,7 @@ import type {
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
 const TWILIO_API_BASE = "https://api.twilio.com/2010-04-01";
 const ELEVENLABS_HTTPS_AGENT = new HttpsAgent({ keepAlive: true });
+const OUTBOUND_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const listConversationsSchema = z.object({
   conversations: z.array(
@@ -79,10 +80,22 @@ const twilioAccountSchema = z.object({
 
 type ConversationDetails = z.infer<typeof conversationDetailsSchema>;
 type ConversationListItem = z.infer<typeof listConversationsSchema>["conversations"][number];
+type PhoneNumberRecord = z.infer<typeof phoneNumbersSchema>[number];
 type TimedResult<T> = {
   result: T;
   elapsedMs: number;
 };
+type CachedLookupResult<T> = {
+  value: T;
+  cacheHit: boolean | null;
+};
+type CacheEntry<T> = {
+  expiresAt: number;
+  value: T;
+};
+
+const outboundPhoneNumberCache = new Map<string, CacheEntry<PhoneNumberRecord>>();
+const twilioAccountTypeCache = new Map<string, CacheEntry<string | null>>();
 
 export class ElevenLabsApiError extends Error {
   constructor(
@@ -114,6 +127,27 @@ function buildApiUrl(
 
 function buildTwilioApiUrl(pathname: string) {
   return new URL(pathname, `${TWILIO_API_BASE}/`);
+}
+
+function readCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+  const entry = cache.get(key);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+
+  return entry.value;
+}
+
+function writeCache<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T) {
+  cache.set(key, {
+    value,
+    expiresAt: Date.now() + OUTBOUND_CACHE_TTL_MS,
+  });
 }
 
 type RawJsonResponse = {
@@ -511,6 +545,15 @@ export async function listPhoneNumbers() {
 
 async function resolveAgentPhoneNumber() {
   const config = getServerConfig();
+  const cacheKey = `${config.agentId}:${normalizePhoneNumber(config.agentPhoneNumber ?? "")}`;
+  const cachedPhoneNumber = readCache(outboundPhoneNumberCache, cacheKey);
+  if (cachedPhoneNumber) {
+    return {
+      value: cachedPhoneNumber,
+      cacheHit: true,
+    } satisfies CachedLookupResult<PhoneNumberRecord>;
+  }
+
   const phoneNumbers = await listPhoneNumbers();
   const outboundCapable = phoneNumbers.filter(
     (item) => item.supports_outbound !== false
@@ -525,12 +568,20 @@ async function resolveAgentPhoneNumber() {
       (item) => normalizePhoneNumber(item.phone_number) === configuredNumber
     );
     if (matched) {
-      return matched;
+      writeCache(outboundPhoneNumberCache, cacheKey, matched);
+      return {
+        value: matched,
+        cacheHit: false,
+      } satisfies CachedLookupResult<PhoneNumberRecord>;
     }
   }
 
   if (outboundCapable.length === 1) {
-    return outboundCapable[0];
+    writeCache(outboundPhoneNumberCache, cacheKey, outboundCapable[0]);
+    return {
+      value: outboundCapable[0],
+      cacheHit: false,
+    } satisfies CachedLookupResult<PhoneNumberRecord>;
   }
 
   throw new Error(
@@ -538,11 +589,23 @@ async function resolveAgentPhoneNumber() {
   );
 }
 
-async function getTwilioAccountType(): Promise<string | null> {
+async function getTwilioAccountType(): Promise<CachedLookupResult<string | null>> {
   const config = getServerConfig();
 
   if (!config.twilioAccountSid || !config.twilioAuthToken) {
-    return null;
+    return {
+      value: null,
+      cacheHit: null,
+    };
+  }
+
+  const cacheKey = config.twilioAccountSid;
+  const cachedAccountType = readCache(twilioAccountTypeCache, cacheKey);
+  if (cachedAccountType !== null) {
+    return {
+      value: cachedAccountType,
+      cacheHit: true,
+    };
   }
 
   try {
@@ -551,9 +614,17 @@ async function getTwilioAccountType(): Promise<string | null> {
       twilioAccountSchema
     );
 
-    return response.type ?? null;
+    const accountType = response.type ?? null;
+    writeCache(twilioAccountTypeCache, cacheKey, accountType);
+    return {
+      value: accountType,
+      cacheHit: false,
+    };
   } catch {
-    return null;
+    return {
+      value: null,
+      cacheHit: false,
+    };
   }
 }
 
@@ -567,7 +638,7 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
   }
 
   const phoneNumberResult = await measureAsync(() => resolveAgentPhoneNumber());
-  const twilioAccountTypeResult = await measureAsync(() => getTwilioAccountType());
+  const twilioAccountTypePromise = measureAsync(() => getTwilioAccountType());
   const outboundResponse = await measureAsync(() =>
     elevenLabsFetch(
       buildApiUrl("convai/twilio/outbound-call"),
@@ -575,16 +646,17 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
         method: "POST",
         body: JSON.stringify({
           agent_id: config.agentId,
-          agent_phone_number_id: phoneNumberResult.result.phone_number_id,
+          agent_phone_number_id: phoneNumberResult.result.value.phone_number_id,
           to_number: toNumber,
         }),
       },
       outboundCallSchema
     )
   );
+  const twilioAccountTypeResult = await twilioAccountTypePromise;
   const response = outboundResponse.result;
-  const phoneNumber = phoneNumberResult.result;
-  const twilioAccountType = twilioAccountTypeResult.result;
+  const phoneNumber = phoneNumberResult.result.value;
+  const twilioAccountType = twilioAccountTypeResult.result.value;
   const totalMs = Date.now() - totalStartedAt;
 
   const warnings: string[] = [];
@@ -606,9 +678,9 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
     warnings,
     outboundMetrics: {
       resolvePhoneNumberMs: phoneNumberResult.elapsedMs,
-      phoneNumberCacheHit: false,
+      phoneNumberCacheHit: phoneNumberResult.result.cacheHit === true,
       twilioAccountLookupMs: twilioAccountTypeResult.elapsedMs,
-      twilioAccountTypeCacheHit: false,
+      twilioAccountTypeCacheHit: twilioAccountTypeResult.result.cacheHit,
       outboundRequestMs: outboundResponse.elapsedMs,
       totalMs,
     },

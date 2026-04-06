@@ -303,9 +303,19 @@ function detailLinesForEvent(event: LiveMonitorEvent) {
         details.resolvePhoneNumberMs !== undefined
           ? `発信番号解決まで: ${formatMs(details.resolvePhoneNumberMs)}`
           : null,
+        details.phoneNumberCacheHit === true
+          ? "発信番号解決: cache hit"
+          : details.phoneNumberCacheHit === false
+            ? "発信番号解決: cache miss"
+            : null,
         details.twilioAccountLookupMs !== undefined
           ? `Twilio 種別確認まで: ${formatMs(details.twilioAccountLookupMs)}`
           : null,
+        details.twilioAccountTypeCacheHit === true
+          ? "Twilio 種別確認: cache hit"
+          : details.twilioAccountTypeCacheHit === false
+            ? "Twilio 種別確認: cache miss"
+            : null,
         details.outboundRequestMs !== undefined
           ? `発信 API 応答まで: ${formatMs(details.outboundRequestMs)}`
           : null,

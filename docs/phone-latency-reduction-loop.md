@@ -312,8 +312,10 @@
 - outbound call の `resolvePhoneNumberMs`、`twilioAccountLookupMs`、`outboundRequestMs`、`totalMs` を API / live monitor / UI に表示
 - `resolveConversationRun()` の `analysisRequestMs`、polling 回数、polling 待ち合計、detail fetch 合計、`totalMs` を記録
 - phone import 時の `latency.analysisMs` に analysis 解決時間を入れる
+- 発信番号解決を 5 分 cache 化し、Twilio account type lookup も 5 分 cache 化
+- Twilio account type lookup を outbound request と並列化し、同期クリティカルパスから外す
 
-未着手なのは cache 化、Twilio Voice Insights 紐付け、live 通話自体の `connect_ms` / `first_agent_response_ms` の採取である。
+未着手なのは Twilio Voice Insights 紐付け、live 通話自体の `connect_ms` / `first_agent_response_ms` の採取、履歴取り込み側の探索短縮である。
 
 ## やらないこと
 

@@ -2,6 +2,12 @@
 
 ## 2026-04-06
 
+### Checkpoint: 発信番号解決を cache 化し Twilio 種別確認を並列化
+- Updated [`lib/elevenlabs/api.ts`](/C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/api.ts) to cache outbound-capable phone number resolution for 5 minutes and to cache Twilio account type lookups for 5 minutes.
+- Updated [`lib/elevenlabs/api.ts`](/C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/api.ts) so the Twilio account type lookup now runs in parallel with the outbound call request instead of blocking it serially.
+- Updated [`app/api/demo/outbound-call/route.ts`](/C:/Dev/Work/デンタル 一次受付AI/app/api/demo/outbound-call/route.ts) and [`scripts/live-monitor.ts`](/C:/Dev/Work/デンタル 一次受付AI/scripts/live-monitor.ts) so cache hit / miss status is visible during outbound timing inspection.
+- Next: runbook に確認手順を追記し、実通話で 1 本目と 2 本目以降の差を比較する。
+
 ### Checkpoint: 電話発信と analysis polling の時間内訳を可視化
 - Updated [`lib/types.ts`](/C:/Dev/Work/デンタル 一次受付AI/lib/types.ts) to add `outboundMetrics` and `analysisResolution` so timing breakdowns can move through the API layer.
 - Updated [`lib/elevenlabs/api.ts`](/C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/api.ts) so outbound calls now measure `resolvePhoneNumberMs`, `twilioAccountLookupMs`, `outboundRequestMs`, `totalMs`, and conversation analysis now records `analysisRequestMs`, polling attempts, polling wait total, detail fetch total, and overall analysis resolution time.
