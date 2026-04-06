@@ -18,6 +18,19 @@ export type ResolvedPreferredSlot = {
 };
 
 const WEEKDAY_LABELS = ["月", "火", "水", "木", "金", "土", "日"] as const;
+const JAPANESE_NUMBER_DIGITS: Record<string, number> = {
+  "〇": 0,
+  "零": 0,
+  "一": 1,
+  "二": 2,
+  "三": 3,
+  "四": 4,
+  "五": 5,
+  "六": 6,
+  "七": 7,
+  "八": 8,
+  "九": 9,
+};
 
 function normalizeText(value: string | null | undefined) {
   return value?.trim().replace(/\s+/g, " ") ?? "";
@@ -77,7 +90,9 @@ function detectRelativeWeekOffset(text: string) {
 }
 
 function detectWeekday(text: string) {
-  const match = text.match(/(月|火|水|木|金|土|日)(?:曜|曜日)?/);
+  const match = text.match(
+    /(?:^|[^\d一二三四五六七八九十百千〇零])([月火水木金土日])(?:曜日|曜)(?=$|[^\d一二三四五六七八九十百千〇零])/
+  );
   if (!match) {
     return null;
   }
@@ -121,6 +136,36 @@ function hasExactTime(text: string) {
   return /(?:^|[^\d])([01]?\d|2[0-3])(?::([0-5]\d)|時(?:半|[0-5]?\d分?)?)?/.test(text);
 }
 
+function parseJapaneseNumber(text: string) {
+  const normalized = text.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    return Number(normalized);
+  }
+
+  let total = 0;
+  let current = 0;
+
+  for (const char of normalized) {
+    if (char === "十") {
+      total += (current === 0 ? 1 : current) * 10;
+      current = 0;
+      continue;
+    }
+
+    const digit = JAPANESE_NUMBER_DIGITS[char];
+    if (digit === undefined) {
+      return null;
+    }
+    current += digit;
+  }
+
+  return total + current;
+}
+
 function parseExplicitDate(text: string, anchorDate: Date) {
   if (!text) {
     return null;
@@ -139,26 +184,27 @@ function parseExplicitDate(text: string, anchorDate: Date) {
 
   const monthDayMatch =
     text.match(/(?<month>\d{1,2})月(?<day>\d{1,2})日/) ??
-    text.match(/(?<month>\d{1,2})\/(?<day>\d{1,2})(?!\d)/);
+    text.match(/(?<month>\d{1,2})\/(?<day>\d{1,2})(?!\d)/) ??
+    text.match(
+      /(?<month>[一二三四五六七八九十〇零]{1,3})月(?<day>[一二三四五六七八九十〇零]{1,3})日/
+    );
 
   if (!monthDayMatch?.groups) {
     return null;
   }
 
+  const parsedMonth = parseJapaneseNumber(monthDayMatch.groups.month);
+  const parsedDay = parseJapaneseNumber(monthDayMatch.groups.day);
+  if (parsedMonth === null || parsedDay === null) {
+    return null;
+  }
+
   let year = anchorDate.getUTCFullYear();
-  let candidate = createPlainDate(
-    year,
-    Number(monthDayMatch.groups.month),
-    Number(monthDayMatch.groups.day)
-  );
+  let candidate = createPlainDate(year, parsedMonth, parsedDay);
 
   if (candidate.getTime() < anchorDate.getTime()) {
     year += 1;
-    candidate = createPlainDate(
-      year,
-      Number(monthDayMatch.groups.month),
-      Number(monthDayMatch.groups.day)
-    );
+    candidate = createPlainDate(year, parsedMonth, parsedDay);
   }
 
   return candidate;

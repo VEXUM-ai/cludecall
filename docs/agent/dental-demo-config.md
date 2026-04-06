@@ -44,6 +44,8 @@ npm run agent:apply-demo-config
 - 1ターン1質問、1〜2文で短く返す。
 - `booking_status` は常に `pending_manual_confirmation`。
 - 氏名は `patient_name` と `patient_name_yomi` を分け、復唱時は `patient_name_yomi` だけを使う。
+- 第2希望は任意。第1希望と折り返し先が取れていれば、第2希望が曖昧でもループしない。
+- 同じ項目の確認は最大2回に留め、未確定なら `unresolved_questions` に残して先へ進む。
 - `service_line` `triage_level` `line_form_status` `manual_review_reason` も data collection に含める。
 - 支払い方法のような未確認情報は案内しない。
 - LINEグループ、内部URL、ログイン情報、担当者個人名依存の運用は患者向け会話に出さない。

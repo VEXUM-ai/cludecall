@@ -16,7 +16,7 @@
 - Turn timeout: `6-8秒`
 - Soft timeout: 有効
 - Interruptions: 有効
-- Turn eagerness: `Normal` を基本にし、電話番号や日時の回収では `Patient` 寄りでテスト
+- Turn eagerness: `Normal` を基本にし、`eager` 常用は避ける
 - Speed: `1.0` から始めて `0.98-1.05` を試す
 - 返答長: `1-2文`
 - 1ターン1質問
@@ -62,6 +62,7 @@ v3 の利用可否と `eleven_v3` / `eleven_v3_conversational` の違いは [doc
 - `予約確定を言わない`
 - `不明点を推測しない`
 - `読み未確認の漢字氏名は復唱しない`
+- `同じ項目の確認でループしない`
 
 ## Data Collection
 - `patient_name`
@@ -84,6 +85,7 @@ v3 の利用可否と `eleven_v3` / `eleven_v3_conversational` の違いは [doc
 
 `booking_status` の既定値は `pending_manual_confirmation`。
 今回のデモでは、`booking_status` に加えて `service_line` `triage_level` `line_form_status` を用いてアポツール投入前の仮受付ドラフトを生成する。
+第2希望は任意で、`preferred_date_2` `preferred_time_range_2` は未確定なら `null` のままでよい。
 
 具体的な文面、想定シナリオ、評価観点は [docs/agent/dental-demo-config.md](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/dental-demo-config.md) にまとめてある。
 

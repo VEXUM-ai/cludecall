@@ -43,6 +43,7 @@ export async function POST(request: Request) {
         warnings: result.warnings,
         phoneRealtimeMonitorStarted: monitorResult?.started ?? false,
         phoneRealtimeMonitorAlreadyActive: monitorResult?.alreadyActive ?? false,
+        phoneRealtimeMonitorReason: monitorResult?.reason ?? null,
         resolvePhoneNumberMs: result.outboundMetrics.resolvePhoneNumberMs,
         phoneNumberCacheHit: result.outboundMetrics.phoneNumberCacheHit,
         twilioAccountLookupMs: result.outboundMetrics.twilioAccountLookupMs,

@@ -7,6 +7,7 @@ type MonitorStartResult = {
   conversationId: string;
   started: boolean;
   alreadyActive: boolean;
+  reason: string | null;
 };
 
 type ActivePhoneMonitor = {
@@ -45,7 +46,10 @@ type MonitorEventPayload = {
 
 const MONITOR_RETRY_MS = 1500;
 const MONITOR_MAX_ATTEMPTS = 20;
+const MONITOR_UNAVAILABLE_COOLDOWN_MS = 10 * 60 * 1000;
 const activeMonitors = new Map<string, ActivePhoneMonitor>();
+let monitorCapabilityReason: string | null = null;
+let monitorCapabilityDetectedAtMs: number | null = null;
 
 function buildMonitorUrl(conversationId: string) {
   return `wss://api.elevenlabs.io/v1/convai/conversations/${conversationId}/monitor`;
@@ -88,6 +92,19 @@ function stopMonitor(conversationId: string) {
   activeMonitors.delete(conversationId);
 }
 
+function markMonitorUnavailable(reason: string) {
+  monitorCapabilityReason = reason;
+  monitorCapabilityDetectedAtMs = Date.now();
+}
+
+function shouldSkipMonitorStart() {
+  if (!monitorCapabilityReason || monitorCapabilityDetectedAtMs === null) {
+    return false;
+  }
+
+  return Date.now() - monitorCapabilityDetectedAtMs < MONITOR_UNAVAILABLE_COOLDOWN_MS;
+}
+
 function maybeScheduleRetry(
   monitor: ActivePhoneMonitor,
   reason: string,
@@ -116,6 +133,9 @@ function maybeScheduleRetry(
   });
 
   if (fatal || exceeded) {
+    if (fatal) {
+      markMonitorUnavailable(reason);
+    }
     stopMonitor(monitor.conversationId);
     return;
   }
@@ -249,16 +269,6 @@ async function connectMonitor(monitor: ActivePhoneMonitor) {
 
   socket.on("open", () => {
     monitor.opened = true;
-    queueMonitorWrite(monitor, {
-      kind: "session",
-      channel: "phone",
-      level: "success",
-      conversationId: monitor.conversationId,
-      message: "phone realtime monitor connected",
-      details: {
-        attempt: monitor.attempts,
-      },
-    });
   });
 
   socket.on("message", (data) => {
@@ -289,6 +299,11 @@ async function connectMonitor(monitor: ActivePhoneMonitor) {
     });
     response.on("end", () => {
       const fatal = response.statusCode === 401 || response.statusCode === 403;
+      if (fatal) {
+        markMonitorUnavailable(
+          `unexpected_response_${response.statusCode ?? "unknown"}`
+        );
+      }
       maybeScheduleRetry(monitor, `unexpected_response_${response.statusCode ?? "unknown"}`, {
         fatal,
         details: {
@@ -313,6 +328,10 @@ async function connectMonitor(monitor: ActivePhoneMonitor) {
     const fatal =
       code === 1008 ||
       /not enabled|forbidden|unauthorized/i.test(reason);
+
+    if (fatal) {
+      markMonitorUnavailable(reason || `close_${code}`);
+    }
 
     if (monitor.stopped) {
       return;
@@ -347,12 +366,40 @@ async function connectMonitor(monitor: ActivePhoneMonitor) {
 export async function startPhoneConversationMonitor(
   conversationId: string
 ): Promise<MonitorStartResult> {
+  if (monitorCapabilityReason) {
+    if (!shouldSkipMonitorStart()) {
+      monitorCapabilityReason = null;
+      monitorCapabilityDetectedAtMs = null;
+    }
+  }
+
+  if (monitorCapabilityReason) {
+    await appendLiveMonitorEvent({
+      kind: "session",
+      channel: "phone",
+      level: "warning",
+      conversationId,
+      message: "phone realtime monitor skipped",
+      details: {
+        reason: monitorCapabilityReason,
+        cooldownMs: MONITOR_UNAVAILABLE_COOLDOWN_MS,
+      },
+    });
+    return {
+      conversationId,
+      started: false,
+      alreadyActive: false,
+      reason: monitorCapabilityReason,
+    };
+  }
+
   const existing = activeMonitors.get(conversationId);
   if (existing && !existing.stopped) {
     return {
       conversationId,
       started: true,
       alreadyActive: true,
+      reason: null,
     };
   }
 
@@ -385,5 +432,6 @@ export async function startPhoneConversationMonitor(
     conversationId,
     started: true,
     alreadyActive: false,
+    reason: null,
   };
 }

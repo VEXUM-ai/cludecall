@@ -2,6 +2,15 @@
 
 ## 2026-04-07
 
+### Checkpoint: repeated end-of-call phone bug analyzed and hardened
+- Investigated the latest phone call `conv_1101knhpm2hnf8a949ax2teetp5g` and documented the findings in [`docs/phone-repetition-bug-debug.md`](/C:/Dev/Work/デンタル%20一次受付AI/docs/phone-repetition-bug-debug.md).
+- Confirmed that the imported transcript ended at `163s` while the call duration was `200s`, leaving a `37s` tail gap around the segment where the user reported repeated / broken behavior.
+- Updated [`lib/agent-speed-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-speed-config.ts) and [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts) so the agent now treats second-choice collection as optional, caps same-field clarification attempts, prioritizes callback number collection earlier, and uses `normal` turn eagerness instead of `eager`.
+- Updated [`lib/date-preferences.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/date-preferences.ts) to parse Japanese numeral dates such as `四月十六日` and to avoid matching the `月` in calendar months as a weekday token.
+- Updated [`lib/phone-live-monitor.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/phone-live-monitor.ts) and [`app/api/demo/outbound-call/route.ts`](/C:/Dev/Work/デンタル%20一次受付AI/app/api/demo/outbound-call/route.ts) so phone realtime monitoring fails fast and is skipped once the agent is known to reject monitoring, rather than repeatedly pretending to connect.
+- Updated [`app/api/demo/import-last-call/route.ts`](/C:/Dev/Work/デンタル%20一次受付AI/app/api/demo/import-last-call/route.ts) so a large transcript tail gap is surfaced as a warning immediately after import.
+- Validation: `npm run lint` and `npm run build` succeeded. Re-importing `conv_1101knhpm2hnf8a949ax2teetp5g` now normalizes `四月十六日木曜日の十六時` to `2026-04-16` instead of a wrong weekday fallback. `npm run agent:apply-demo-config` still fails with `403`, so the new prompt and turn settings are not yet published to the remote ElevenLabs branch.
+
 ### Checkpoint: patient_name_yomi added to prevent kanji name readback
 - Updated [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts) to add `patient_name_yomi` to data collection and to state two guardrails explicitly: names should be confirmed in hiragana when needed, and kana-unconfirmed kanji names must not be read back.
 - Updated [`lib/types.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/types.ts), [`lib/elevenlabs/memo.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/elevenlabs/memo.ts), and [`lib/appointments.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/appointments.ts) so the phonetic name now flows through the normalized memo, appointment draft, and appointment-tool payload.

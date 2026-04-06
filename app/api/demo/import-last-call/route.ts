@@ -27,6 +27,12 @@ export async function POST(request: Request) {
     });
 
     const run = await importLatestPhoneCall(body?.conversationId);
+    const lastTranscriptTimeInCallSecs =
+      run.transcript.length > 0 ? run.transcript[run.transcript.length - 1]?.timeInCallSecs : null;
+    const transcriptTailGapSecs =
+      typeof run.callMeta.durationSecs === "number" && typeof lastTranscriptTimeInCallSecs === "number"
+        ? Math.max(run.callMeta.durationSecs - lastTranscriptTimeInCallSecs, 0)
+        : null;
 
     await appendLiveMonitorEvent({
       kind: "collection",
@@ -50,8 +56,25 @@ export async function POST(request: Request) {
         triageLevel: run.memo.triage_level,
         patientName: run.memo.patient_name,
         patientNameYomi: run.memo.patient_name_yomi,
+        lastTranscriptTimeInCallSecs,
+        transcriptTailGapSecs,
       },
     });
+
+    if (typeof transcriptTailGapSecs === "number" && transcriptTailGapSecs >= 15) {
+      await appendLiveMonitorEvent({
+        kind: "collection",
+        channel: "phone",
+        level: "warning",
+        conversationId: run.conversationId,
+        message: "phone transcript ended well before call completion",
+        details: {
+          durationSecs: run.callMeta.durationSecs,
+          lastTranscriptTimeInCallSecs,
+          transcriptTailGapSecs,
+        },
+      });
+    }
 
     await appendLiveMonitorEvents(
       run.transcript.map((entry) => ({
