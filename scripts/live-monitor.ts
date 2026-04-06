@@ -149,6 +149,10 @@ function translateMessage(message: string) {
     "appointment draft confirmed": "仮受付の確認完了",
     "latency sample recorded": "応答速度を記録",
     "monitor ready": "モニター準備完了",
+    "phone realtime monitor starting": "電話リアルタイム監視を開始",
+    "phone realtime monitor connected": "電話リアルタイム監視に接続",
+    "phone realtime monitor closed": "電話リアルタイム監視を終了",
+    "phone realtime monitor attach requested": "電話リアルタイム監視の接続要求を送信",
   };
 
   if (exact[message]) {
@@ -168,6 +172,15 @@ function translateMessage(message: string) {
   }
   if (message.startsWith("phone import failed: ")) {
     return `電話取込失敗: ${message.replace("phone import failed: ", "")}`;
+  }
+  if (message.startsWith("phone realtime monitor retrying: ")) {
+    return `電話リアルタイム監視を再試行: ${message.replace("phone realtime monitor retrying: ", "")}`;
+  }
+  if (message.startsWith("phone realtime monitor failed: ")) {
+    return `電話リアルタイム監視失敗: ${message.replace("phone realtime monitor failed: ", "")}`;
+  }
+  if (message.startsWith("phone realtime monitor attach failed: ")) {
+    return `電話リアルタイム監視の接続要求失敗: ${message.replace("phone realtime monitor attach failed: ", "")}`;
   }
   if (message.startsWith("outbound failed: ")) {
     return `発信失敗: ${message.replace("outbound failed: ", "")}`;
@@ -223,6 +236,8 @@ function detailLinesForEvent(event: LiveMonitorEvent) {
         `経過: ${formatMs(details.elapsedMs)}`,
         event.kind === "agent" && details.tentative === true
           ? "種類: 仮応答"
+          : event.kind === "agent" && details.corrected === true
+            ? "種類: 補正後応答"
           : event.kind === "agent"
             ? "種類: 本応答"
             : null,
@@ -340,6 +355,15 @@ function detailLinesForEvent(event: LiveMonitorEvent) {
           : null,
         typeof details.transport === "string" ? `接続方式: ${details.transport}` : null,
         details.connectMs !== undefined ? `接続完了まで: ${formatMs(details.connectMs)}` : null,
+        typeof details.attempt === "number" ? `接続試行: ${details.attempt}回目` : null,
+        typeof details.maxAttempts === "number"
+          ? `最大試行回数: ${details.maxAttempts}`
+          : null,
+        typeof details.statusCode === "number" ? `HTTP状態: ${details.statusCode}` : null,
+        typeof details.statusMessage === "string"
+          ? `HTTPメッセージ: ${details.statusMessage}`
+          : null,
+        typeof details.reason === "string" ? `理由: ${details.reason}` : null,
         Array.isArray(details.responseMetrics)
           ? `表示指標: ${details.responseMetrics.join(", ")}`
           : null,

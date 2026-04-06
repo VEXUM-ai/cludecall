@@ -795,6 +795,36 @@ async function findMostRecentPhoneConversationId(): Promise<string> {
   );
 }
 
+export async function findMostRecentActivePhoneConversationId(): Promise<string> {
+  const recent = await listConversations(20);
+  const candidates = [...recent.conversations].sort(
+    (left, right) =>
+      (right.start_time_unix_secs ?? 0) - (left.start_time_unix_secs ?? 0)
+  );
+
+  for (const candidate of candidates) {
+    if (isConversationDone(candidate.status)) {
+      continue;
+    }
+
+    const details = await getConversationDetails(candidate.conversation_id);
+    const phoneCall =
+      details.metadata &&
+      typeof details.metadata === "object" &&
+      "phone_call" in details.metadata &&
+      typeof details.metadata.phone_call === "object" &&
+      details.metadata.phone_call !== null;
+
+    if (phoneCall) {
+      return candidate.conversation_id;
+    }
+  }
+
+  throw new Error(
+    "No active phone conversation was found for the configured agent."
+  );
+}
+
 export async function importLatestPhoneCall(conversationId?: string): Promise<DemoRun> {
   const targetConversationId = conversationId ?? (await findMostRecentPhoneConversationId());
   const resolved = await resolveConversationRun(targetConversationId);

@@ -48,3 +48,8 @@
 ### Checkpoint: every AI line now shows response time
 - Updated `components/conversation-provider.tsx` so tentative AI lines also publish `replyAfterUserMs`.
 - Updated `scripts/live-monitor.ts` so every AI line shows `応答まで: xxxms` before the rest of the detail block.
+### In progress: phone realtime monitor hookup
+- Added `lib/phone-live-monitor.ts` to connect to ElevenLabs' conversation monitoring WebSocket for active phone calls and append `user_transcript`, `agent_response`, and correction events into the local live monitor log in realtime.
+- Wired `app/api/demo/outbound-call/route.ts` so successful outbound calls immediately attempt to start phone realtime monitoring using the returned `conversationId`.
+- Added `app/api/demo/phone-monitor/start/route.ts` so an already-running phone call can be attached later by `conversationId`, or by resolving the latest active phone conversation automatically.
+- The terminal monitor now translates phone realtime monitor lifecycle messages into Japanese, including retries and auth/plan failures.

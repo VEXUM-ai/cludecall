@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { ElevenLabsApiError, startOutboundCall } from "@/lib/elevenlabs/api";
 import { appendLiveMonitorEvent } from "@/lib/live-monitor";
+import { startPhoneConversationMonitor } from "@/lib/phone-live-monitor";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,10 @@ export async function POST(request: Request) {
     });
 
     const result = await startOutboundCall(body.toNumber);
+    const monitorResult =
+      result.success && result.conversationId
+        ? await startPhoneConversationMonitor(result.conversationId)
+        : null;
 
     await appendLiveMonitorEvent({
       kind: "outbound",
@@ -36,6 +41,8 @@ export async function POST(request: Request) {
         message: result.message,
         twilioAccountType: result.twilioAccountType,
         warnings: result.warnings,
+        phoneRealtimeMonitorStarted: monitorResult?.started ?? false,
+        phoneRealtimeMonitorAlreadyActive: monitorResult?.alreadyActive ?? false,
         resolvePhoneNumberMs: result.outboundMetrics.resolvePhoneNumberMs,
         phoneNumberCacheHit: result.outboundMetrics.phoneNumberCacheHit,
         twilioAccountLookupMs: result.outboundMetrics.twilioAccountLookupMs,
