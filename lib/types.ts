@@ -1,6 +1,40 @@
 export type ConversationChannel = "web" | "phone";
 export type ConversationTransport = "webrtc" | "websocket" | "telephony" | "unknown";
 
+export type ServiceLine =
+  | "general_initial"
+  | "emergency_initial"
+  | "implant_consult"
+  | "thp_pretest"
+  | "free_screening"
+  | "whitening"
+  | "invisalign"
+  | "other_manual_review";
+
+export type TriageLevel =
+  | "routine"
+  | "same_day_phone"
+  | "doctor_required"
+  | "manual_review";
+
+export type LineFormStatus =
+  | "completed"
+  | "needs_arrival_form"
+  | "not_using_line"
+  | "unknown";
+
+export type AppointmentSubmissionMode =
+  | "manual_review"
+  | "auto_after_review"
+  | "direct_auto";
+
+export type AppointmentSubmissionState =
+  | "drafted"
+  | "confirmed_pending_submission"
+  | "needs_manual_entry"
+  | "submitted"
+  | "submission_failed";
+
 export type ConversationLifecycleStatus =
   | "idle"
   | "connecting"
@@ -24,6 +58,46 @@ export type ConversationEventLogEntry = {
   level: "info" | "success" | "warning" | "error";
 };
 
+export type ClinicProfile = {
+  clinicName: string;
+  address: string;
+  phoneNumber: string;
+  businessHours: string;
+  closedDays: string;
+  sameDayPolicy: string;
+  reservationPolicy: string;
+  firstVisitArrivalNote: string;
+  emergencyPolicy: string;
+  accessSummary: string;
+  nearestStation: string;
+  parking: string;
+  officialSiteUrl: string;
+  sourceCheckedAt: string;
+};
+
+export type FaqEntry = {
+  id: string;
+  question: string;
+  answer: string;
+  tags: string[];
+};
+
+export type BookingRule = {
+  serviceLine: ServiceLine;
+  label: string;
+  chairFootprint: string;
+  staffing: string;
+  patientFacingNotes: string[];
+  internalNotes: string[];
+};
+
+export type EscalationRule = {
+  id: string;
+  when: string;
+  action: string;
+  reason: string;
+};
+
 export type ReservationMemo = {
   patient_name: string | null;
   phone_number: string | null;
@@ -37,6 +111,10 @@ export type ReservationMemo = {
   unresolved_questions: string | null;
   notes_for_staff: string | null;
   booking_status: string;
+  service_line: ServiceLine | null;
+  triage_level: TriageLevel | null;
+  line_form_status: LineFormStatus | null;
+  manual_review_reason: string | null;
 };
 
 export type EvaluationCriterionResult = {
@@ -55,12 +133,77 @@ export type AnalyzeConversationRequest = {
   conversationId: string;
 };
 
+export type AppointmentToolPayload = {
+  clinic: {
+    name: string;
+    phoneNumber: string;
+  };
+  patient: {
+    name: string | null;
+    phoneNumber: string | null;
+    isNewPatient: boolean | null;
+  };
+  request: {
+    serviceLine: ServiceLine;
+    visitReason: string | null;
+    preferredSlots: Array<{
+      label: string;
+      date: string | null;
+      timeRange: string | null;
+    }>;
+    callbackOk: boolean | null;
+    lineFormStatus: LineFormStatus;
+    triageLevel: TriageLevel;
+  };
+  internal: {
+    bookingStatus: string;
+    notesForStaff: string | null;
+    unresolvedQuestions: string | null;
+    manualReviewReason: string | null;
+    handoffSummary: string;
+  };
+  integration: {
+    provider: string | null;
+    mode: AppointmentSubmissionMode;
+    sourceChannel: ConversationChannel;
+  };
+};
+
+export type AppointmentDraft = {
+  conversationId: string;
+  clinicName: string;
+  patientName: string | null;
+  phoneNumber: string | null;
+  isNewPatient: boolean | null;
+  serviceLine: ServiceLine;
+  triageLevel: TriageLevel;
+  lineFormStatus: LineFormStatus;
+  visitReason: string | null;
+  preferredSlots: Array<{
+    label: string;
+    date: string | null;
+    timeRange: string | null;
+  }>;
+  callbackOk: boolean | null;
+  notesForStaff: string | null;
+  unresolvedQuestions: string | null;
+  bookingStatus: string;
+  manualReviewReason: string | null;
+  handoffSummary: string;
+  submissionMode: AppointmentSubmissionMode;
+  submissionState: AppointmentSubmissionState;
+  confirmedAt: string | null;
+  lastUpdatedAt: string;
+  appointmentToolPayload: AppointmentToolPayload;
+};
+
 export type AnalyzeConversationResponse = {
   conversationId: string;
   status: string;
   transcript: TranscriptEntry[];
   analysis: ConversationAnalysis;
   memo: ReservationMemo;
+  appointmentDraft: AppointmentDraft | null;
 };
 
 export type LatencySample = {
@@ -104,6 +247,7 @@ export type ConversationHistorySummary = {
   memo: ReservationMemo | null;
   latency: LatencySample | null;
   transcriptCount: number;
+  appointmentDraft: AppointmentDraft | null;
 };
 
 export type ConversationHistoryDetail = DemoRun & {

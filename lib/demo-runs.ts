@@ -1,6 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
+import {
+  LINE_FORM_STATUS_LABELS,
+  SERVICE_LINE_LABELS,
+  SUBMISSION_STATE_LABELS,
+  TRIAGE_LEVEL_LABELS,
+} from "@/lib/appointments";
 import { summarizeMissingMemoFields } from "@/lib/elevenlabs/memo";
 import type { DemoRun } from "@/lib/types";
 
@@ -71,6 +77,22 @@ export function renderDemoRunMarkdown(run: DemoRun, timeZone: string): string {
 - unresolved_questions: ${stringifyValue(run.memo.unresolved_questions)}
 - notes_for_staff: ${stringifyValue(run.memo.notes_for_staff)}
 - booking_status: ${stringifyValue(run.memo.booking_status)}
+- service_line: ${stringifyValue(run.memo.service_line)}
+- triage_level: ${stringifyValue(run.memo.triage_level)}
+- line_form_status: ${stringifyValue(run.memo.line_form_status)}
+- manual_review_reason: ${stringifyValue(run.memo.manual_review_reason)}
+
+## アポツール投入ドラフト
+${
+  run.appointmentDraft
+    ? `- service_line: ${SERVICE_LINE_LABELS[run.appointmentDraft.serviceLine]}
+- triage_level: ${TRIAGE_LEVEL_LABELS[run.appointmentDraft.triageLevel]}
+- line_form_status: ${LINE_FORM_STATUS_LABELS[run.appointmentDraft.lineFormStatus]}
+- submission_state: ${SUBMISSION_STATE_LABELS[run.appointmentDraft.submissionState]}
+- manual_review_reason: ${run.appointmentDraft.manualReviewReason ?? "なし"}
+- handoff_summary: ${run.appointmentDraft.handoffSummary}`
+    : "- ドラフトなし"
+}
 
 ## 要約
 ${run.analysis.transcriptSummary ?? "要約なし"}

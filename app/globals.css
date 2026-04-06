@@ -454,6 +454,26 @@ code {
   color: var(--muted);
 }
 
+.appointment-section {
+  margin-top: 18px;
+}
+
+.appointment-actions {
+  margin-top: 18px;
+}
+
+.payload-block {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(22, 42, 38, 0.92);
+  color: #f4efe3;
+  overflow-x: auto;
+  line-height: 1.6;
+  font-size: 0.88rem;
+}
+
 @media (max-width: 960px) {
   .layout-grid,
   .hero {

@@ -1,3 +1,5 @@
+import type { AppointmentSubmissionMode } from "@/lib/types";
+
 type ServerConfig = {
   apiKey: string;
   agentId: string;
@@ -7,6 +9,8 @@ type ServerConfig = {
   twilioCallerId: string | null;
   demoOutboundTargetNumber: string | null;
   demoTimezone: string;
+  appointmentToolMode: AppointmentSubmissionMode;
+  appointmentToolProvider: string | null;
 };
 
 function readEnv(name: string): string | null {
@@ -23,6 +27,20 @@ function requireEnv(name: string): string {
 }
 
 export function getServerConfig(): ServerConfig {
+  const appointmentToolMode =
+    (readEnv("APPOINTMENT_TOOL_MODE") as AppointmentSubmissionMode | null) ??
+    "manual_review";
+
+  if (
+    appointmentToolMode !== "manual_review" &&
+    appointmentToolMode !== "auto_after_review" &&
+    appointmentToolMode !== "direct_auto"
+  ) {
+    throw new Error(
+      "APPOINTMENT_TOOL_MODE must be one of manual_review, auto_after_review, direct_auto."
+    );
+  }
+
   return {
     apiKey: requireEnv("ELEVENLABS_API_KEY"),
     agentId: requireEnv("ELEVENLABS_AGENT_ID"),
@@ -32,6 +50,8 @@ export function getServerConfig(): ServerConfig {
     twilioCallerId: readEnv("TWILIO_CALLER_ID"),
     demoOutboundTargetNumber: readEnv("DEMO_OUTBOUND_TARGET_NUMBER"),
     demoTimezone: readEnv("DEMO_TIMEZONE") ?? "Asia/Tokyo",
+    appointmentToolMode,
+    appointmentToolProvider: readEnv("APPOINTMENT_TOOL_PROVIDER"),
   };
 }
 

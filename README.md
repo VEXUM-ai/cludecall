@@ -46,9 +46,11 @@ Verified Caller ID に自分の携帯番号を使っている場合、自分の�
 
 ## 補足
 - 全体計画は `docs/demo-plan.md`
+- ハイブリッド運用の方向性は `docs/AI一次受付ハイブリッド設計.md`
 - 実装ログは `docs/implementation-notes.md`
 - agent 設定は `docs/agent/README.md`
 - デモ用の agent 文面は `docs/agent/dental-demo-config.md`
 - 運用手順は `docs/runbook.md`
+- クライアント向けの総覧は `docs/client/README.md`
 - 証跡フォーマットは `docs/demo-runs/README.md`
 - レイテンシ集計は `docs/latency-report.md`

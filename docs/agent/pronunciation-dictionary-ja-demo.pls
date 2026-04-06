@@ -5,28 +5,28 @@
   xsi:schemaLocation="http://www.w3.org/2005/01/pronunciation-lexicon http://www.w3.org/TR/2007/CR-pronunciation-lexicon-20071212/pls.xsd"
   xml:lang="ja-JP">
   <lexeme>
-    <grapheme>VEXUMデンタルクリニック渋谷</grapheme>
-    <alias>ベクサムデンタルクリニックしぶや</alias>
+    <grapheme>えみは総合歯科 大阪梅田院</grapheme>
+    <alias>えみはそうごうしか おおさかうめだいん</alias>
   </lexeme>
   <lexeme>
-    <grapheme>VEXUMデンタルクリニック</grapheme>
-    <alias>ベクサムデンタルクリニック</alias>
+    <grapheme>えみは総合歯科</grapheme>
+    <alias>えみはそうごうしか</alias>
   </lexeme>
   <lexeme>
-    <grapheme>VEXUM歯科</grapheme>
-    <alias>ベクサムしか</alias>
+    <grapheme>グラングリーン大阪</grapheme>
+    <alias>グラングリーンおおさか</alias>
   </lexeme>
   <lexeme>
-    <grapheme>VEXUMスクエア</grapheme>
-    <alias>ベクサムスクエア</alias>
+    <grapheme>JR大阪駅直結</grapheme>
+    <alias>ジェイアールおおさかえきちょっけつ</alias>
   </lexeme>
   <lexeme>
-    <grapheme>渋谷駅B5出口</grapheme>
-    <alias>しぶやえきびごでぐち</alias>
+    <grapheme>北館2F</grapheme>
+    <alias>きたかんにかい</alias>
   </lexeme>
   <lexeme>
-    <grapheme>東京都渋谷区渋谷</grapheme>
-    <alias>とうきょうとしぶやくしぶや</alias>
+    <grapheme>THP</grapheme>
+    <alias>ティーエイチピー</alias>
   </lexeme>
   <lexeme>
     <grapheme>AI受付</grapheme>
@@ -49,15 +49,15 @@
     <alias>キャドキャム</alias>
   </lexeme>
   <lexeme>
-    <grapheme>PMTC</grapheme>
-    <alias>ピーエムティーシー</alias>
+    <grapheme>iTero</grapheme>
+    <alias>アイテロ</alias>
   </lexeme>
   <lexeme>
-    <grapheme>GBT</grapheme>
-    <alias>ジービーティー</alias>
+    <grapheme>IPR</grapheme>
+    <alias>アイピーアール</alias>
   </lexeme>
   <lexeme>
-    <grapheme>前日18時</grapheme>
-    <alias>ぜんじつじゅうはちじ</alias>
+    <grapheme>インビザライン</grapheme>
+    <alias>インビザライン</alias>
   </lexeme>
 </lexicon>

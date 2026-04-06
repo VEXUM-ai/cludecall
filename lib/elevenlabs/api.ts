@@ -2,6 +2,8 @@ import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
 
 import { z } from "zod";
 
+import { readStoredAppointmentDraft } from "@/lib/appointment-store";
+import { buildAppointmentDraft } from "@/lib/appointments";
 import { getServerConfig } from "@/lib/env";
 import { writeDemoRunArtifacts } from "@/lib/demo-runs";
 import { buildLatencySample, writeLatencySample } from "@/lib/latency";
@@ -276,7 +278,7 @@ function toNullableString(value: unknown): string | null {
   return null;
 }
 
-function normalizeAnalyzeResponse(details: ConversationDetails): AnalyzeConversationResponse {
+function buildBaseAnalyzeResponse(details: ConversationDetails) {
   const transcript = normalizeTranscript(details.transcript);
   const analysis = normalizeConversationAnalysis(details.analysis);
   const memo = normalizeReservationMemo(details.analysis?.data_collection_results);
@@ -290,8 +292,32 @@ function normalizeAnalyzeResponse(details: ConversationDetails): AnalyzeConversa
   };
 }
 
-function normalizeDemoRun(details: ConversationDetails): DemoRun {
-  const base = normalizeAnalyzeResponse(details);
+async function normalizeAnalyzeResponse(
+  details: ConversationDetails
+): Promise<AnalyzeConversationResponse> {
+  const base = buildBaseAnalyzeResponse(details);
+  const metadata =
+    details.metadata && typeof details.metadata === "object" ? details.metadata : {};
+  const phoneCall =
+    typeof metadata.phone_call === "object" && metadata.phone_call !== null
+      ? (metadata.phone_call as Record<string, unknown>)
+      : null;
+  const storedDraft = await readStoredAppointmentDraft(details.conversation_id);
+
+  return {
+    ...base,
+    appointmentDraft: buildAppointmentDraft({
+      conversationId: details.conversation_id,
+      memo: base.memo,
+      transcript: base.transcript,
+      channel: phoneCall ? "phone" : "web",
+      storedDraft,
+    }),
+  };
+}
+
+async function normalizeDemoRun(details: ConversationDetails): Promise<DemoRun> {
+  const base = await normalizeAnalyzeResponse(details);
   const metadata =
     details.metadata && typeof details.metadata === "object" ? details.metadata : {};
   const phoneCall =
@@ -329,11 +355,11 @@ function normalizeDemoRun(details: ConversationDetails): DemoRun {
   };
 }
 
-function buildConversationSummary(
+async function buildConversationSummary(
   details: ConversationDetails,
   source: string | null
-): ConversationHistorySummary {
-  const run = normalizeDemoRun(details);
+): Promise<ConversationHistorySummary> {
+  const run = await normalizeDemoRun(details);
   const transcriptCount = Array.isArray(details.transcript) ? details.transcript.length : 0;
 
   return {
@@ -356,6 +382,7 @@ function buildConversationSummary(
     memo: run.memo,
     latency: run.latency,
     transcriptCount,
+    appointmentDraft: run.appointmentDraft,
   };
 }
 
@@ -559,9 +586,10 @@ export async function getConversationHistoryDetail(
   const matched = recent.conversations.find(
     (item) => item.conversation_id === conversationId
   );
+  const run = await normalizeDemoRun(details);
 
   return {
-    ...normalizeDemoRun(details),
+    ...run,
     source: matched?.conversation_initiation_source ?? summarizeConversationSource(
       {
         conversation_id: conversationId,
@@ -595,8 +623,10 @@ export async function listConversationHistorySummaries(
     selected.map((candidate) => getConversationDetails(candidate.conversation_id))
   );
 
-  return details.map((detail, index) =>
-    buildConversationSummary(detail, summarizeConversationSource(selected[index], detail))
+  return Promise.all(
+    details.map((detail, index) =>
+      buildConversationSummary(detail, summarizeConversationSource(selected[index], detail))
+    )
   );
 }
 
@@ -633,7 +663,7 @@ async function findMostRecentPhoneConversationId(): Promise<string> {
 export async function importLatestPhoneCall(conversationId?: string): Promise<DemoRun> {
   const targetConversationId = conversationId ?? (await findMostRecentPhoneConversationId());
   const details = await resolveConversationRun(targetConversationId);
-  const run = normalizeDemoRun(details);
+  const run = await normalizeDemoRun(details);
   if (run.latency) {
     await writeLatencySample(run.latency);
   }

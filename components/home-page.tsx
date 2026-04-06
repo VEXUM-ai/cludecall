@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useConversationController } from "@/components/conversation-provider";
+import { EMIHA_CLINIC_PROFILE } from "@/lib/clinic-config/emiha";
+import {
+  findBookingRule,
+  LINE_FORM_STATUS_LABELS,
+  SERVICE_LINE_LABELS,
+  SUBMISSION_STATE_LABELS,
+  TRIAGE_LEVEL_LABELS,
+} from "@/lib/appointments";
 import type {
+  AppointmentDraft,
   ConversationEventLogEntry,
   ConversationHistoryDetail,
   ConversationHistorySummary,
@@ -31,6 +40,30 @@ function formatOptional(value: string | number | null) {
   }
 
   return String(value);
+}
+
+function formatServiceLine(value: DemoRun["memo"]["service_line"]) {
+  if (!value) {
+    return "未取得";
+  }
+
+  return SERVICE_LINE_LABELS[value];
+}
+
+function formatTriageLevel(value: DemoRun["memo"]["triage_level"]) {
+  if (!value) {
+    return "未取得";
+  }
+
+  return TRIAGE_LEVEL_LABELS[value];
+}
+
+function formatLineFormStatus(value: DemoRun["memo"]["line_form_status"]) {
+  if (!value) {
+    return "未取得";
+  }
+
+  return LINE_FORM_STATUS_LABELS[value];
 }
 
 function formatNumber(value: number | null) {
@@ -113,6 +146,10 @@ function MemoTable({
     ["未解決事項", memo.unresolved_questions],
     ["スタッフ向けメモ", memo.notes_for_staff],
     ["受付ステータス", memo.booking_status],
+    ["受付区分", formatServiceLine(memo.service_line)],
+    ["優先度", formatTriageLevel(memo.triage_level)],
+    ["LINE問診", formatLineFormStatus(memo.line_form_status)],
+    ["人確認理由", memo.manual_review_reason],
   ] as const;
 
   return (
@@ -128,6 +165,127 @@ function MemoTable({
           </div>
         ))}
       </dl>
+    </section>
+  );
+}
+
+function ClinicProfileCard() {
+  const rows = [
+    ["医院名", EMIHA_CLINIC_PROFILE.clinicName],
+    ["住所", EMIHA_CLINIC_PROFILE.address],
+    ["電話番号", EMIHA_CLINIC_PROFILE.phoneNumber],
+    ["診療時間", EMIHA_CLINIC_PROFILE.businessHours],
+    ["休診日", EMIHA_CLINIC_PROFILE.closedDays],
+    ["アクセス", EMIHA_CLINIC_PROFILE.accessSummary],
+    ["駐車場", EMIHA_CLINIC_PROFILE.parking],
+    ["急患案内", EMIHA_CLINIC_PROFILE.emergencyPolicy],
+    ["初診案内", EMIHA_CLINIC_PROFILE.firstVisitArrivalNote],
+  ] as const;
+
+  return (
+    <section className="card">
+      <div className="section-heading">
+        <h2>医院公開プロフィール</h2>
+        <p>デモで患者向けに案内する公開情報です。2026-04-06 時点の公式情報に合わせています。</p>
+      </div>
+      <dl className="memo-grid">
+        {rows.map(([label, value]) => (
+          <div key={label} className="memo-row">
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function AppointmentDraftCard({
+  title,
+  draft,
+  onConfirm,
+  isConfirming,
+  error,
+}: {
+  title: string;
+  draft: AppointmentDraft | null;
+  onConfirm: (() => void) | null;
+  isConfirming: boolean;
+  error: string | null;
+}) {
+  if (!draft) {
+    return null;
+  }
+
+  const rule = findBookingRule(draft.serviceLine);
+  const rows = [
+    ["受付区分", SERVICE_LINE_LABELS[draft.serviceLine]],
+    ["優先度", TRIAGE_LEVEL_LABELS[draft.triageLevel]],
+    ["LINE問診", LINE_FORM_STATUS_LABELS[draft.lineFormStatus]],
+    ["提出モード", draft.submissionMode],
+    ["提出状態", SUBMISSION_STATE_LABELS[draft.submissionState]],
+    ["人確認理由", draft.manualReviewReason ?? "なし"],
+    ["引き継ぎ要約", draft.handoffSummary],
+  ] as const;
+
+  return (
+    <section className="card">
+      <div className="section-heading">
+        <h3>{title}</h3>
+        <p>アポツール投入前の正規化済みドラフトです。今回のデモでは人確認後に手動登録します。</p>
+      </div>
+      <dl className="memo-grid">
+        {rows.map(([label, value]) => (
+          <div key={label} className="memo-row">
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {draft.preferredSlots.length > 0 ? (
+        <div className="stack-tight appointment-section">
+          <strong>希望枠</strong>
+          {draft.preferredSlots.map((slot) => (
+            <div key={slot.label} className="history-note">
+              <header>
+                <strong>{slot.label}</strong>
+                <span>{formatOptional(slot.date)}</span>
+              </header>
+              <p>{formatOptional(slot.timeRange)}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {rule ? (
+        <div className="stack-tight appointment-section">
+          <strong>予約ルール</strong>
+          <article className="history-note">
+            <header>
+              <strong>{rule.label}</strong>
+              <span>{rule.chairFootprint}</span>
+            </header>
+            <p>{rule.staffing}</p>
+            <p>{rule.patientFacingNotes.join(" ")}</p>
+          </article>
+        </div>
+      ) : null}
+      <div className="button-row appointment-actions">
+        <button
+          type="button"
+          className="primary-button"
+          onClick={onConfirm ?? undefined}
+          disabled={!onConfirm || isConfirming || draft.submissionState !== "drafted"}
+        >
+          {isConfirming ? "確認中..." : "確認してアポ登録"}
+        </button>
+      </div>
+      {error ? <p className="error-text">{error}</p> : null}
+      <div className="stack-tight appointment-section">
+        <strong>アポツール投入用 payload</strong>
+        <pre className="payload-block">
+          {JSON.stringify(draft.appointmentToolPayload, null, 2)}
+        </pre>
+      </div>
     </section>
   );
 }
@@ -292,6 +450,9 @@ function ConversationSummaryCard({
         <span>{summarizeSource(item.source, item.channel)}</span>
         <span>{formatOptional(item.durationSecs)} sec</span>
         <span>{item.success ?? "未取得"}</span>
+        {item.appointmentDraft ? (
+          <span>{SUBMISSION_STATE_LABELS[item.appointmentDraft.submissionState]}</span>
+        ) : null}
       </div>
       <p className="history-item-summary">
         {item.transcriptSummary ?? "要約はまだありません。"}
@@ -384,6 +545,12 @@ export function HomePage({
   );
   const [importError, setImportError] = useState<string | null>(null);
   const [isImportingPhoneCall, setIsImportingPhoneCall] = useState(false);
+  const [appointmentActionError, setAppointmentActionError] = useState<string | null>(null);
+  const [isConfirmingConversationId, setIsConfirmingConversationId] = useState<string | null>(
+    null
+  );
+  const [liveAppointmentOverride, setLiveAppointmentOverride] =
+    useState<AppointmentDraft | null>(null);
 
   const canStart = lifecycleStatus === "idle" || lifecycleStatus === "error";
   const canStop =
@@ -404,6 +571,7 @@ export function HomePage({
   }, [canStop]);
 
   const selectedTranscript = selectedHistoryDetail?.transcript ?? [];
+  const liveAppointmentDraft = liveAppointmentOverride ?? analysisResult?.appointmentDraft ?? null;
 
   const loadHistoryDetail = useCallback(async (conversationIdToLoad: string) => {
     setDetailError(null);
@@ -512,9 +680,16 @@ export function HomePage({
 
   useEffect(() => {
     if (analysisResult?.conversationId) {
+      setLiveAppointmentOverride(null);
       void refreshHistory(analysisResult.conversationId);
     }
   }, [analysisResult?.conversationId, refreshHistory]);
+
+  useEffect(() => {
+    if (!analysisResult) {
+      setLiveAppointmentOverride(null);
+    }
+  }, [analysisResult]);
 
   async function handleImportLatestPhoneCall() {
     setImportError(null);
@@ -588,6 +763,61 @@ export function HomePage({
     await loadHistoryDetail(conversationIdToLoad);
   }
 
+  async function handleConfirmAppointment(
+    conversationIdToConfirm: string,
+    target: "live" | "history"
+  ) {
+    setAppointmentActionError(null);
+    setIsConfirmingConversationId(conversationIdToConfirm);
+
+    try {
+      const response = await fetch("/api/demo/appointments/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: conversationIdToConfirm }),
+      });
+      const payload = (await response.json()) as
+        | { appointmentDraft: AppointmentDraft }
+        | { error?: string };
+
+      if (!response.ok || !("appointmentDraft" in payload)) {
+        throw new Error(
+          "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "Failed to confirm the appointment draft."
+        );
+      }
+
+      const nextDraft = payload.appointmentDraft;
+
+      setHistoryItems((current) =>
+        current.map((item) =>
+          item.conversationId === conversationIdToConfirm
+            ? { ...item, appointmentDraft: nextDraft }
+            : item
+        )
+      );
+
+      if (target === "live") {
+        setLiveAppointmentOverride(nextDraft);
+      }
+
+      setSelectedHistoryDetail((current) =>
+        current && current.conversationId === conversationIdToConfirm
+          ? { ...current, appointmentDraft: nextDraft }
+          : current
+      );
+    } catch (confirmError) {
+      setAppointmentActionError(
+        confirmError instanceof Error
+          ? confirmError.message
+          : "Failed to confirm the appointment draft."
+      );
+    } finally {
+      setIsConfirmingConversationId(null);
+    }
+  }
+
   const liveMetricsRows = [
     ["状態", <StatusBadge key="status" status={lifecycleStatus} />],
     ["SDK", <span key="sdk">{sdkStatus}</span>],
@@ -620,30 +850,32 @@ export function HomePage({
     <main className="page-shell">
       <section className="hero card">
         <div className="hero-copy">
-          <p className="eyebrow">Dental Receptionist Demo</p>
-          <h1>歯科一次受付 AI デモ</h1>
+          <p className="eyebrow">Emiha Reception Demo</p>
+          <h1>えみは総合歯科 大阪梅田院 AI受付デモ</h1>
           <p className="lead">
-            Web 会話、実電話、過去会話の transcript、要約、遅延、評価結果を同じ画面で見られるデモです。
+            Web 会話、実電話、過去会話の transcript、評価結果、仮受付ドラフト、アポツール投入用 payload を同じ画面で確認できます。
           </p>
         </div>
         <div className="hero-meta">
           <div>
-            <span className="meta-label">状態</span>
-            <StatusBadge status={lifecycleStatus} />
+            <span className="meta-label">医院</span>
+            <span>{EMIHA_CLINIC_PROFILE.clinicName}</span>
           </div>
           <div>
-            <span className="meta-label">SDK</span>
-            <span>{sdkStatus}</span>
+            <span className="meta-label">診療時間</span>
+            <span>{EMIHA_CLINIC_PROFILE.businessHours}</span>
           </div>
           <div>
-            <span className="meta-label">conversationId</span>
-            <code>{conversationId ?? "未開始"}</code>
+            <span className="meta-label">休診日</span>
+            <span>{EMIHA_CLINIC_PROFILE.closedDays}</span>
           </div>
         </div>
       </section>
 
       <section className="layout-grid">
         <div className="stack">
+          <ClinicProfileCard />
+
           <section className="card">
             <div className="section-heading">
               <h2>Web 会話</h2>
@@ -705,6 +937,26 @@ export function HomePage({
           {analysisResult ? (
             <>
               <MemoTable title="Web 会話の受付メモ" memo={analysisResult.memo} />
+              <AppointmentDraftCard
+                title="Web 会話のアポツールドラフト"
+                draft={liveAppointmentDraft}
+                onConfirm={
+                  analysisResult.conversationId
+                    ? () =>
+                        void handleConfirmAppointment(
+                          analysisResult.conversationId,
+                          "live"
+                        )
+                    : null
+                }
+                isConfirming={isConfirmingConversationId === analysisResult.conversationId}
+                error={
+                  isConfirmingConversationId === analysisResult.conversationId ||
+                  appointmentActionError === null
+                    ? null
+                    : appointmentActionError
+                }
+              />
               <LatencyTable title="Web 会話のレイテンシ" sample={latencySample} />
             </>
           ) : null}
@@ -779,6 +1031,22 @@ export function HomePage({
               <div className="stack">
                 <DetailMeta detail={selectedHistoryDetail} />
                 <MemoTable title="選択中の受付メモ" memo={selectedHistoryDetail.memo} />
+                <AppointmentDraftCard
+                  title="選択中会話のアポツールドラフト"
+                  draft={selectedHistoryDetail.appointmentDraft}
+                  onConfirm={() =>
+                    void handleConfirmAppointment(selectedHistoryDetail.conversationId, "history")
+                  }
+                  isConfirming={
+                    isConfirmingConversationId === selectedHistoryDetail.conversationId
+                  }
+                  error={
+                    isConfirmingConversationId === selectedHistoryDetail.conversationId ||
+                    appointmentActionError === null
+                      ? null
+                      : appointmentActionError
+                  }
+                />
                 <LatencyTable title="選択中のレイテンシ" sample={selectedHistoryDetail.latency} />
                 <EvaluationTable
                   title="選択中の評価結果"
@@ -874,7 +1142,7 @@ export function HomePage({
             <div className="section-heading">
               <h2>即日デモ手順</h2>
               <p>
-                Twilio の Verified Caller ID を使った outbound-only の電話デモを前提にしています。
+                Twilio outbound と仮受付ドラフト確認までを前提にしたデモ手順です。
               </p>
             </div>
             <ol className="ordered-list">
@@ -883,6 +1151,7 @@ export function HomePage({
               <li>Twilio Trial の場合は、最初に英語の trial アナウンスが流れ終わるまで待つ。</li>
               <li>その後に電話で予約会話を行う。</li>
               <li>通話後に `最新の電話会話を取り込む` を実行する。</li>
+              <li>`確認してアポ登録` を押して、payload を見ながらアポツールへ手動登録する。</li>
               <li>`npm run demo:import-last-call` で Markdown 記録も保存する。</li>
             </ol>
           </section>

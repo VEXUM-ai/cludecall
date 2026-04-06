@@ -1,3 +1,8 @@
+import {
+  normalizeLineFormStatus,
+  normalizeServiceLine,
+  normalizeTriageLevel,
+} from "@/lib/appointments";
 import type {
   ConversationAnalysis,
   EvaluationCriterionResult,
@@ -20,6 +25,10 @@ const MEMO_KEYS = [
   "unresolved_questions",
   "notes_for_staff",
   "booking_status",
+  "service_line",
+  "triage_level",
+  "line_form_status",
+  "manual_review_reason",
 ] as const;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -176,21 +185,51 @@ export function normalizeTranscript(transcript: unknown): TranscriptEntry[] {
 
 export function normalizeReservationMemo(dataCollectionResults: unknown): ReservationMemo {
   const source = isRecord(dataCollectionResults) ? dataCollectionResults : {};
+  const visitReason = toNullableString(source.visit_reason);
+  const notesForStaff = toNullableString(source.notes_for_staff);
+  const unresolvedQuestions = toNullableString(source.unresolved_questions);
+  const isNewPatient = toNullableBoolean(source.is_new_patient);
+  const serviceLine =
+    normalizeServiceLine(
+      toNullableString(source.service_line),
+      visitReason,
+      notesForStaff,
+      unresolvedQuestions
+    ) ?? null;
+  const triageLevel =
+    normalizeTriageLevel(
+      toNullableString(source.triage_level),
+      serviceLine,
+      visitReason,
+      notesForStaff,
+      unresolvedQuestions
+    ) ?? null;
+  const lineFormStatus =
+    normalizeLineFormStatus(
+      toNullableString(source.line_form_status),
+      isNewPatient,
+      notesForStaff,
+      unresolvedQuestions
+    ) ?? null;
 
   return {
     patient_name: toNullableString(source.patient_name),
     phone_number: toNullableString(source.phone_number),
-    is_new_patient: toNullableBoolean(source.is_new_patient),
-    visit_reason: toNullableString(source.visit_reason),
+    is_new_patient: isNewPatient,
+    visit_reason: visitReason,
     preferred_date_1: toNullableString(source.preferred_date_1),
     preferred_time_range_1: toNullableString(source.preferred_time_range_1),
     preferred_date_2: toNullableString(source.preferred_date_2),
     preferred_time_range_2: toNullableString(source.preferred_time_range_2),
     callback_ok: toNullableBoolean(source.callback_ok),
-    unresolved_questions: toNullableString(source.unresolved_questions),
-    notes_for_staff: toNullableString(source.notes_for_staff),
+    unresolved_questions: unresolvedQuestions,
+    notes_for_staff: notesForStaff,
     booking_status:
       toNullableString(source.booking_status) ?? "pending_manual_confirmation",
+    service_line: serviceLine,
+    triage_level: triageLevel,
+    line_form_status: lineFormStatus,
+    manual_review_reason: toNullableString(source.manual_review_reason),
   };
 }
 

@@ -75,8 +75,13 @@ v3 の利用可否と `eleven_v3` / `eleven_v3_conversational` の違いは [doc
 - `unresolved_questions`
 - `notes_for_staff`
 - `booking_status`
+- `service_line`
+- `triage_level`
+- `line_form_status`
+- `manual_review_reason`
 
 `booking_status` の既定値は `pending_manual_confirmation`。
+今回のデモでは、`booking_status` に加えて `service_line` `triage_level` `line_form_status` を用いてアポツール投入前の仮受付ドラフトを生成する。
 
 具体的な文面、想定シナリオ、評価観点は [docs/agent/dental-demo-config.md](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/dental-demo-config.md) にまとめてある。
 

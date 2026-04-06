@@ -5,6 +5,7 @@ node_modules
 .vercel
 artifacts/demo-runs/*.json
 artifacts/latency/*.json
+output/appointment-drafts/*.json
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

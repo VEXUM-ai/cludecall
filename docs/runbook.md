@@ -5,10 +5,11 @@
 2. `npm install`
 3. `npm run agent:apply-demo-config`
 4. `npm run dev`
-5. ブラウザで開始し、会話後に memo を確認する。
-6. `could not establish pc connection` が出る端末では、アプリが自動で WebSocket fallback を試す。失敗する場合はページを再読み込みしてから再度 `開始` を押す。
-7. 会話終了後の analysis 成功時に、Web の接続時間と初回応答時間が `docs/latency-report.md` に自動集計される。
-8. UI で Eleven v3 や voice を手動変更した場合、公開後に `npm run agent:apply-demo-config` を実行しても、その時点の live agent の TTS 設定を維持する。`.env` に `ELEVENLABS_TTS_MODEL_ID` や `ELEVENLABS_VOICE_ID` を入れた場合だけ明示的に上書きする。
+5. ブラウザで開始し、会話後に memo と `アポツールドラフト` を確認する。
+6. `確認してアポ登録` を押し、payload を見ながらアポツールへ手動登録する。
+7. `could not establish pc connection` が出る端末では、アプリが自動で WebSocket fallback を試す。失敗する場合はページを再読み込みしてから再度 `開始` を押す。
+8. 会話終了後の analysis 成功時に、Web の接続時間と初回応答時間が `docs/latency-report.md` に自動集計される。
+9. UI で Eleven v3 や voice を手動変更した場合、公開後に `npm run agent:apply-demo-config` を実行しても、その時点の live agent の TTS 設定を維持する。`.env` に `ELEVENLABS_TTS_MODEL_ID` や `ELEVENLABS_VOICE_ID` を入れた場合だけ明示的に上書きする。
 
 ## 即日電話デモ
 1. `npm run agent:apply-demo-config` を実行し、歯科受付用の prompt と Data Collection を live agent に再適用する。
@@ -18,10 +19,11 @@
 5. アプリの `AI から電話をかける` から発信先番号を入力して outbound call を送る。ダッシュボードの `発信コール` を使ってもよい。
 6. Twilio アカウントが Trial のままなら、接続直後に英語の trial アナウンスが先に流れる。そこですぐ切ると ElevenLabs 側の会話が始まらないので、案内が終わるまで数秒待つ。
 7. 通話終了後、アプリの「最新の電話会話を取り込む」か `npm run demo:import-last-call` を実行する。
-8. 生成された `docs/demo-runs/*.md` を証跡として確認する。
-9. transcript に時刻情報があれば、電話の応答間隔も `docs/latency-report.md` に自動集計される。
-10. inbound デモが必要になったら、Twilio の購入番号か SIP trunk を別途用意する。
-10. Verified Caller ID に自分の携帯番号を使っている場合、自分の携帯そのものを着信先には使わない。自分で受けるには別の caller ID か Twilio 購入番号が必要。
+8. `確認してアポ登録` を押し、表示された payload を見ながらアポツールへ手動登録する。
+9. 生成された `docs/demo-runs/*.md` を証跡として確認する。
+10. transcript に時刻情報があれば、電話の応答間隔も `docs/latency-report.md` に自動集計される。
+11. inbound デモが必要になったら、Twilio の購入番号か SIP trunk を別途用意する。
+12. Verified Caller ID に自分の携帯番号を使っている場合、自分の携帯そのものを着信先には使わない。自分で受けるには別の caller ID か Twilio 購入番号が必要。
 
 ## 将来の inbound 移行
 1. Twilio 日本 `national number` の規制申請を通す。

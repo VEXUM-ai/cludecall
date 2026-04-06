@@ -6,9 +6,9 @@ import { ConversationProvider } from "@/components/conversation-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "歯科一次受付AI デモ",
+  title: "えみは総合歯科 大阪梅田院 AI受付デモ",
   description:
-    "ElevenLabs Agents と Next.js を使った歯科一次受付AIデモ。WebRTC 会話と実電話会話のメモ回収に対応。",
+    "えみは総合歯科 大阪梅田院向けのAI受付デモ。Web会話、実電話、仮受付ドラフト、アポツール投入用の確認フローに対応。",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

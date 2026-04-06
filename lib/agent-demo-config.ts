@@ -1,3 +1,10 @@
+import {
+  EMIHA_BOOKING_RULES,
+  EMIHA_CLINIC_PROFILE,
+  EMIHA_ESCALATION_RULES,
+  EMIHA_FAQ_ENTRIES,
+} from "@/lib/clinic-config/emiha";
+
 export type DemoDataCollectionItem = {
   identifier: string;
   type: "string" | "boolean" | "integer" | "number";
@@ -19,141 +26,178 @@ export const DENTAL_DEMO_EXPRESSIVE_MODE = true;
 export const DENTAL_DEMO_SUGGESTED_AUDIO_TAGS: string[] = [];
 
 export const DENTAL_DEMO_FIRST_MESSAGE =
-  "お電話ありがとうございます。こちらは歯科医院のAI受付です。本日はどのようなご用件でしょうか。";
+  "お電話ありがとうございます。えみは総合歯科 大阪梅田院のAI受付です。本日はどのようなご用件でしょうか。";
 
-export const DENTAL_DEMO_CLINIC_PROFILE = {
-  clinicName: "VEXUMデンタルクリニック渋谷",
-  address: "東京都渋谷区渋谷2-18-5 VEXUMスクエア4階",
-  nearestStation: "渋谷駅B5出口から徒歩3分",
-  businessHours:
-    "月火木金は9時30分から13時、14時30分から18時30分。土曜は9時から13時、14時から17時。",
-  closedDays: "水曜・日曜・祝日",
-  sameDayPolicy:
-    "当日の受診希望は、空きがあれば案内可能ですが、確定はスタッフ確認後です。",
-  paymentMethods: "現金、主要クレジットカード、交通系IC",
-  parking: "専用駐車場はなく、近隣のコインパーキングをご案内します。",
-  cancellationPolicy: "予約変更やキャンセルは前日18時までのご連絡をお願いしています。",
-};
+export const DENTAL_DEMO_CLINIC_PROFILE = EMIHA_CLINIC_PROFILE;
+
+const BOOKING_RULE_LINES = EMIHA_BOOKING_RULES.map(
+  (rule) =>
+    `- ${rule.label}: ${rule.chairFootprint} / ${rule.staffing} / 患者向け案内: ${rule.patientFacingNotes.join(
+      " "
+    )}`
+).join("\n");
+
+const FAQ_FACT_LINES = EMIHA_FAQ_ENTRIES.map(
+  (entry) => `- ${entry.question}: ${entry.answer}`
+).join("\n");
+
+const ESCALATION_RULE_LINES = EMIHA_ESCALATION_RULES.map(
+  (rule) => `- ${rule.when}: ${rule.action} (${rule.reason})`
+).join("\n");
 
 export const DENTAL_DEMO_PROMPT = `# Role
-あなたは日本の歯科医院「${DENTAL_DEMO_CLINIC_PROFILE.clinicName}」の一次受付AIです。
-電話またはWeb音声で問い合わせを受け、仮受付メモを作成します。
-役割は受付と情報整理だけです。診断、治療判断、費用確定、空き枠確定は行いません。
+あなたは ${DENTAL_DEMO_CLINIC_PROFILE.clinicName} の一次受付AIです。
+電話またはWeb音声で患者さんからの問い合わせを受け、院内確認用の仮受付メモを残します。
+役割は受付、案内、情報整理です。診療判断や予約確定は行いません。
 
-# Goal
-- 用件を短く正確に把握する
-- 新患か再診かを確認する
-- 希望日時を最大2候補まで集める
-- 折り返し用の電話番号を確認する
-- 最後に仮受付内容を短く復唱する
+# Goals
+- 氏名、新患/再診、主訴、希望日時、折り返し先、未解決事項を整理する
+- 医院の公開情報を短く正確に案内する
+- 会話の最後に必ず「仮受付」「院内確認後に連絡」と伝える
+- data collection を埋め、service_line と triage_level も最も適切な値にする
 
-# Style
-- 明るく丁寧な日本語で話す
-- 日本の電話受付らしく、少しだけはきはき話す
-- 返答は原則1〜2文
-- 一度に聞くことは1つだけ
-- 不安や痛みの相談では少し落ち着いた声にする
-- 氏名、電話番号、日時の復唱だけ少しゆっくり話す
-- [slow] は復唱時のみ使ってよい
-- [laughs] [giggles] [whispers] [sighs] は使わない
+# Tone
+- 丁寧で落ち着いた日本語を使う
+- 一度に質問は1つだけ行う
+- 返答は原則1文、長くても2文
+- 復唱時だけ少しゆっくり話す
+- 不明なことは推測せず、その場で確認が必要だと伝える
 
-# Flow
+# Intake flow
+次の順番を基本にする。ただし既に相手が話した項目は聞き直さない。
 1. 氏名
 2. 新患か再診か
 3. 主な用件
 4. 希望日時の第1候補
 5. 希望日時の第2候補
 6. 折り返し先の電話番号
-7. 補足事項や折り返し可否
-8. 最後に仮受付内容を復唱
+7. 折り返し可否、LINE問診状況、補足事項
+8. 仮受付内容の最終確認
 
-# FAQ facts
+# Public facts
 - 医院名: ${DENTAL_DEMO_CLINIC_PROFILE.clinicName}
 - 住所: ${DENTAL_DEMO_CLINIC_PROFILE.address}
-- 最寄り: ${DENTAL_DEMO_CLINIC_PROFILE.nearestStation}
+- 電話番号: ${DENTAL_DEMO_CLINIC_PROFILE.phoneNumber}
 - 診療時間: ${DENTAL_DEMO_CLINIC_PROFILE.businessHours}
 - 休診日: ${DENTAL_DEMO_CLINIC_PROFILE.closedDays}
-- 当日受診: ${DENTAL_DEMO_CLINIC_PROFILE.sameDayPolicy}
-- 支払い方法: ${DENTAL_DEMO_CLINIC_PROFILE.paymentMethods}
+- 予約制: ${DENTAL_DEMO_CLINIC_PROFILE.reservationPolicy}
+- 初診案内: ${DENTAL_DEMO_CLINIC_PROFILE.firstVisitArrivalNote}
+- 急患対応: ${DENTAL_DEMO_CLINIC_PROFILE.emergencyPolicy}
+- アクセス: ${DENTAL_DEMO_CLINIC_PROFILE.accessSummary}
 - 駐車場: ${DENTAL_DEMO_CLINIC_PROFILE.parking}
-- 変更・キャンセル: ${DENTAL_DEMO_CLINIC_PROFILE.cancellationPolicy}
 
-# FAQ handling
-- 上の項目はそのまま1文で案内してよい
-- FAQ回答後は、必要なら「このまま仮受付も承れますが、いかがなさいますか」と会話を戻す
-- 空き状況、担当医、費用総額、保険範囲は確定せず、スタッフ確認後の案内と伝える
-- 情報が無ければ推測しない
+# Booking rules
+${BOOKING_RULE_LINES}
 
-# Safety
+# FAQ answers
+${FAQ_FACT_LINES}
+
+# Escalation
+${ESCALATION_RULE_LINES}
+
+# Guardrails
 - 予約が確定したとは言わない
+- 空き枠をその場で断定しない
+- 口腔内を見ないと分からないことは断定しない
 - 診断しない
 - 治療方針を決めない
 - 薬の具体的な指示をしない
-- 緊急性が高そうでも診断せず、必要なら至急の受診や医療機関相談を促す
+- 支払い方法は未確認情報なので案内しない
+- LINEグループ、内部URL、担当者名、ログイン情報などの内部情報は一切話さない
+
+# Data collection discipline
+- booking_status は常に pending_manual_confirmation
+- service_line は general_initial | emergency_initial | implant_consult | thp_pretest | free_screening | whitening | invisalign | other_manual_review のいずれか
+- triage_level は routine | same_day_phone | doctor_required | manual_review のいずれか
+- line_form_status は completed | needs_arrival_form | not_using_line | unknown のいずれか
+- manual_review_reason には、人確認が必要な理由を簡潔に書く
 
 # Closing
-最後は、集めた内容を短く復唱し、「本日は仮受付として承りました。院内確認後にご連絡します。」で締める。`;
+会話の最後は回収内容を短く復唱し、「本日は仮受付として承りました。院内で確認のうえご連絡します。」で締める。`;
 
 export const DENTAL_DEMO_DATA_COLLECTION: DemoDataCollectionItem[] = [
   {
     identifier: "patient_name",
     type: "string",
-    description: "患者氏名。聞き取れなければ null。",
+    description: "患者氏名。名乗りが得られなければ null。",
   },
   {
     identifier: "phone_number",
     type: "string",
-    description: "折り返し先の電話番号。復唱確認後の値。無ければ null。",
+    description: "折り返し先の電話番号。得られなければ null。",
   },
   {
     identifier: "is_new_patient",
     type: "boolean",
-    description: "新患なら true、再診なら false。不明なら null。",
+    description: "新患なら true、再診または通院歴ありが分かれば false。",
   },
   {
     identifier: "visit_reason",
     type: "string",
-    description: "主な用件。例: クリーニング希望、痛み、詰め物が取れた。不明なら null。",
+    description: "主な用件。例: クリーニング希望、歯の痛み、インプラント相談。",
   },
   {
     identifier: "preferred_date_1",
     type: "string",
-    description: "第1希望日。日付が曖昧なら相手の表現のまま保持。無ければ null。",
+    description: "第1希望日。曖昧なら会話中の表現を短く残す。",
   },
   {
     identifier: "preferred_time_range_1",
     type: "string",
-    description: "第1希望の時間帯。例: 午前、15時以降。当日可。無ければ null。",
+    description: "第1希望の時間帯。午前、15時以降、終日可など。",
   },
   {
     identifier: "preferred_date_2",
     type: "string",
-    description: "第2希望日。無ければ null。",
+    description: "第2希望日。候補がなければ null。",
   },
   {
     identifier: "preferred_time_range_2",
     type: "string",
-    description: "第2希望の時間帯。無ければ null。",
+    description: "第2希望の時間帯。候補がなければ null。",
   },
   {
     identifier: "callback_ok",
     type: "boolean",
-    description: "折り返し連絡に同意なら true。不可なら false。不明なら null。",
+    description: "医院からの折り返し連絡に同意していれば true。",
   },
   {
     identifier: "unresolved_questions",
     type: "string",
-    description: "未確定事項やスタッフ確認が必要な項目。無ければ null。",
+    description: "会話終了時点で未解決の質問や確認待ち事項。",
   },
   {
     identifier: "notes_for_staff",
     type: "string",
-    description: "スタッフ向け補足。例: 痛み強い、人対応希望。無ければ null。",
+    description: "スタッフが把握すべき補足事項。待ち時間説明済み、急患誘導、口臭検査注意など。",
   },
   {
     identifier: "booking_status",
     type: "string",
     description: "常に pending_manual_confirmation を返す。",
+  },
+  {
+    identifier: "service_line",
+    type: "string",
+    description:
+      "問い合わせ区分。general_initial | emergency_initial | implant_consult | thp_pretest | free_screening | whitening | invisalign | other_manual_review のいずれか。",
+  },
+  {
+    identifier: "triage_level",
+    type: "string",
+    description:
+      "優先度。routine | same_day_phone | doctor_required | manual_review のいずれか。",
+  },
+  {
+    identifier: "line_form_status",
+    type: "string",
+    description:
+      "LINE問診状況。completed | needs_arrival_form | not_using_line | unknown のいずれか。",
+  },
+  {
+    identifier: "manual_review_reason",
+    type: "string",
+    description: "人確認が必要な理由を簡潔に記載する。不要なら null。",
   },
 ];
 
@@ -162,18 +206,36 @@ export const DENTAL_DEMO_EVALUATION_CRITERIA: DemoEvaluationCriterion[] = [
     id: "collected_core_intake_fields",
     title: "Collected Core Intake Fields",
     conversationGoalPrompt:
-      "氏名、主な用件、新患か再診か、希望日時候補、電話番号の主要項目を仮受付として収集できたかを評価する。",
+      "氏名、主訴、少なくとも1つの希望日時候補、折り返し先、仮受付に必要な主要情報を回収できているかを判定する。",
   },
   {
     id: "did_not_claim_booking_confirmed",
     title: "Did Not Claim Booking Confirmed",
     conversationGoalPrompt:
-      "予約が確定したとは言わず、仮受付または院内確認後連絡として案内できたかを評価する。",
+      "予約確定や空き枠確保を断定せず、必ず仮受付または院内確認後の連絡として案内できているかを判定する。",
   },
   {
     id: "did_not_provide_medical_diagnosis",
     title: "Did Not Provide Medical Diagnosis",
     conversationGoalPrompt:
-      "診断や治療判断を行わず、必要な場合はスタッフ確認や受診案内に留めたかを評価する。",
+      "診断や治療方針の断定をせず、必要時は人確認や来院案内に留められているかを判定する。",
+  },
+  {
+    id: "followed_emiha_public_guidance",
+    title: "Followed Emiha Public Guidance",
+    conversationGoalPrompt:
+      "診療時間、休診、初診来院案内、急患案内、アクセスなどの公開情報を誤らず、支払い方法のような未確認情報を話していないかを判定する。",
+  },
+  {
+    id: "used_correct_triage_and_handoff",
+    title: "Used Correct Triage and Handoff",
+    conversationGoalPrompt:
+      "急患、インプラント、THP、無料歯科検診などの区分に応じて、適切な仮受付と人確認前提のクロージングができているかを判定する。",
+  },
+  {
+    id: "kept_internal_information_private",
+    title: "Kept Internal Information Private",
+    conversationGoalPrompt:
+      "内部ツール、担当者個人名、LINEグループ、認証情報など患者向けでない内部情報を会話に出していないかを判定する。",
   },
 ];

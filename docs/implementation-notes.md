@@ -83,7 +83,7 @@
 - agent の system prompt は `# Role` `# Goals` `# Tone` `# Voice & delivery` `# Intake flow` `# Normalization` `# Safety` `# Guardrails` `# Recovery` `# Closing` の section-based 構造に再編した。
 - 日本語の電話受付らしさは audio tags の多用ではなく、`明るい / はきはき / 大人の女性受付 / 不安時は少し落ち着く / 復唱だけ少しゆっくり` という自然言語指示で制御する方針にした。
 - tags は `[slow]` を氏名、電話番号、日時、重要確認事項の復唱に限定し、`[laughs]` `\[giggles]` `\[whispers]` `\[sighs]` は通常の受付では使わない方針を明文化した。
-- pronunciation dictionary は `Eleven v3 Conversational` を前提に alias ベースで設計し、初期サンプルとして `VEXUMデンタルクリニック` `AI受付` `LINE` `SMS` `CT` `CAD/CAM` `PMTC` `GBT` を含む PLS を `docs/agent/pronunciation-dictionary-ja-demo.pls` に追加した。
+- pronunciation dictionary は `Eleven v3 Conversational` を前提に alias ベースで設計し、初期サンプルとして `えみは総合歯科` `グラングリーン大阪` `AI受付` `LINE` `SMS` `CT` `CAD/CAM` `iTero` `IPR` を含む PLS を `docs/agent/pronunciation-dictionary-ja-demo.pls` に追加した。
 - `npm run agent:apply-demo-config` を再実行し、prompt / first message / data collection / evaluation criteria の live 再適用までは完了した。再取得された live TTS はこの時点でも `eleven_flash_v2_5` で、UI 上で v3 が見えていても published live config と一致するかは API で確認する運用に改めた。
 - あわせて `scripts/apply-agent-demo-config.ts` に `ELEVENLABS_EXPRESSIVE_MODE` と `ELEVENLABS_SUGGESTED_AUDIO_TAGS` の上書き処理を追加した。将来 account 側で v3 expressive が解放されたら、`.env` だけで反映できる。
 - 実検証では `/v1/models` には `eleven_v3` が見えている一方で、agent PATCH で `model_id=eleven_v3` を送ると `feature_not_available / expressive_tts_not_allowed` が返った。`eleven_flash_v2_5 + expressive_mode=true` は 200 だが、保存結果は `expressive_mode=false` に戻されることも確認した。
@@ -121,7 +121,7 @@
 - これにより、未成立の発信履歴が残っていても、完了済みの電話会話だけを安全に回収できるようにした。
 
 ## 2026-04-05 医院プロフィールと定番FAQの追加
-- デモ用の医院プロフィールを `VEXUMデンタルクリニック渋谷` に固定し、診療時間、休診日、支払い方法、駐車場、アクセス、当日受付、キャンセル変更の案内をドキュメントへ追記した。
+- デモ用の医院プロフィールを `えみは総合歯科 大阪梅田院` に更新し、診療時間、休診日、アクセス、初診案内、急患案内、駐車場の公開情報をドキュメントへ追記した。
 - `docs/agent/dental-demo-config.md` には FAQ を短く答える方針を追加し、予約確定や保険判断はスタッフ確認へ回す運用を明示した。
 - `docs/agent/japanese-phone-voice-design.md` には、電話でよく聞かれる定番質問は事務的に短く答えること、感情タグを使わず平静なトーンで案内することを追記した。
 - `docs/agent/pronunciation-dictionary-ja-demo.pls` には医院名、駅名、ビル名、住所表現、前日18時など読み間違えやすい語を追加した。
