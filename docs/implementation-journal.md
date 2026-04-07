@@ -64,6 +64,13 @@
 - Updated [`scripts/apply-agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/scripts/apply-agent-demo-config.ts) so `npm run agent:apply-demo-config` now upserts the managed text documents, reuses matching docs when content is unchanged, replaces stale docs when content changed, and attaches them to the agent prompt with `usage_mode = auto`.
 - The apply script now prints the managed KB document count and names, so remote sync state is visible after each config push.
 
+### Checkpoint: voice benchmark に電話バグ再発ケースを追加
+- Updated [`lib/voice-benchmark/scripts.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/voice-benchmark/scripts.ts) to add replay cases for name-reading confirmation, name readback, callback-number confirmation, and short closing, with `expectedAlternatives`, `keyterms`, `mustContain`, and `shouldNotContain`.
+- Expanded conversation scenarios in [`lib/voice-benchmark/scripts.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/voice-benchmark/scripts.ts) to cover the missing regression classes: name self-correction, first-choice and phone correction, second-choice optional flow, second-choice date-only flow, and degraded-line closing.
+- Updated [`lib/types.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/types.ts) so scripts and scenarios can carry benchmark metadata such as `mustInclude`, `shouldNotSay`, `expectedAlternatives`, and `keyterms`.
+- Updated [`lib/voice-benchmark/server.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/voice-benchmark/server.ts) so TTS replay scoring now uses the best match across `expectedText` and `expectedAlternatives`, and passes scenario-specific `keyterms` into Scribe.
+- Updated [`components/voice-lab-page.tsx`](/C:/Dev/Work/デンタル%20一次受付AI/components/voice-lab-page.tsx) so the UI shows `must_include`, `should_not_say`, `must_contain`, and `keyterms` inline during manual evaluation.
+
 ## 2026-04-06
 
 ### Checkpoint: 発信番号解決を cache 化し Twilio 種別確認を並列化

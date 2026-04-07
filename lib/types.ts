@@ -299,3 +299,92 @@ export type AudioDiagnostics = {
   lastAudioEventAt: string | null;
   browserAudioUnlocked: boolean;
 };
+
+export type VoiceProviderId =
+  | "eleven_agents_v3_conversational"
+  | "gemini_3_1_flash_live_preview"
+  | "eleven_tts_v3"
+  | "gemini_2_5_flash_tts_preview";
+
+export type VoiceBenchmarkMode = "conversation" | "tts_replay";
+
+export type VoiceScriptCase = {
+  id: string;
+  title: string;
+  category: "public_info" | "pronunciation" | "service_line" | "guardrail";
+  expectedText: string;
+  notes?: string;
+  expectedAlternatives?: string[];
+  keyterms?: string[];
+  mustContain?: string[];
+  shouldNotContain?: string[];
+};
+
+export type VoiceConversationScenario = {
+  id: string;
+  title: string;
+  userPrompt: string;
+  goals: string[];
+  channel?: ConversationChannel;
+  lineCondition?: "stable" | "hesitant" | "degraded";
+  notes?: string;
+  mustInclude?: string[];
+  shouldNotSay?: string[];
+};
+
+export type SubjectiveVoiceScore = {
+  naturalness: number | null;
+  pronunciation: number | null;
+  responsiveness: number | null;
+  receptionTone: number | null;
+  interruptionRecovery: number | null;
+};
+
+export type VoiceSessionMetrics = {
+  connect_open_ms: number | null;
+  first_audio_chunk_ms: number | null;
+  first_audio_play_ms: number | null;
+  first_reply_after_user_ms: number | null;
+  barge_in_recovery_ms: number | null;
+  turn_count: number;
+  audio_event_count: number;
+  provider_transcript: string | null;
+  expected_text: string | null;
+  wer_like_diff: number | null;
+};
+
+export type VoiceTranscriptEntry = {
+  id: string;
+  role: "user" | "agent" | "system";
+  text: string;
+  createdAt: string;
+  tentative?: boolean;
+};
+
+export type VoiceBenchmarkRun = {
+  runId: string;
+  createdAt: string;
+  mode: VoiceBenchmarkMode;
+  providerId: VoiceProviderId;
+  label: string;
+  metrics: VoiceSessionMetrics;
+  transcript: VoiceTranscriptEntry[];
+  human_scores: SubjectiveVoiceScore;
+  notes: string | null;
+  scenarioId: string | null;
+  scriptId: string | null;
+  audioMimeType: string | null;
+  audioBase64: string | null;
+};
+
+export type VoiceReplayResult = {
+  providerId: VoiceProviderId;
+  scriptId: string;
+  title: string;
+  expectedText: string;
+  audioMimeType: string;
+  audioBase64: string;
+  providerTranscript: string | null;
+  werLikeDiff: number | null;
+  durationMs: number | null;
+};
