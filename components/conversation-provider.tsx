@@ -16,6 +16,7 @@ import {
 import type {
   AnalyzeConversationResponse,
   AudioDiagnostics,
+  ConversationAnalysisStatus,
   ConversationEventLogEntry,
   ConversationLifecycleStatus,
   ConversationTransport,
@@ -37,6 +38,7 @@ type ConversationContextValue = {
   error: string | null;
   isStarting: boolean;
   isAnalyzing: boolean;
+  analysisStatus: ConversationAnalysisStatus;
   lifecycleStatus: ConversationLifecycleStatus;
   sdkStatus: string;
   audioDiagnostics: AudioDiagnostics;
@@ -56,6 +58,20 @@ type SessionTimingState = {
   connectMs: number | null;
   firstAgentResponseMs: number | null;
 };
+
+function createAudioDiagnosticsState(
+  transport: ConversationTransport = "unknown"
+): AudioDiagnostics {
+  return {
+    transport,
+    requestedVolume: DESIRED_OUTPUT_VOLUME,
+    inputLevel: 0,
+    outputLevel: 0,
+    receivedAudioEvents: 0,
+    lastAudioEventAt: null,
+    browserAudioUnlocked: false,
+  };
+}
 
 let sharedAudioContext: AudioContext | null = null;
 
@@ -239,16 +255,15 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const [sessionEvents, setSessionEvents] = useState<ConversationEventLogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisStatus, setAnalysisStatus] =
+    useState<ConversationAnalysisStatus>("idle");
   const [activeTransport, setActiveTransport] =
     useState<ConversationTransport>("unknown");
   const [preferredTransport, setPreferredTransport] =
     useState<ConversationTransport>("webrtc");
-  const [browserAudioUnlocked, setBrowserAudioUnlocked] = useState(false);
-  const [inputLevel, setInputLevel] = useState(0);
-  const [outputLevel, setOutputLevel] = useState(0);
-  const [receivedAudioEvents, setReceivedAudioEvents] = useState(0);
-  const [lastAudioEventAt, setLastAudioEventAt] = useState<string | null>(null);
+  const [audioDiagnostics, setAudioDiagnostics] = useState<AudioDiagnostics>(() =>
+    createAudioDiagnosticsState("unknown")
+  );
   const nextTranscriptId = useRef(0);
   const nextSessionEventId = useRef(0);
   const sessionTiming = useRef<SessionTimingState | null>(null);
@@ -256,6 +271,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const lastLoggedTentativeAgentLine = useRef<string | null>(null);
   const lastUserMessageAtMs = useRef<number | null>(null);
   const turnCounter = useRef(0);
+  const analysisViewConversationIdRef = useRef<string | null>(null);
+  const audioDiagnosticsRef = useRef<AudioDiagnostics>(createAudioDiagnosticsState("unknown"));
+  const isAnalyzing = analysisStatus === "pending";
 
   const pushSessionEvent = useCallback(
     (
@@ -284,6 +302,16 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       });
     },
     [conversationId]
+  );
+
+  const updateAudioDiagnostics = useCallback(
+    (patch: Partial<AudioDiagnostics>) => {
+      audioDiagnosticsRef.current = {
+        ...audioDiagnosticsRef.current,
+        ...patch,
+      };
+    },
+    []
   );
 
   useEffect(() => {
@@ -366,8 +394,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       });
     },
     onAudio: () => {
-      setReceivedAudioEvents((current) => current + 1);
-      setLastAudioEventAt(new Date().toISOString());
+      updateAudioDiagnostics({
+        receivedAudioEvents: audioDiagnosticsRef.current.receivedAudioEvents + 1,
+        lastAudioEventAt: new Date().toISOString(),
+      });
     },
     onDebug: (event) => {
       const tentativeText = extractTentativeAgentText(event);
@@ -448,8 +478,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (conversation.status !== "connected") {
-      setInputLevel(0);
-      setOutputLevel(0);
+      updateAudioDiagnostics({
+        inputLevel: 0,
+        outputLevel: 0,
+      });
       return;
     }
 
@@ -457,29 +489,52 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       const nextInputLevel = clampVolumeLevel(conversation.getInputVolume());
       const nextOutputLevel = clampVolumeLevel(conversation.getOutputVolume());
 
-      setInputLevel((current) =>
-        Math.abs(current - nextInputLevel) >= AUDIO_LEVEL_DELTA_THRESHOLD
-          ? nextInputLevel
-          : current
-      );
-      setOutputLevel((current) =>
-        Math.abs(current - nextOutputLevel) >= AUDIO_LEVEL_DELTA_THRESHOLD
-          ? nextOutputLevel
-          : current
-      );
+      const current = audioDiagnosticsRef.current;
+      updateAudioDiagnostics({
+        inputLevel:
+          Math.abs(current.inputLevel - nextInputLevel) >= AUDIO_LEVEL_DELTA_THRESHOLD
+            ? nextInputLevel
+            : current.inputLevel,
+        outputLevel:
+          Math.abs(current.outputLevel - nextOutputLevel) >= AUDIO_LEVEL_DELTA_THRESHOLD
+            ? nextOutputLevel
+            : current.outputLevel,
+      });
     }, AUDIO_LEVEL_POLL_MS);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [conversation, conversation.status]);
+  }, [conversation, conversation.status, updateAudioDiagnostics]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setAudioDiagnostics((current) => {
+        const next = audioDiagnosticsRef.current;
+        if (
+          current.transport === next.transport &&
+          current.requestedVolume === next.requestedVolume &&
+          current.inputLevel === next.inputLevel &&
+          current.outputLevel === next.outputLevel &&
+          current.receivedAudioEvents === next.receivedAudioEvents &&
+          current.lastAudioEventAt === next.lastAudioEventAt &&
+          current.browserAudioUnlocked === next.browserAudioUnlocked
+        ) {
+          return current;
+        }
+
+        return { ...next };
+      });
+    }, 640);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const lifecycleStatus = useMemo<ConversationLifecycleStatus>(() => {
     if (error) {
       return "error";
-    }
-    if (isAnalyzing) {
-      return "analyzing";
     }
     if (conversation.status === "connecting" || isStarting) {
       return "connecting";
@@ -488,33 +543,17 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       return conversation.isSpeaking ? "speaking" : "listening";
     }
     return "idle";
-  }, [conversation.isSpeaking, conversation.status, error, isAnalyzing, isStarting]);
-
-  const audioDiagnostics = useMemo<AudioDiagnostics>(
-    () => ({
-      transport: activeTransport,
-      requestedVolume: DESIRED_OUTPUT_VOLUME,
-      inputLevel,
-      outputLevel,
-      receivedAudioEvents,
-      lastAudioEventAt,
-      browserAudioUnlocked,
-    }),
-    [
-      activeTransport,
-      browserAudioUnlocked,
-      inputLevel,
-      lastAudioEventAt,
-      outputLevel,
-      receivedAudioEvents,
-    ]
-  );
+  }, [conversation.isSpeaking, conversation.status, error, isStarting]);
 
   async function analyzeByConversationId(targetConversationId: string) {
-    setIsAnalyzing(true);
+    setAnalysisStatus("pending");
     setError(null);
     const analysisStartedAtMs = performance.now();
     pushSessionEvent("analysis requested", "info", targetConversationId);
+    let nextAnalysisStatus: ConversationAnalysisStatus = "ready";
+
+    const shouldApplyResults = () =>
+      analysisViewConversationIdRef.current === targetConversationId;
 
     try {
       const response = await fetch("/api/eleven/analyze", {
@@ -534,9 +573,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         );
       }
 
-      startTransition(() => {
-        setAnalysisResult(payload as AnalyzeConversationResponse);
-      });
+      if (shouldApplyResults()) {
+        startTransition(() => {
+          setAnalysisResult(payload as AnalyzeConversationResponse);
+        });
+      }
       pushSessionEvent("analysis completed", "success", targetConversationId);
 
       const latencyResponse = await fetch("/api/demo/latency", {
@@ -557,7 +598,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         const latencyPayload = (await latencyResponse.json()) as {
           sample?: LatencySample;
         };
-        if (latencyPayload.sample) {
+        if (latencyPayload.sample && shouldApplyResults()) {
           setLatencySample(latencyPayload.sample);
         }
       }
@@ -566,10 +607,15 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         analysisError instanceof Error
           ? analysisError.message
           : "Failed to analyze conversation.";
-      setError(message);
+      nextAnalysisStatus = "error";
+      if (shouldApplyResults()) {
+        setError(message);
+      }
       pushSessionEvent(`analysis failed: ${message}`, "error", targetConversationId);
     } finally {
-      setIsAnalyzing(false);
+      if (shouldApplyResults()) {
+        setAnalysisStatus(nextAnalysisStatus);
+      }
     }
   }
 
@@ -577,19 +623,17 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     setError(null);
     setAnalysisResult(null);
     setLatencySample(null);
+    setAnalysisStatus("idle");
     setConversationId(null);
     setTranscript([]);
     setSessionEvents([]);
-    setInputLevel(0);
-    setOutputLevel(0);
-    setReceivedAudioEvents(0);
-    setLastAudioEventAt(null);
     nextTranscriptId.current = 0;
     nextSessionEventId.current = 0;
     lastLoggedTranscriptLine.current = null;
     lastLoggedTentativeAgentLine.current = null;
     lastUserMessageAtMs.current = null;
     turnCounter.current = 0;
+    analysisViewConversationIdRef.current = null;
 
     const initialTransport = preferredTransport === "websocket" ? "websocket" : "webrtc";
     sessionTiming.current = {
@@ -599,6 +643,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       firstAgentResponseMs: null,
     };
     setActiveTransport(initialTransport);
+    audioDiagnosticsRef.current = createAudioDiagnosticsState(initialTransport);
+    setAudioDiagnostics(audioDiagnosticsRef.current);
     setIsStarting(true);
     pushSessionEvent("web conversation start requested", "info", null, {
       requestedTransport: initialTransport,
@@ -642,9 +688,12 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       return payload.signedUrl;
     }
 
+    const conversationTokenPromise = getConversationToken();
+    const signedUrlPromise = getSignedUrl();
+
     async function startWithTransport(transport: ConversationTransport) {
       if (transport === "websocket") {
-        const signedUrl = await getSignedUrl();
+        const signedUrl = await signedUrlPromise;
         const startedConversationId = await conversation.startSession({
           connectionType: "websocket",
           signedUrl,
@@ -652,7 +701,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         return { startedConversationId, transport: "websocket" as const };
       }
 
-      const token = await getConversationToken();
+      const token = await conversationTokenPromise;
       const startedConversationId = await conversation.startSession({
         connectionType: "webrtc",
         conversationToken: token,
@@ -665,7 +714,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       const microphonePromise = navigator.mediaDevices.getUserMedia({ audio: true });
 
       const unlocked = await unlockPromise;
-      setBrowserAudioUnlocked(unlocked);
+      updateAudioDiagnostics({ browserAudioUnlocked: unlocked });
       pushSessionEvent(
         unlocked ? "browser audio unlocked" : "browser audio still locked",
         unlocked ? "success" : "warning"
@@ -682,6 +731,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         persistLastWorkingTransport(transport);
         setPreferredTransport(transport);
         setActiveTransport(transport);
+        updateAudioDiagnostics({ transport });
         setConversationId(startedConversationId);
         pushSessionEvent(
           transport === "websocket"
@@ -700,6 +750,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           sessionTiming.current.transport = "websocket";
         }
         setActiveTransport("websocket");
+        updateAudioDiagnostics({ transport: "websocket" });
         pushSessionEvent("webrtc failed, falling back to websocket", "warning");
 
         const { startedConversationId } = await startWithTransport("websocket");
@@ -740,8 +791,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     try {
       pushSessionEvent("conversation stop requested", "info", targetConversationId);
       await conversation.endSession();
-      await analyzeByConversationId(targetConversationId);
-      pushSessionEvent("conversation fully processed", "success", targetConversationId);
+      analysisViewConversationIdRef.current = targetConversationId;
+      setAnalysisStatus("pending");
+      pushSessionEvent("analysis queued in background", "info", targetConversationId);
+      void analyzeByConversationId(targetConversationId);
     } catch (endError) {
       setError(
         endError instanceof Error ? endError.message : "Failed to end conversation."
@@ -758,6 +811,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   function clearResult() {
     setAnalysisResult(null);
     setError(null);
+    if (analysisStatus !== "pending") {
+      setAnalysisStatus("idle");
+    }
   }
 
   return (
@@ -771,6 +827,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         error,
         isStarting,
         isAnalyzing,
+        analysisStatus,
         lifecycleStatus,
         sdkStatus: conversation.status,
         audioDiagnostics,

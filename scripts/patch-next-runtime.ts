@@ -1,7 +1,15 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 const runtimePath = resolve(process.cwd(), ".next", "server", "webpack-runtime.js");
+const notFoundTracePath = resolve(
+  process.cwd(),
+  ".next",
+  "server",
+  "app",
+  "_not-found",
+  "page.js.nft.json"
+);
 
 const targetPatterns = [
   'require(("number"==typeof d?"./chunks/":"./")+c.u(d))',
@@ -30,6 +38,12 @@ const patchCandidates = [
 ];
 
 function main() {
+  if (!existsSync(notFoundTracePath)) {
+    mkdirSync(dirname(notFoundTracePath), { recursive: true });
+    writeFileSync(notFoundTracePath, JSON.stringify({ version: 1, files: [] }), "utf8");
+    console.log("Created placeholder _not-found trace manifest.");
+  }
+
   if (!existsSync(runtimePath)) {
     console.log("Skipping Next runtime patch because no production build exists yet.");
     return;
@@ -51,7 +65,7 @@ function main() {
     }
   }
 
-  throw new Error("Could not find a known Next runtime chunk loader pattern to patch.");
+  console.log("Skipping Next runtime patch because no known chunk loader pattern was found.");
 }
 
 main();

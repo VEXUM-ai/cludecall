@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useConversationController } from "@/components/conversation-provider";
@@ -80,10 +81,6 @@ function formatMillis(value: number | null) {
   }
 
   return `${value} ms`;
-}
-
-function formatPercent(value: number) {
-  return `${Math.round(value * 100)}%`;
 }
 
 function formatTimeInCall(value: number | null) {
@@ -170,32 +167,32 @@ function MemoTable({
 }
 
 function ClinicProfileCard() {
-  const rows = [
-    ["医院名", EMIHA_CLINIC_PROFILE.clinicName],
-    ["住所", EMIHA_CLINIC_PROFILE.address],
-    ["電話番号", EMIHA_CLINIC_PROFILE.phoneNumber],
-    ["診療時間", EMIHA_CLINIC_PROFILE.businessHours],
-    ["休診日", EMIHA_CLINIC_PROFILE.closedDays],
-    ["アクセス", EMIHA_CLINIC_PROFILE.accessSummary],
-    ["駐車場", EMIHA_CLINIC_PROFILE.parking],
-    ["急患案内", EMIHA_CLINIC_PROFILE.emergencyPolicy],
-    ["初診案内", EMIHA_CLINIC_PROFILE.firstVisitArrivalNote],
+  const facts = [
+    ["医院", EMIHA_CLINIC_PROFILE.clinicName],
+    ["電話", EMIHA_CLINIC_PROFILE.phoneNumber],
+    ["診療", EMIHA_CLINIC_PROFILE.businessHours],
+    ["休診", EMIHA_CLINIC_PROFILE.closedDays],
+    ["アクセス", EMIHA_CLINIC_PROFILE.nearestStation],
+    ["急患", EMIHA_CLINIC_PROFILE.emergencyPolicy],
   ] as const;
 
   return (
     <section className="card">
       <div className="section-heading">
-        <h2>医院公開プロフィール</h2>
-        <p>デモで患者向けに案内する公開情報です。2026-04-06 時点の公式情報に合わせています。</p>
+        <h2>医院情報</h2>
+        <p>患者向けに案内する公開情報です。</p>
       </div>
-      <dl className="memo-grid">
-        {rows.map(([label, value]) => (
-          <div key={label} className="memo-row">
-            <dt>{label}</dt>
-            <dd>{value}</dd>
+      <div className="fact-grid">
+        {facts.map(([label, value]) => (
+          <div key={label} className="fact-tile">
+            <span className="fact-label">{label}</span>
+            <strong>{value}</strong>
           </div>
         ))}
-      </dl>
+      </div>
+      <p className="helper-text clinic-footnote">
+        {EMIHA_CLINIC_PROFILE.address} / {EMIHA_CLINIC_PROFILE.parking}
+      </p>
     </section>
   );
 }
@@ -402,11 +399,7 @@ function SessionEventList({
   events: ConversationEventLogEntry[];
 }) {
   return (
-    <section className="card">
-      <div className="section-heading">
-        <h2>現在のアクションログ</h2>
-        <p>接続開始、fallback、解析開始、解析完了などの内部イベントを表示します。</p>
-      </div>
+    <div className="stack-tight">
       {events.length === 0 ? (
         <p className="placeholder-text">まだセッションイベントはありません。</p>
       ) : (
@@ -421,7 +414,7 @@ function SessionEventList({
           ))}
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -457,6 +450,7 @@ function ConversationSummaryCard({
       <p className="history-item-summary">
         {item.transcriptSummary ?? "要約はまだありません。"}
       </p>
+      <span className="history-link">詳細を見る</span>
     </button>
   );
 }
@@ -507,6 +501,100 @@ function DetailMeta({
   );
 }
 
+function HistoryDetailDrawer({
+  open,
+  detail,
+  summary,
+  onClose,
+  onConfirm,
+  isConfirming,
+  error,
+}: {
+  open: boolean;
+  detail: ConversationHistoryDetail | null;
+  summary: ConversationHistorySummary | null;
+  onClose: () => void;
+  onConfirm: (() => void) | null;
+  isConfirming: boolean;
+  error: string | null;
+}) {
+  if (!open || !detail) {
+    return null;
+  }
+
+  return (
+    <div className="history-drawer-overlay" onClick={onClose} role="presentation">
+      <aside
+        className="history-drawer"
+        onClick={(event) => event.stopPropagation()}
+        aria-label="会話詳細"
+      >
+        <div className="history-drawer-header">
+          <div>
+            <p className="eyebrow">Conversation Detail</p>
+            <h2>{summary?.analysisTitle ?? detail.conversationId}</h2>
+            <p className="helper-text">
+              {formatDateTime(detail.callMeta.startedAt)} /{" "}
+              {summarizeSource(detail.source, detail.channel)} / {detail.status}
+            </p>
+          </div>
+          <button type="button" className="ghost-button" onClick={onClose}>
+            閉じる
+          </button>
+        </div>
+
+        {summary?.transcriptSummary ? (
+          <div className="selected-summary drawer-summary">
+            <p>{summary.transcriptSummary}</p>
+          </div>
+        ) : null}
+
+        <div className="drawer-chip-row">
+          <span className="drawer-chip">
+            {detail.memo.service_line
+              ? SERVICE_LINE_LABELS[detail.memo.service_line]
+              : "区分未取得"}
+          </span>
+          <span className="drawer-chip">
+            {detail.appointmentDraft
+              ? SUBMISSION_STATE_LABELS[detail.appointmentDraft.submissionState]
+              : "ドラフトなし"}
+          </span>
+          <span className="drawer-chip">{formatOptional(detail.callMeta.durationSecs)} sec</span>
+        </div>
+
+        <div className="history-drawer-body">
+          <MemoTable title="受付メモ" memo={detail.memo} />
+          <AppointmentDraftCard
+            title="アポツールドラフト"
+            draft={detail.appointmentDraft}
+            onConfirm={onConfirm}
+            isConfirming={isConfirming}
+            error={error}
+          />
+          <EvaluationTable
+            title="評価結果"
+            evaluation={detail.analysis.evaluationCriteriaResults}
+          />
+          <TranscriptCard
+            title="過去の transcript"
+            subtitle="この会話で実際にやり取りされた内容です。"
+            transcript={detail.transcript}
+            emptyText="この会話の transcript はまだありません。"
+          />
+          <details className="card collapsible-card">
+            <summary>技術詳細を開く</summary>
+            <div className="collapsible-body">
+              <DetailMeta detail={detail} />
+              <LatencyTable title="レイテンシ" sample={detail.latency} />
+            </div>
+          </details>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 export function HomePage({
   defaultOutboundNumber,
 }: {
@@ -521,9 +609,8 @@ export function HomePage({
     error,
     isStarting,
     isAnalyzing,
+    analysisStatus,
     lifecycleStatus,
-    sdkStatus,
-    audioDiagnostics,
     startConversation,
     stopConversation,
     clearResult,
@@ -537,6 +624,7 @@ export function HomePage({
   const [isLoadingHistoryDetail, setIsLoadingHistoryDetail] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [isHistoryDetailOpen, setIsHistoryDetailOpen] = useState(false);
   const [outboundNumber, setOutboundNumber] = useState(defaultOutboundNumber);
   const [isPlacingCall, setIsPlacingCall] = useState(false);
   const [outboundCallError, setOutboundCallError] = useState<string | null>(null);
@@ -557,6 +645,7 @@ export function HomePage({
     lifecycleStatus === "connecting" ||
     lifecycleStatus === "listening" ||
     lifecycleStatus === "speaking";
+  const isAnalysisPending = analysisStatus === "pending";
 
   const selectedSummary = useMemo(
     () => historyItems.find((item) => item.conversationId === selectedHistoryId) ?? null,
@@ -570,7 +659,6 @@ export function HomePage({
     return "開始すると transcript を表示します。";
   }, [canStop]);
 
-  const selectedTranscript = selectedHistoryDetail?.transcript ?? [];
   const liveAppointmentDraft = liveAppointmentOverride ?? analysisResult?.appointmentDraft ?? null;
 
   const loadHistoryDetail = useCallback(async (conversationIdToLoad: string) => {
@@ -591,6 +679,7 @@ export function HomePage({
 
       setSelectedHistoryDetail(payload as ConversationHistoryDetail);
       setSelectedHistoryId(conversationIdToLoad);
+      setIsHistoryDetailOpen(true);
     } catch (loadError) {
       setDetailError(
         loadError instanceof Error ? loadError.message : "Failed to load conversation details."
@@ -621,24 +710,17 @@ export function HomePage({
 
         setHistoryItems(payload.items);
 
-        const nextSelectedId =
-          preferredConversationId ??
-          selectedHistoryId ??
-          payload.items[0]?.conversationId ??
-          null;
+        const nextSelectedId = preferredConversationId ?? selectedHistoryId ?? null;
 
         if (
           nextSelectedId &&
           payload.items.some((item) => item.conversationId === nextSelectedId)
         ) {
-          if (nextSelectedId !== selectedHistoryId) {
-            await loadHistoryDetail(nextSelectedId);
-          }
-        } else if (payload.items[0]) {
-          await loadHistoryDetail(payload.items[0].conversationId);
-        } else {
+          setSelectedHistoryId(nextSelectedId);
+        } else if (!payload.items[0]) {
           setSelectedHistoryId(null);
           setSelectedHistoryDetail(null);
+          setIsHistoryDetailOpen(false);
         }
       } catch (loadError) {
         setHistoryError(
@@ -648,7 +730,7 @@ export function HomePage({
         setIsLoadingHistory(false);
       }
     },
-    [loadHistoryDetail, selectedHistoryId]
+    [selectedHistoryId]
   );
 
   useEffect(() => {
@@ -691,6 +773,39 @@ export function HomePage({
     }
   }, [analysisResult]);
 
+  useEffect(() => {
+    if (defaultOutboundNumber) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/demo/defaults");
+        const payload = (await response.json()) as {
+          demoOutboundTargetNumber?: string;
+        };
+
+        if (!response.ok || isCancelled) {
+          return;
+        }
+
+        if (typeof payload.demoOutboundTargetNumber === "string") {
+          setOutboundNumber((current) =>
+            current.length > 0 ? current : payload.demoOutboundTargetNumber ?? ""
+          );
+        }
+      } catch {
+        // Best effort only.
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [defaultOutboundNumber]);
+
   async function handleImportLatestPhoneCall() {
     setImportError(null);
     setIsImportingPhoneCall(true);
@@ -715,8 +830,10 @@ export function HomePage({
         ...imported,
         source: "twilio",
         status: "done",
+        analysisState: "ready",
       });
       setSelectedHistoryId(imported.conversationId);
+      setIsHistoryDetailOpen(true);
       void refreshHistory(imported.conversationId);
     } catch (importingError) {
       setImportError(
@@ -818,34 +935,6 @@ export function HomePage({
     }
   }
 
-  const liveMetricsRows = [
-    ["状態", <StatusBadge key="status" status={lifecycleStatus} />],
-    ["SDK", <span key="sdk">{sdkStatus}</span>],
-    ["conversationId", <code key="conversation">{conversationId ?? "未開始"}</code>],
-    ["transport", <span key="transport">{audioDiagnostics.transport}</span>],
-    ["audio packets", <span key="audio">{audioDiagnostics.receivedAudioEvents}</span>],
-    [
-      "first response",
-      <span key="first-response">{formatMillis(analysisResult ? latencySample?.firstAgentResponseMs ?? null : null)}</span>,
-    ],
-    [
-      "analysis latency",
-      <span key="analysis">{formatMillis(latencySample?.analysisMs ?? null)}</span>,
-    ],
-    [
-      "live input level",
-      <span key="input">{formatPercent(audioDiagnostics.inputLevel)}</span>,
-    ],
-    [
-      "live output level",
-      <span key="output">{formatPercent(audioDiagnostics.outputLevel)}</span>,
-    ],
-    [
-      "last audio packet",
-      <span key="last">{formatOptional(audioDiagnostics.lastAudioEventAt)}</span>,
-    ],
-  ] as const;
-
   return (
     <main className="page-shell">
       <section className="hero card">
@@ -855,6 +944,11 @@ export function HomePage({
           <p className="lead">
             Web 会話、実電話、過去会話の transcript、評価結果、仮受付ドラフト、アポツール投入用 payload を同じ画面で確認できます。
           </p>
+          <div className="button-row">
+            <Link href="/voice-lab" className="ghost-button inline-link-button">
+              Voice Lab を開く
+            </Link>
+          </div>
         </div>
         <div className="hero-meta">
           <div>
@@ -879,14 +973,25 @@ export function HomePage({
           <section className="card">
             <div className="section-heading">
               <h2>Web 会話</h2>
-              <p>ブラウザから agent に接続して会話し、終了後にメモを取得します。</p>
+              <p>ブラウザから会話し、終了後に仮受付メモとドラフトを確認します。</p>
+            </div>
+            <div className="live-status-row">
+              <StatusBadge status={lifecycleStatus} />
+              <span className="drawer-chip">
+                {conversationId ? `ID: ${conversationId.slice(0, 12)}...` : "会話前"}
+              </span>
+              {latencySample?.firstAgentResponseMs ? (
+                <span className="drawer-chip">
+                  初回応答 {formatMillis(latencySample.firstAgentResponseMs)}
+                </span>
+              ) : null}
             </div>
             <div className="button-row">
               <button
                 type="button"
                 className="primary-button"
                 onClick={startConversation}
-                disabled={!canStart || isStarting || isAnalyzing}
+                disabled={!canStart || isStarting}
               >
                 {isStarting ? "接続中..." : "開始"}
               </button>
@@ -894,7 +999,7 @@ export function HomePage({
                 type="button"
                 className="secondary-button"
                 onClick={stopConversation}
-                disabled={!canStop || isStarting || isAnalyzing}
+                disabled={!canStop || isStarting}
               >
                 {isAnalyzing ? "解析中..." : "終了してメモ取得"}
               </button>
@@ -907,22 +1012,8 @@ export function HomePage({
                 クリア
               </button>
             </div>
+            {isAnalysisPending ? <p className="helper-text">analysis pending...</p> : null}
             {error ? <p className="error-text">{error}</p> : null}
-          </section>
-
-          <section className="card">
-            <div className="section-heading">
-              <h2>実行メタデータ</h2>
-              <p>現在の会話状態、音声レベル、解析遅延をまとめて確認できます。</p>
-            </div>
-            <dl className="meta-grid diagnostics-grid">
-              {liveMetricsRows.map(([label, value]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
           </section>
 
           <TranscriptCard
@@ -931,8 +1022,6 @@ export function HomePage({
             transcript={transcript}
             emptyText={liveTranscriptPlaceholder}
           />
-
-          <SessionEventList events={sessionEvents} />
 
           {analysisResult ? (
             <>
@@ -957,7 +1046,13 @@ export function HomePage({
                     : appointmentActionError
                 }
               />
-              <LatencyTable title="Web 会話のレイテンシ" sample={latencySample} />
+              <details className="card collapsible-card">
+                <summary>接続ログとレイテンシを開く</summary>
+                <div className="collapsible-body">
+                  <SessionEventList events={sessionEvents} />
+                  <LatencyTable title="Web 会話のレイテンシ" sample={latencySample} />
+                </div>
+              </details>
             </>
           ) : null}
         </div>
@@ -967,7 +1062,7 @@ export function HomePage({
             <div className="section-heading">
               <h2>最近の会話履歴</h2>
               <p>
-                Web と電話の過去会話を一覧表示し、選択すると transcript、要約、メタデータを見られます。
+                Web と電話の過去会話を一覧表示します。詳細は開いたときだけ表示します。
               </p>
             </div>
             <div className="button-row">
@@ -979,8 +1074,21 @@ export function HomePage({
               >
                 {isLoadingHistory ? "更新中..." : "履歴を更新"}
               </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={handleImportLatestPhoneCall}
+                disabled={isImportingPhoneCall}
+              >
+                {isImportingPhoneCall ? "取り込み中..." : "最新の電話会話を取り込む"}
+              </button>
             </div>
             {historyError ? <p className="error-text">{historyError}</p> : null}
+            {importError ? <p className="error-text">{importError}</p> : null}
+            {detailError ? <p className="error-text">{detailError}</p> : null}
+            {isLoadingHistoryDetail ? (
+              <p className="placeholder-text">詳細を読み込み中です。</p>
+            ) : null}
             <div className="history-list">
               {historyItems.length === 0 ? (
                 <p className="placeholder-text">まだ表示できる会話履歴がありません。</p>
@@ -995,73 +1103,6 @@ export function HomePage({
                 ))
               )}
             </div>
-          </section>
-
-          <section className="card">
-            <div className="section-heading">
-              <h2>選択中の会話詳細</h2>
-              <p>
-                履歴から選ぶか、最新の電話会話を取り込むと transcript と分析結果をここに表示します。
-              </p>
-            </div>
-            <div className="button-row">
-              <button
-                type="button"
-                className="primary-button"
-                onClick={handleImportLatestPhoneCall}
-                disabled={isImportingPhoneCall}
-              >
-                {isImportingPhoneCall ? "取り込み中..." : "最新の電話会話を取り込む"}
-              </button>
-            </div>
-            {importError ? <p className="error-text">{importError}</p> : null}
-            {selectedSummary ? (
-              <div className="selected-summary">
-                <div>
-                  <span className="meta-label">選択中</span>
-                  <h3>{selectedSummary.analysisTitle ?? selectedSummary.conversationId}</h3>
-                </div>
-                <p>{selectedSummary.transcriptSummary ?? "要約は未取得です。"}</p>
-              </div>
-            ) : null}
-            {detailError ? <p className="error-text">{detailError}</p> : null}
-            {isLoadingHistoryDetail ? (
-              <p className="placeholder-text">詳細を読み込み中です。</p>
-            ) : selectedHistoryDetail ? (
-              <div className="stack">
-                <DetailMeta detail={selectedHistoryDetail} />
-                <MemoTable title="選択中の受付メモ" memo={selectedHistoryDetail.memo} />
-                <AppointmentDraftCard
-                  title="選択中会話のアポツールドラフト"
-                  draft={selectedHistoryDetail.appointmentDraft}
-                  onConfirm={() =>
-                    void handleConfirmAppointment(selectedHistoryDetail.conversationId, "history")
-                  }
-                  isConfirming={
-                    isConfirmingConversationId === selectedHistoryDetail.conversationId
-                  }
-                  error={
-                    isConfirmingConversationId === selectedHistoryDetail.conversationId ||
-                    appointmentActionError === null
-                      ? null
-                      : appointmentActionError
-                  }
-                />
-                <LatencyTable title="選択中のレイテンシ" sample={selectedHistoryDetail.latency} />
-                <EvaluationTable
-                  title="選択中の評価結果"
-                  evaluation={selectedHistoryDetail.analysis.evaluationCriteriaResults}
-                />
-                <TranscriptCard
-                  title="選択中の transcript"
-                  subtitle="Web か電話の過去会話をそのまま再表示します。"
-                  transcript={selectedTranscript}
-                  emptyText="この会話の transcript はまだありません。"
-                />
-              </div>
-            ) : (
-              <p className="placeholder-text">会話履歴を選ぶと詳細が表示されます。</p>
-            )}
           </section>
 
           <section className="card">
@@ -1124,10 +1165,6 @@ export function HomePage({
                     <dt>Twilio account</dt>
                     <dd>{formatOptional(outboundCallResult.twilioAccountType)}</dd>
                   </div>
-                </dl>
-                {outboundCallResult.warnings.length > 0 ? (
-                  <div className="stack-tight">
-                    {outboundCallResult.warnings.map((warning) => (
                   <div>
                     <dt>resolve phone ms</dt>
                     <dd>{formatMillis(outboundCallResult.outboundMetrics.resolvePhoneNumberMs)}</dd>
@@ -1144,6 +1181,10 @@ export function HomePage({
                     <dt>outbound total ms</dt>
                     <dd>{formatMillis(outboundCallResult.outboundMetrics.totalMs)}</dd>
                   </div>
+                </dl>
+                {outboundCallResult.warnings.length > 0 ? (
+                  <div className="stack-tight">
+                    {outboundCallResult.warnings.map((warning) => (
                       <p key={warning} className="warning-text">
                         {warning}
                       </p>
@@ -1173,6 +1214,30 @@ export function HomePage({
           </section>
         </div>
       </section>
+
+      <HistoryDetailDrawer
+        open={isHistoryDetailOpen}
+        detail={selectedHistoryDetail}
+        summary={selectedSummary}
+        onClose={() => setIsHistoryDetailOpen(false)}
+        onConfirm={
+          selectedHistoryDetail
+            ? () => void handleConfirmAppointment(selectedHistoryDetail.conversationId, "history")
+            : null
+        }
+        isConfirming={
+          Boolean(
+            selectedHistoryDetail &&
+              isConfirmingConversationId === selectedHistoryDetail.conversationId
+          )
+        }
+        error={
+          selectedHistoryDetail &&
+          isConfirmingConversationId !== selectedHistoryDetail.conversationId
+            ? appointmentActionError
+            : null
+        }
+      />
     </main>
   );
 }

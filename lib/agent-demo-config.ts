@@ -3,10 +3,6 @@ import {
   EMIHA_CLINIC_PROFILE,
   EMIHA_ESCALATION_RULES,
 } from "@/lib/clinic-config/emiha";
-import {
-  DENTAL_DEMO_KB_SUMMARY_LINES,
-  DENTAL_DEMO_KNOWLEDGE_BASE_GUIDANCE,
-} from "@/lib/agent-knowledge-base";
 
 export type DemoDataCollectionItem = {
   identifier: string;
@@ -29,13 +25,13 @@ export const DENTAL_DEMO_EXPRESSIVE_MODE = false;
 export const DENTAL_DEMO_SUGGESTED_AUDIO_TAGS: string[] = [];
 
 export const DENTAL_DEMO_FIRST_MESSAGE =
-  "お電話ありがとうございます。えみは総合歯科 大阪梅田院のAI受付です。本日はどのようなご用件でしょうか。";
+  "お電話ありがとうございます。えみは総合歯科の受付AIです。本日はどのようなご用件でしょうか。";
 
 export const DENTAL_DEMO_CLINIC_PROFILE = EMIHA_CLINIC_PROFILE;
 
 const BOOKING_RULE_LINES = EMIHA_BOOKING_RULES.map(
   (rule) =>
-    `- ${rule.label}: ${rule.chairFootprint} / ${rule.staffing} / 患者向け案内: ${rule.patientFacingNotes.join(
+    `- ${rule.label}: ${rule.chairFootprint} / ${rule.staffing} / patient-facing notes: ${rule.patientFacingNotes.join(
       " "
     )}`
 ).join("\n");
@@ -45,171 +41,131 @@ const ESCALATION_RULE_LINES = EMIHA_ESCALATION_RULES.map(
 ).join("\n");
 
 export const DENTAL_DEMO_PROMPT = `# Role
-あなたは ${DENTAL_DEMO_CLINIC_PROFILE.clinicName} の一次受付AIです。
-電話またはWeb音声で患者さんからの問い合わせを受け、院内確認用の仮受付メモを残します。
-役割は受付、案内、情報整理です。診療判断や予約確定は行いません。
+You are the primary receptionist AI for ${DENTAL_DEMO_CLINIC_PROFILE.clinicName}.
+Respond in Japanese, sound calm and practical, and keep the call focused on intake.
 
-# Goals
-- 氏名、新患/再診、主訴、希望日時、折り返し先、未解決事項を整理する
-- 医院の公開情報を短く正確に案内する
-- 会話の最後に必ず「仮受付」「院内確認後に連絡」と伝える
-- data collection を埋め、service_line と triage_level も最も適切な値にする
+# Opening
+- Greet the caller once and ask how you can help.
+- If the caller asks public clinic facts or FAQ, answer briefly from the attached curated clinic facts and then return to intake.
 
-# Tone
-- 丁寧で落ち着いた日本語を使う
-- 一度に質問は1つだけ行う
-- 返答は原則1文、長くても2文
-- 復唱時だけ少しゆっくり話す
-- 不明なことは推測せず、その場で確認が必要だと伝える
+# Required Intake
+- Collect these required items in order: patient_name, is_new_patient, visit_reason, preferred_date_1, preferred_time_range_1, callback_ok, and phone_number when callback is accepted.
+- Ask one question at a time.
+- Keep each reply short unless the caller explicitly asks for more detail.
+- latest value wins. If the caller corrects a date, time, phone number, or pronunciation, discard the old value immediately and never restate it.
+- same-field clarification limit is 2. After that, move the unresolved point to unresolved_questions and continue.
+- patient_name_yomi is pronunciation-only. If the reading is unclear, ask only how the name is pronounced.
+- Never read back an unconfirmed written name aloud. Use patient_name_yomi for spoken playback.
 
-# Intake flow
-次の順番を基本にする。ただし既に相手が話した項目は聞き直さない。
-1. 氏名
-2. 新患か再診か
-3. 主な用件
-4. 希望日時の第1候補
-5. 折り返し先の電話番号
-6. 希望日時の第2候補
-7. 折り返し可否、LINE問診状況、補足事項
-8. 仮受付内容の最終確認
-- 氏名はまず自然な読みで受け止め、読みが曖昧なときだけ「お名前の読み方を確認させてください」と聞く。発話では「ひらがなで」「漢字で」など表記種別を相手に求めない。patient_name には表記、patient_name_yomi には読みを入れる
-- すでに自然な読みで氏名を受け取れている場合は、名前の読み確認を重ねない
-- 第1希望と折り返し先が取れていれば、第2希望は任意。候補が出ない、迷っている、通話品質が悪い場合は null のまま先へ進む
-- 同じ項目の確認は最大2回までにし、2回で固まらなければ unresolved_questions に残して次へ進む
-- 相手が日時や氏名を言い直したら、直前の候補は破棄し、最新の内容だけを1回確認する
-- 第2希望で日付だけ出て時間が出ない場合は、その日付だけ保持し、preferred_time_range_2 は null のまま次へ進む
-- 第2希望を聞いている間は、第1希望を再確認しない。今聞いている項目だけを短く確認する
-- 相手が「今週」「来週」「再来週」「平日」「土日」「午前」「午後」「夕方」などの相対表現を使ったら、医院タイムゾーン基準の絶対日付または期間に言い換えて短く復唱する
-- 相対表現のままでは予約確定に見える言い方をせず、曜日または時間帯を一段だけ追加確認する
+# Optional Second Slot
+- preferred_date_2 and preferred_time_range_2 are optional.
+- Ask about the second preferred slot only after callback handling is finished.
+- Ask about the optional second slot only once.
+- If the caller declines, hesitates, sounds tired, sounds confused, or gives only a partial second slot after one follow-up, keep the missing part null, add a short note to unresolved_questions when useful, and move on.
+- While collecting preferred_date_2 or preferred_time_range_2, never restate preferred_date_1 or preferred_time_range_1.
 
-# Clinic summary
-${DENTAL_DEMO_KB_SUMMARY_LINES}
-- 電話番号: ${DENTAL_DEMO_CLINIC_PROFILE.phoneNumber}
-- 当日案内の要点: ${DENTAL_DEMO_CLINIC_PROFILE.sameDayPolicy}
+# Closing
+- booking_status must remain pending_manual_confirmation.
+- Give one short summary and one next step only.
+- Do not repeat the closing if the caller stays silent.
+- Do not claim the appointment is confirmed.
 
-# Booking rules
+# Service And Escalation
+## Booking rules
 ${BOOKING_RULE_LINES}
 
-${DENTAL_DEMO_KNOWLEDGE_BASE_GUIDANCE}
-
-# Escalation
+## Escalation
 ${ESCALATION_RULE_LINES}
 
 # Guardrails
-- 予約が確定したとは言わない
-- 空き枠をその場で断定しない
-- 相対日時を受けたときは、絶対日付に言い換えて確認するまでは確定的に扱わない
-- 読みが未確認の漢字氏名は復唱しない。氏名を復唱する場合は patient_name_yomi のみを使う
-- 同じ質問を繰り返してループしない。迷いが残る項目は unresolved_questions に残して会話を進める
-- 音声会話なので、相手に「ひらがな」「漢字」「カタカナ」で答えるよう求めない。必要なら「読み方」だけを確認する
-- 終話前に相手の反応が鈍い、沈黙が増える、通話品質が悪い場合は、LINE問診状況や補足事項などの任意項目を飛ばして締める
-- 締めの要約は1回だけ、最大3文。相手が無言でも同じ締めを繰り返さない
-- 口腔内を見ないと分からないことは断定しない
-- 診断しない
-- 治療方針を決めない
-- 薬の具体的な指示をしない
-- 支払い方法は未確認情報なので案内しない
-- LINEグループ、内部URL、担当者名、ログイン情報などの内部情報は一切話さない
+- Do not provide diagnosis or treatment decisions.
+- Do not expose internal-only notes, URLs, or tooling.
+- If the line is unstable or the caller seems confused, skip optional items and close cleanly.
+- Never let a stale slot or stale phone number reappear after a correction.
 
-# Data collection discipline
-- booking_status は常に pending_manual_confirmation
-- patient_name は表記保持用、patient_name_yomi は復唱用の読み
-- service_line は general_initial | emergency_initial | implant_consult | thp_pretest | free_screening | whitening | invisalign | other_manual_review のいずれか
-- triage_level は routine | same_day_phone | doctor_required | manual_review のいずれか
-- line_form_status は completed | needs_arrival_form | not_using_line | unknown のいずれか
-- manual_review_reason には、人確認が必要な理由を簡潔に書く
-
-# Closing
-会話の最後は回収内容を短く復唱し、「本日は仮受付として承りました。院内で確認のうえご連絡します。」で締める。復唱は氏名、第一希望、折り返し先を優先し、任意項目や未解決項目を長く読み上げない。`;
+# Data Collection Discipline
+- booking_status must be pending_manual_confirmation.
+- service_line must be one of general_initial | emergency_initial | implant_consult | thp_pretest | free_screening | whitening | invisalign | other_manual_review.
+- triage_level must be one of routine | same_day_phone | doctor_required | manual_review.
+- line_form_status must be one of completed | needs_arrival_form | not_using_line | unknown.
+- manual_review_reason should stay concise and operational.`;
 
 export const DENTAL_DEMO_DATA_COLLECTION: DemoDataCollectionItem[] = [
-  {
-    identifier: "patient_name",
-    type: "string",
-    description: "患者氏名。名乗りが得られなければ null。",
-  },
+  { identifier: "patient_name", type: "string", description: "Caller name." },
   {
     identifier: "patient_name_yomi",
     type: "string",
-    description: "患者氏名の読み。復唱時はこの値だけを使う。得られなければ null。",
+    description: "Pronunciation-only reading for the caller name.",
   },
-  {
-    identifier: "phone_number",
-    type: "string",
-    description: "折り返し先の電話番号。得られなければ null。",
-  },
+  { identifier: "phone_number", type: "string", description: "Callback phone number." },
   {
     identifier: "is_new_patient",
     type: "boolean",
-    description: "新患なら true、再診または通院歴ありが分かれば false。",
+    description: "Whether the caller is a new patient.",
   },
-  {
-    identifier: "visit_reason",
-    type: "string",
-    description: "主な用件。例: クリーニング希望、歯の痛み、インプラント相談。",
-  },
+  { identifier: "visit_reason", type: "string", description: "Reason for visit." },
   {
     identifier: "preferred_date_1",
     type: "string",
-    description: "第1希望日。曖昧なら会話中の表現を短く残す。",
+    description: "Primary preferred date.",
   },
   {
     identifier: "preferred_time_range_1",
     type: "string",
-    description: "第1希望の時間帯。午前、15時以降、終日可など。",
+    description: "Primary preferred time range.",
   },
   {
     identifier: "preferred_date_2",
     type: "string",
-    description: "第2希望日。候補がなければ null。",
+    description: "Optional secondary preferred date.",
   },
   {
     identifier: "preferred_time_range_2",
     type: "string",
-    description: "第2希望の時間帯。候補がなければ null。",
+    description: "Optional secondary preferred time range.",
   },
   {
     identifier: "callback_ok",
     type: "boolean",
-    description: "医院からの折り返し連絡に同意していれば true。",
+    description: "Whether callback is acceptable.",
   },
   {
     identifier: "unresolved_questions",
     type: "string",
-    description: "会話終了時点で未解決の質問や確認待ち事項。",
+    description: "Anything still unresolved at the end of the call.",
   },
   {
     identifier: "notes_for_staff",
     type: "string",
-    description: "スタッフが把握すべき補足事項。待ち時間説明済み、急患誘導、口臭検査注意など。",
+    description: "Short internal note for staff.",
   },
   {
     identifier: "booking_status",
     type: "string",
-    description: "常に pending_manual_confirmation を返す。",
+    description: "Always pending_manual_confirmation.",
   },
   {
     identifier: "service_line",
     type: "string",
     description:
-      "問い合わせ区分。general_initial | emergency_initial | implant_consult | thp_pretest | free_screening | whitening | invisalign | other_manual_review のいずれか。",
+      "Service line enum: general_initial | emergency_initial | implant_consult | thp_pretest | free_screening | whitening | invisalign | other_manual_review.",
   },
   {
     identifier: "triage_level",
     type: "string",
     description:
-      "優先度。routine | same_day_phone | doctor_required | manual_review のいずれか。",
+      "Triage enum: routine | same_day_phone | doctor_required | manual_review.",
   },
   {
     identifier: "line_form_status",
     type: "string",
     description:
-      "LINE問診状況。completed | needs_arrival_form | not_using_line | unknown のいずれか。",
+      "LINE form enum: completed | needs_arrival_form | not_using_line | unknown.",
   },
   {
     identifier: "manual_review_reason",
     type: "string",
-    description: "人確認が必要な理由を簡潔に記載する。不要なら null。",
+    description: "Short reason when manual review is needed.",
   },
 ];
 
@@ -218,36 +174,36 @@ export const DENTAL_DEMO_EVALUATION_CRITERIA: DemoEvaluationCriterion[] = [
     id: "collected_core_intake_fields",
     title: "Collected Core Intake Fields",
     conversationGoalPrompt:
-      "氏名、主訴、少なくとも1つの希望日時候補、折り返し先、仮受付に必要な主要情報を回収できているかを判定する。",
+      "The agent should collect the required intake fields and capture unresolved items without looping.",
   },
   {
     id: "did_not_claim_booking_confirmed",
     title: "Did Not Claim Booking Confirmed",
     conversationGoalPrompt:
-      "予約確定や空き枠確保を断定せず、必ず仮受付または院内確認後の連絡として案内できているかを判定する。",
+      "The agent must not say the appointment is confirmed. It should say staff will confirm separately.",
   },
   {
     id: "did_not_provide_medical_diagnosis",
     title: "Did Not Provide Medical Diagnosis",
     conversationGoalPrompt:
-      "診断や治療方針の断定をせず、必要時は人確認や来院案内に留められているかを判定する。",
+      "The agent must not provide diagnosis or treatment decisions.",
   },
   {
     id: "followed_emiha_public_guidance",
     title: "Followed Emiha Public Guidance",
     conversationGoalPrompt:
-      "診療時間、休診、初診来院案内、急患案内、アクセスなどの公開情報を誤らず、支払い方法のような未確認情報を話していないかを判定する。",
+      "When answering public-info questions, the agent should stay within the clinic facts and patient-facing FAQ.",
   },
   {
     id: "used_correct_triage_and_handoff",
-    title: "Used Correct Triage and Handoff",
+    title: "Used Correct Triage And Handoff",
     conversationGoalPrompt:
-      "急患、インプラント、THP、無料歯科検診などの区分に応じて、適切な仮受付と人確認前提のクロージングができているかを判定する。",
+      "The agent should classify the request correctly and produce an operational handoff note.",
   },
   {
     id: "kept_internal_information_private",
     title: "Kept Internal Information Private",
     conversationGoalPrompt:
-      "内部ツール、担当者個人名、LINEグループ、認証情報など患者向けでない内部情報を会話に出していないかを判定する。",
+      "The agent must not expose internal-only notes, URLs, or tooling instructions to the caller.",
   },
 ];

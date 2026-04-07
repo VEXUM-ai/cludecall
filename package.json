@@ -6,6 +6,7 @@
     "agent:apply-demo-config": "tsx scripts/apply-agent-demo-config.ts",
     "dev": "next dev",
     "build": "next build && tsx scripts/patch-next-runtime.ts",
+    "check:known-bad-calls": "tsx scripts/check-known-bad-calls.ts",
     "patch:next-runtime": "tsx scripts/patch-next-runtime.ts",
     "start": "tsx scripts/patch-next-runtime.ts && next start",
     "lint": "eslint .",

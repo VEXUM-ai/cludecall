@@ -3,6 +3,7 @@ import type { AppointmentSubmissionMode } from "@/lib/types";
 type ServerConfig = {
   apiKey: string;
   agentId: string;
+  agentPhoneNumberId: string | null;
   agentPhoneNumber: string | null;
   twilioAccountSid: string | null;
   twilioAuthToken: string | null;
@@ -11,6 +12,10 @@ type ServerConfig = {
   demoTimezone: string;
   appointmentToolMode: AppointmentSubmissionMode;
   appointmentToolProvider: string | null;
+  geminiApiKey: string | null;
+  voiceBenchmarkEnabled: boolean;
+  voiceBenchmarkDefaultProvider: string;
+  voiceBenchmarkSaveArtifacts: boolean;
 };
 
 function readEnv(name: string): string | null {
@@ -24,6 +29,15 @@ function requireEnv(name: string): string {
     throw new Error(`Missing ${name}. Add it to your environment before running the demo.`);
   }
   return value;
+}
+
+function readBooleanEnv(name: string, fallback = false): boolean {
+  const value = readEnv(name);
+  if (!value) {
+    return fallback;
+  }
+
+  return value.toLowerCase() === "true";
 }
 
 export function getServerConfig(): ServerConfig {
@@ -44,6 +58,7 @@ export function getServerConfig(): ServerConfig {
   return {
     apiKey: requireEnv("ELEVENLABS_API_KEY"),
     agentId: requireEnv("ELEVENLABS_AGENT_ID"),
+    agentPhoneNumberId: readEnv("ELEVENLABS_AGENT_PHONE_NUMBER_ID"),
     agentPhoneNumber: readEnv("ELEVENLABS_AGENT_PHONE_NUMBER"),
     twilioAccountSid: readEnv("TWILIO_ACCOUNT_SID"),
     twilioAuthToken: readEnv("TWILIO_AUTH_TOKEN"),
@@ -52,9 +67,22 @@ export function getServerConfig(): ServerConfig {
     demoTimezone: readEnv("DEMO_TIMEZONE") ?? "Asia/Tokyo",
     appointmentToolMode,
     appointmentToolProvider: readEnv("APPOINTMENT_TOOL_PROVIDER"),
+    geminiApiKey: readEnv("GEMINI_API_KEY"),
+    voiceBenchmarkEnabled: readBooleanEnv("VOICE_BENCHMARK_ENABLED", true),
+    voiceBenchmarkDefaultProvider:
+      readEnv("VOICE_BENCHMARK_DEFAULT_PROVIDER") ??
+      "eleven_agents_v3_conversational",
+    voiceBenchmarkSaveArtifacts: readBooleanEnv("VOICE_BENCHMARK_SAVE_ARTIFACTS", true),
   };
 }
 
 export function getDemoTimezone(): string {
   return readEnv("DEMO_TIMEZONE") ?? "Asia/Tokyo";
+}
+
+export function getDemoRuntimeSettings() {
+  return {
+    demoOutboundTargetNumber: readEnv("DEMO_OUTBOUND_TARGET_NUMBER") ?? "",
+    demoTimezone: getDemoTimezone(),
+  };
 }

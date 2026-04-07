@@ -19,7 +19,6 @@ import {
   DENTAL_DEMO_FAST_CASCADE_TIMEOUT_SECONDS,
   DENTAL_DEMO_FAST_FIRST_MESSAGE,
   DENTAL_DEMO_FAST_MAX_TOKENS,
-  DENTAL_DEMO_FAST_PROMPT,
   DENTAL_DEMO_FAST_SOFT_TIMEOUT_MESSAGE,
   DENTAL_DEMO_FAST_SOFT_TIMEOUT_SECONDS,
   DENTAL_DEMO_FAST_TTS_SPEED,
@@ -32,8 +31,6 @@ import { loadDotenvFile } from "./load-dotenv";
 type JsonObject = Record<string, unknown>;
 
 const DENTAL_DEMO_MANAGED_KB_DOCUMENTS = buildManagedKnowledgeBaseDocuments();
-const DENTAL_DEMO_MANAGED_KB_PREFIX = "emiha-";
-
 type RequestJsonErrorDetail =
   | string
   | {
@@ -445,7 +442,7 @@ function buildPatchBody(args: {
     normalizeExistingKnowledgeBaseEntries(args.currentPromptConfig.knowledge_base),
     args.managedKnowledgeBaseEntries
   );
-  const ragEnabled = mergedKnowledgeBaseEntries.some((item) => item.usage_mode === "auto");
+  const ragEnabled = false;
 
   if (args.includeMonitoring) {
     conversationSettings.monitoring_enabled = true;
@@ -486,7 +483,7 @@ function buildPatchBody(args: {
         disable_first_message_interruptions: args.resolvedDisableFirstMessageInterruptions,
         prompt: {
           ...args.currentPromptConfig,
-          prompt: `${DENTAL_DEMO_PROMPT}\n\n${DENTAL_DEMO_FAST_PROMPT}`,
+          prompt: DENTAL_DEMO_PROMPT,
           knowledge_base: mergedKnowledgeBaseEntries,
           llm: "gemini-3-flash-preview",
           temperature: 0.1,

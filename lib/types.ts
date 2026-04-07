@@ -43,6 +43,9 @@ export type ConversationLifecycleStatus =
   | "analyzing"
   | "error";
 
+export type ConversationAnalysisStatus = "idle" | "pending" | "ready" | "error";
+export type ConversationAnalysisState = "ready" | "pending" | "missing";
+
 export type TranscriptEntry = {
   id: string;
   role: "user" | "agent";
@@ -243,6 +246,7 @@ export type ConversationHistorySummary = {
   channel: ConversationChannel;
   source: string | null;
   status: string | null;
+  analysisState: ConversationAnalysisState;
   durationSecs: number | null;
   success: string | null;
   startedAt: string | null;
@@ -257,6 +261,7 @@ export type ConversationHistorySummary = {
 export type ConversationHistoryDetail = DemoRun & {
   source: string | null;
   status: string;
+  analysisState: ConversationAnalysisState;
 };
 
 export type OutboundCallResult = {

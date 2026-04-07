@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { ElevenLabsApiError, importLatestPhoneCall } from "@/lib/elevenlabs/api";
-import { appendLiveMonitorEvent, appendLiveMonitorEvents } from "@/lib/live-monitor";
+import {
+  appendImportedTranscriptMirrorEvents,
+  appendLiveMonitorEvent,
+} from "@/lib/live-monitor";
+import { assessTranscriptTailCoverage } from "@/lib/phone-call-quality";
 
 export const runtime = "nodejs";
 
@@ -13,7 +17,7 @@ const requestSchema = z
   .optional();
 
 function queueTranscriptMirror(run: Awaited<ReturnType<typeof importLatestPhoneCall>>) {
-  void appendLiveMonitorEvents(
+  void appendImportedTranscriptMirrorEvents(
     run.transcript.map((entry) => ({
       kind: entry.role === "agent" ? "agent" : "user",
       channel: "phone" as const,
@@ -54,15 +58,13 @@ export async function POST(request: Request) {
     });
 
     const run = await importLatestPhoneCall(body?.conversationId);
-    const lastTranscriptEntry = run.transcript.length > 0 ? run.transcript[run.transcript.length - 1] : null;
-    const lastTranscriptTimeInCallSecs =
-      lastTranscriptEntry?.timeInCallSecs ?? null;
-    const transcriptTailGapSecs =
-      typeof run.callMeta.durationSecs === "number" && typeof lastTranscriptTimeInCallSecs === "number"
-        ? Math.max(run.callMeta.durationSecs - lastTranscriptTimeInCallSecs, 0)
-        : null;
-    const lastTranscriptRole = lastTranscriptEntry?.role ?? null;
-    const lastTranscriptPreview = lastTranscriptEntry?.text?.slice(0, 160) ?? null;
+    const tailCoverage = assessTranscriptTailCoverage({
+      durationSecs: run.callMeta.durationSecs,
+      transcript: run.transcript,
+    });
+    const lastTranscriptRole = tailCoverage.lastTranscriptEntry?.role ?? null;
+    const lastTranscriptPreview =
+      tailCoverage.lastTranscriptEntry?.text?.slice(0, 160) ?? null;
 
     await appendLiveMonitorEvent({
       kind: "collection",
@@ -86,46 +88,29 @@ export async function POST(request: Request) {
         triageLevel: run.memo.triage_level,
         patientName: run.memo.patient_name,
         patientNameYomi: run.memo.patient_name_yomi,
-        lastTranscriptTimeInCallSecs,
-        transcriptTailGapSecs,
+        lastTranscriptTimeInCallSecs: tailCoverage.lastTranscriptTimeInCallSecs,
+        transcriptTailGapSecs: tailCoverage.transcriptTailGapSecs,
         lastTranscriptRole,
         lastTranscriptPreview,
+        tailCoverageRequired: tailCoverage.tailCoverageRequired,
+        tailCoverageReasons: tailCoverage.reasons,
       },
     });
 
-    if (typeof transcriptTailGapSecs === "number" && transcriptTailGapSecs >= 15) {
+    if (tailCoverage.tailCoverageRequired) {
       await appendLiveMonitorEvent({
-        kind: "collection",
+        kind: "error",
         channel: "phone",
-        level: "warning",
+        level: "error",
         conversationId: run.conversationId,
-        message: "phone transcript ended well before call completion",
+        message: "tail coverage required",
         details: {
           durationSecs: run.callMeta.durationSecs,
-          lastTranscriptTimeInCallSecs,
-          transcriptTailGapSecs,
+          lastTranscriptTimeInCallSecs: tailCoverage.lastTranscriptTimeInCallSecs,
+          transcriptTailGapSecs: tailCoverage.transcriptTailGapSecs,
           lastTranscriptRole,
           lastTranscriptPreview,
-        },
-      });
-    }
-
-    if (
-      typeof transcriptTailGapSecs === "number" &&
-      transcriptTailGapSecs >= 15 &&
-      lastTranscriptRole === "agent"
-    ) {
-      await appendLiveMonitorEvent({
-        kind: "collection",
-        channel: "phone",
-        level: "warning",
-        conversationId: run.conversationId,
-        message: "phone transcript ended during agent playback",
-        details: {
-          durationSecs: run.callMeta.durationSecs,
-          lastTranscriptTimeInCallSecs,
-          transcriptTailGapSecs,
-          lastTranscriptPreview,
+          tailCoverageReasons: tailCoverage.reasons,
         },
       });
     }

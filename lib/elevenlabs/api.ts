@@ -5,7 +5,13 @@ import { z } from "zod";
 import { readStoredAppointmentDraft } from "@/lib/appointment-store";
 import { buildAppointmentDraft } from "@/lib/appointments";
 import { getServerConfig } from "@/lib/env";
-import { writeDemoRunArtifacts } from "@/lib/demo-runs";
+import {
+  listStoredDemoRunArtifacts,
+  readLastKnownPhoneConversationId,
+  readStoredDemoRun,
+  writeDemoRunArtifacts,
+  writeLastKnownPhoneConversationId,
+} from "@/lib/demo-runs";
 import { buildLatencySample, writeLatencySample } from "@/lib/latency";
 import {
   maskPhoneNumber,
@@ -16,6 +22,7 @@ import {
 import type {
   AnalyzeConversationResponse,
   AnalysisResolutionMetrics,
+  ConversationAnalysisState,
   ConversationHistoryDetail,
   ConversationHistorySummary,
   DemoRun,
@@ -94,7 +101,6 @@ type CacheEntry<T> = {
   value: T;
 };
 
-const outboundPhoneNumberCache = new Map<string, CacheEntry<PhoneNumberRecord>>();
 const twilioAccountTypeCache = new Map<string, CacheEntry<string | null>>();
 
 export class ElevenLabsApiError extends Error {
@@ -423,12 +429,14 @@ async function buildConversationSummary(
 ): Promise<ConversationHistorySummary> {
   const run = await normalizeDemoRun(details);
   const transcriptCount = Array.isArray(details.transcript) ? details.transcript.length : 0;
+  const analysisState = resolveAnalysisState(details);
 
   return {
     conversationId: details.conversation_id,
     channel: run.channel,
     source,
     status: details.status ?? null,
+    analysisState,
     durationSecs:
       typeof details.metadata?.call_duration_secs === "number"
         ? details.metadata.call_duration_secs
@@ -466,24 +474,127 @@ function summarizeConversationSource(item: ConversationListItem, details: Conver
   return "web";
 }
 
+function resolveAnalysisState(details: ConversationDetails): ConversationAnalysisState {
+  if (hasAnalysis(details)) {
+    return "ready";
+  }
+
+  return isConversationDone(details.status) ? "missing" : "pending";
+}
+
+function inferStoredConversationSource(run: DemoRun): string {
+  return run.channel === "phone" ? "twilio" : "web";
+}
+
+function deriveAnalysisTitle(summary: string | null) {
+  if (!summary) {
+    return null;
+  }
+
+  const trimmed = summary.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  return trimmed.length > 72 ? `${trimmed.slice(0, 72)}...` : trimmed;
+}
+
+function toHistoryTimestamp(value: string | null): number {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildConversationSummaryFromStoredRun(
+  run: DemoRun,
+  source: string | null
+): ConversationHistorySummary {
+  return {
+    conversationId: run.conversationId,
+    channel: run.channel,
+    source,
+    status: run.status,
+    analysisState: "ready",
+    durationSecs: run.callMeta.durationSecs,
+    success: run.analysis.callSuccessful,
+    startedAt: run.callMeta.startedAt,
+    analysisTitle: deriveAnalysisTitle(run.analysis.transcriptSummary),
+    transcriptSummary: run.analysis.transcriptSummary,
+    memo: run.memo,
+    latency: run.latency,
+    transcriptCount: run.transcript.length,
+    appointmentDraft: run.appointmentDraft,
+  };
+}
+
+function buildConversationHistoryDetailFromStoredRun(
+  run: DemoRun,
+  source: string | null
+): ConversationHistoryDetail {
+  return {
+    ...run,
+    source,
+    status: run.status,
+    analysisState: "ready",
+  };
+}
+
+async function persistDemoRunFromDetails(
+  details: ConversationDetails,
+  analysisResolution: AnalysisResolutionMetrics | null = null
+) {
+  const run = await normalizeDemoRun(details, analysisResolution);
+  await writeDemoRunArtifacts(run, getServerConfig().demoTimezone);
+  if (run.channel === "phone") {
+    await writeLastKnownPhoneConversationId(run.conversationId);
+  }
+  return run;
+}
+
 async function resolveConversationRun(
-  conversationId: string
+  conversationId: string,
+  options: {
+    allowAnalysisRerun?: boolean;
+  } = {}
 ): Promise<{
   details: ConversationDetails;
   analysisResolution: AnalysisResolutionMetrics;
 }> {
   const totalStartedAt = Date.now();
-  const initial = await measureAsync(() => runConversationAnalysis(conversationId));
-  let details = initial.result;
+  const initialDetail = await measureAsync(() => getConversationDetails(conversationId));
+  let details = initialDetail.result;
   let pollingAttempts = 0;
   let pollingWaitMs = 0;
-  let detailFetchCount = 0;
-  let detailFetchMs = 0;
+  let detailFetchCount = 1;
+  let detailFetchMs = initialDetail.elapsedMs;
+  let analysisRequestMs = 0;
 
-  for (let attempt = 0; attempt < 10 && !hasAnalysis(details); attempt += 1) {
+  if (options.allowAnalysisRerun === false || (isConversationDone(details.status) && hasAnalysis(details))) {
+    return {
+      details,
+      analysisResolution: {
+        analysisRequestMs,
+        pollingAttempts,
+        pollingWaitMs,
+        detailFetchCount,
+        detailFetchMs,
+        totalMs: Date.now() - totalStartedAt,
+      },
+    };
+  }
+
+  const initial = await measureAsync(() => runConversationAnalysis(conversationId));
+  analysisRequestMs = initial.elapsedMs;
+  details = initial.result;
+  const pollingBackoffMs = [400, 900, 1800, 3200, 5000];
+
+  for (let attempt = 0; attempt < pollingBackoffMs.length && !hasAnalysis(details); attempt += 1) {
     pollingAttempts += 1;
     const waitStartedAt = Date.now();
-    await sleep(1500);
+    await sleep(pollingBackoffMs[attempt]);
     pollingWaitMs += Date.now() - waitStartedAt;
     const detailResponse = await measureAsync(() => getConversationDetails(conversationId));
     detailFetchCount += 1;
@@ -494,7 +605,7 @@ async function resolveConversationRun(
   return {
     details,
     analysisResolution: {
-      analysisRequestMs: initial.elapsedMs,
+      analysisRequestMs,
       pollingAttempts,
       pollingWaitMs,
       detailFetchCount,
@@ -552,15 +663,6 @@ export async function listPhoneNumbers() {
 
 async function resolveAgentPhoneNumber() {
   const config = getServerConfig();
-  const cacheKey = `${config.agentId}:${normalizePhoneNumber(config.agentPhoneNumber ?? "")}`;
-  const cachedPhoneNumber = readCache(outboundPhoneNumberCache, cacheKey);
-  if (cachedPhoneNumber) {
-    return {
-      value: cachedPhoneNumber,
-      cacheHit: true,
-    } satisfies CachedLookupResult<PhoneNumberRecord>;
-  }
-
   const phoneNumbers = await listPhoneNumbers();
   const outboundCapable = phoneNumbers.filter(
     (item) => item.supports_outbound !== false
@@ -575,7 +677,6 @@ async function resolveAgentPhoneNumber() {
       (item) => normalizePhoneNumber(item.phone_number) === configuredNumber
     );
     if (matched) {
-      writeCache(outboundPhoneNumberCache, cacheKey, matched);
       return {
         value: matched,
         cacheHit: false,
@@ -584,7 +685,6 @@ async function resolveAgentPhoneNumber() {
   }
 
   if (outboundCapable.length === 1) {
-    writeCache(outboundPhoneNumberCache, cacheKey, outboundCapable[0]);
     return {
       value: outboundCapable[0],
       cacheHit: false,
@@ -644,8 +744,20 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
     );
   }
 
-  const phoneNumberResult = await measureAsync(() => resolveAgentPhoneNumber());
   const twilioAccountTypePromise = measureAsync(() => getTwilioAccountType());
+  const configuredPhoneNumberId = config.agentPhoneNumberId?.trim() || null;
+  const phoneNumberResult = configuredPhoneNumberId
+    ? null
+    : await measureAsync(() => resolveAgentPhoneNumber());
+  const agentPhoneNumberId =
+    configuredPhoneNumberId ?? phoneNumberResult?.result.value.phone_number_id ?? null;
+
+  if (!agentPhoneNumberId) {
+    throw new Error(
+      "Missing ELEVENLABS_AGENT_PHONE_NUMBER_ID. Set a fixed outbound-capable ElevenLabs phone number id for this demo."
+    );
+  }
+
   const outboundResponse = await measureAsync(() =>
     elevenLabsFetch(
       buildApiUrl("convai/twilio/outbound-call"),
@@ -653,7 +765,7 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
         method: "POST",
         body: JSON.stringify({
           agent_id: config.agentId,
-          agent_phone_number_id: phoneNumberResult.result.value.phone_number_id,
+          agent_phone_number_id: agentPhoneNumberId,
           to_number: toNumber,
         }),
       },
@@ -662,9 +774,14 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
   );
   const twilioAccountTypeResult = await twilioAccountTypePromise;
   const response = outboundResponse.result;
-  const phoneNumber = phoneNumberResult.result.value;
   const twilioAccountType = twilioAccountTypeResult.result.value;
   const totalMs = Date.now() - totalStartedAt;
+  const agentPhoneNumber =
+    config.agentPhoneNumber ?? phoneNumberResult?.result.value.phone_number ?? null;
+
+  if (response.conversation_id) {
+    await writeLastKnownPhoneConversationId(response.conversation_id);
+  }
 
   const warnings: string[] = [];
   if (twilioAccountType?.toLowerCase() === "trial") {
@@ -678,14 +795,17 @@ export async function startOutboundCall(toNumber: string): Promise<OutboundCallR
     message: response.message,
     conversationId: response.conversation_id ?? null,
     callSid: response.callSid ?? null,
-    agentPhoneNumberId: phoneNumber.phone_number_id,
-    agentPhoneNumber: phoneNumber.phone_number,
+    agentPhoneNumberId,
+    agentPhoneNumber,
     toNumber,
     twilioAccountType,
     warnings,
     outboundMetrics: {
-      resolvePhoneNumberMs: phoneNumberResult.elapsedMs,
-      phoneNumberCacheHit: phoneNumberResult.result.cacheHit === true,
+      resolvePhoneNumberMs: phoneNumberResult?.elapsedMs ?? 0,
+      phoneNumberCacheHit:
+        configuredPhoneNumberId !== null
+          ? true
+          : phoneNumberResult?.result.cacheHit ?? false,
       twilioAccountLookupMs: twilioAccountTypeResult.elapsedMs,
       twilioAccountTypeCacheHit: twilioAccountTypeResult.result.cacheHit,
       outboundRequestMs: outboundResponse.elapsedMs,
@@ -716,131 +836,194 @@ export async function runConversationAnalysis(conversationId: string) {
 export async function analyzeConversation(
   conversationId: string
 ): Promise<AnalyzeConversationResponse> {
-  const resolved = await resolveConversationRun(conversationId);
-  return normalizeAnalyzeResponse(resolved.details, resolved.analysisResolution);
+  const resolved = await resolveConversationRun(conversationId, {
+    allowAnalysisRerun: true,
+  });
+  const [result] = await Promise.all([
+    normalizeAnalyzeResponse(resolved.details, resolved.analysisResolution),
+    persistDemoRunFromDetails(resolved.details, resolved.analysisResolution),
+  ]);
+  return result;
 }
 
 export async function getConversationHistoryDetail(
   conversationId: string
 ): Promise<ConversationHistoryDetail> {
-  const resolved = await resolveConversationRun(conversationId);
-  const recent = await listConversations(20);
-  const matched = recent.conversations.find(
-    (item) => item.conversation_id === conversationId
-  );
-  const run = await normalizeDemoRun(resolved.details, resolved.analysisResolution);
+  const stored = await readStoredDemoRun(conversationId);
+  if (stored) {
+    return buildConversationHistoryDetailFromStoredRun(
+      stored.run,
+      inferStoredConversationSource(stored.run)
+    );
+  }
 
-  return {
+  const details = await getConversationDetails(conversationId);
+  const run = await normalizeDemoRun(details);
+  const detail: ConversationHistoryDetail = {
     ...run,
-    source: matched?.conversation_initiation_source ?? summarizeConversationSource(
+    source: summarizeConversationSource(
       {
         conversation_id: conversationId,
         conversation_initiation_source: undefined,
         start_time_unix_secs: undefined,
         call_duration_secs: undefined,
-        status: resolved.details.status,
+        status: details.status,
         call_successful: undefined,
         agent_name: undefined,
-        agent_id: resolved.details.agent_id,
+        agent_id: details.agent_id,
       },
-      resolved.details
+      details
     ),
-    status: resolved.details.status ?? "unknown",
+    status: details.status ?? "unknown",
+    analysisState: resolveAnalysisState(details),
   };
+
+  if (detail.analysisState === "ready") {
+    await persistDemoRunFromDetails(details);
+  }
+
+  return detail;
 }
 
 export async function listConversationHistorySummaries(
   pageSize = 8
 ): Promise<ConversationHistorySummary[]> {
-  const recent = await listConversations(pageSize);
+  const storedSummaries = (await listStoredDemoRunArtifacts())
+    .slice(0, pageSize)
+    .map((artifact) =>
+      buildConversationSummaryFromStoredRun(
+        artifact.run,
+        inferStoredConversationSource(artifact.run)
+      )
+    );
+
+  if (storedSummaries.length >= pageSize) {
+    return storedSummaries;
+  }
+
+  const recent = await listConversations(Math.min(20, Math.max(pageSize * 2, 12)));
   const conversations = [...recent.conversations].sort(
     (left, right) =>
       (right.start_time_unix_secs ?? 0) - (left.start_time_unix_secs ?? 0)
   );
-
-  const completed = conversations.filter((candidate) => candidate.status?.toLowerCase() === "done");
-  const selected = completed.slice(0, pageSize);
+  const storedConversationIds = new Set(storedSummaries.map((item) => item.conversationId));
+  const selected = conversations
+    .filter((candidate) => !storedConversationIds.has(candidate.conversation_id))
+    .slice(0, Math.max(pageSize - storedSummaries.length, 0));
 
   const details = await Promise.all(
     selected.map((candidate) => getConversationDetails(candidate.conversation_id))
   );
 
-  return Promise.all(
+  const remoteSummaries = await Promise.all(
     details.map((detail, index) =>
       buildConversationSummary(detail, summarizeConversationSource(selected[index], detail))
     )
   );
+
+  return [...storedSummaries, ...remoteSummaries]
+    .sort(
+      (left, right) =>
+        toHistoryTimestamp(right.startedAt) - toHistoryTimestamp(left.startedAt)
+    )
+    .slice(0, pageSize);
+}
+
+function isPhoneConversationCandidate(
+  item: ConversationListItem | null,
+  details: ConversationDetails
+) {
+  if (item?.conversation_initiation_source?.toLowerCase() === "twilio") {
+    return true;
+  }
+
+  return (
+    details.metadata &&
+    typeof details.metadata === "object" &&
+    "phone_call" in details.metadata &&
+    typeof details.metadata.phone_call === "object" &&
+    details.metadata.phone_call !== null
+  );
+}
+
+async function resolveMostRecentPhoneConversationId(doneOnly: boolean): Promise<string> {
+  const lastKnownConversationId = await readLastKnownPhoneConversationId();
+  if (lastKnownConversationId) {
+    try {
+      const details = await getConversationDetails(lastKnownConversationId);
+      if (
+        isPhoneConversationCandidate(null, details) &&
+        (!doneOnly || isConversationDone(details.status))
+      ) {
+        return lastKnownConversationId;
+      }
+    } catch {
+      // Ignore stale cache and fall back to recent conversation lookup.
+    }
+  }
+
+  const recent = await listConversations(20);
+  const candidates = [...recent.conversations].sort(
+    (left, right) =>
+      (right.start_time_unix_secs ?? 0) - (left.start_time_unix_secs ?? 0)
+  );
+  const filteredCandidates = candidates.filter((candidate) =>
+    doneOnly ? isConversationDone(candidate.status) : !isConversationDone(candidate.status)
+  );
+  const details = await Promise.all(
+    filteredCandidates.map(async (candidate) => ({
+      candidate,
+      details: await getConversationDetails(candidate.conversation_id),
+    }))
+  );
+  const matched = details.find(({ candidate, details }) =>
+    isPhoneConversationCandidate(candidate, details)
+  );
+
+  if (matched) {
+    await writeLastKnownPhoneConversationId(matched.candidate.conversation_id);
+    return matched.candidate.conversation_id;
+  }
+
+  throw new Error(
+    doneOnly
+      ? "No completed phone conversation was found for the configured agent."
+      : "No active phone conversation was found for the configured agent."
+  );
 }
 
 async function findMostRecentPhoneConversationId(): Promise<string> {
-  const recent = await listConversations(20);
-  const candidates = [...recent.conversations].sort(
-    (left, right) =>
-      (right.start_time_unix_secs ?? 0) - (left.start_time_unix_secs ?? 0)
-  );
-
-  for (const candidate of candidates) {
-    if (!isConversationDone(candidate.status)) {
-      continue;
-    }
-
-    const details = await getConversationDetails(candidate.conversation_id);
-    const phoneCall =
-      details.metadata &&
-      typeof details.metadata === "object" &&
-      "phone_call" in details.metadata &&
-      typeof details.metadata.phone_call === "object" &&
-      details.metadata.phone_call !== null;
-
-    if (phoneCall) {
-      return candidate.conversation_id;
-    }
-  }
-
-  throw new Error(
-    "No completed phone conversation was found for the configured agent."
-  );
+  return resolveMostRecentPhoneConversationId(true);
 }
 
 export async function findMostRecentActivePhoneConversationId(): Promise<string> {
-  const recent = await listConversations(20);
-  const candidates = [...recent.conversations].sort(
-    (left, right) =>
-      (right.start_time_unix_secs ?? 0) - (left.start_time_unix_secs ?? 0)
-  );
-
-  for (const candidate of candidates) {
-    if (isConversationDone(candidate.status)) {
-      continue;
-    }
-
-    const details = await getConversationDetails(candidate.conversation_id);
-    const phoneCall =
-      details.metadata &&
-      typeof details.metadata === "object" &&
-      "phone_call" in details.metadata &&
-      typeof details.metadata.phone_call === "object" &&
-      details.metadata.phone_call !== null;
-
-    if (phoneCall) {
-      return candidate.conversation_id;
-    }
-  }
-
-  throw new Error(
-    "No active phone conversation was found for the configured agent."
-  );
+  return resolveMostRecentPhoneConversationId(false);
 }
 
 export async function importLatestPhoneCall(conversationId?: string): Promise<DemoRun> {
   const targetConversationId = conversationId ?? (await findMostRecentPhoneConversationId());
-  const resolved = await resolveConversationRun(targetConversationId);
-  const run = await normalizeDemoRun(resolved.details, resolved.analysisResolution);
+  const resolved = await resolveConversationRun(targetConversationId, {
+    allowAnalysisRerun: true,
+  });
+  const run = await persistDemoRunFromDetails(resolved.details, resolved.analysisResolution);
   if (run.latency) {
     await writeLatencySample(run.latency);
   }
 
   return run;
+}
+
+export async function reanalyzeConversationHistoryDetail(
+  conversationId: string
+): Promise<ConversationHistoryDetail> {
+  const resolved = await resolveConversationRun(conversationId, {
+    allowAnalysisRerun: true,
+  });
+  const run = await persistDemoRunFromDetails(resolved.details, resolved.analysisResolution);
+  return buildConversationHistoryDetailFromStoredRun(
+    run,
+    inferStoredConversationSource(run)
+  );
 }
 
 export async function persistLatestPhoneCall(conversationId?: string) {

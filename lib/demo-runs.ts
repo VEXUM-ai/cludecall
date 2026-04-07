@@ -10,6 +10,19 @@ import {
 import { summarizeMissingMemoFields } from "@/lib/elevenlabs/memo";
 import type { DemoRun } from "@/lib/types";
 
+type StoredDemoRunArtifact = {
+  run: DemoRun;
+  jsonPath: string;
+  modifiedAt: string;
+};
+
+const DEMO_RUNS_DOCS_DIR = path.resolve(process.cwd(), "docs", "demo-runs");
+const DEMO_RUNS_ARTIFACTS_DIR = path.resolve(process.cwd(), "artifacts", "demo-runs");
+const LAST_KNOWN_PHONE_CONVERSATION_PATH = path.join(
+  DEMO_RUNS_ARTIFACTS_DIR,
+  "last-known-phone-conversation.json"
+);
+
 function formatInTimeZone(date: Date, timeZone: string) {
   const formatter = new Intl.DateTimeFormat("ja-JP", {
     timeZone,
@@ -129,16 +142,37 @@ function buildFileStem(conversationId: string, timeZone: string): string {
   return `${formatted.year}-${formatted.month}-${formatted.day}-${formatted.hour}${formatted.minute}-${conversationId}`;
 }
 
-export async function writeDemoRunArtifacts(run: DemoRun, timeZone: string) {
-  const docsDir = path.resolve(process.cwd(), "docs", "demo-runs");
-  const artifactsDir = path.resolve(process.cwd(), "artifacts", "demo-runs");
+function toRunTimestamp(run: DemoRun): number {
+  const preferred =
+    run.callMeta.startedAt ?? run.importedAt ?? run.latency?.recordedAt ?? new Date(0).toISOString();
+  const parsed = Date.parse(preferred);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
-  await fs.mkdir(docsDir, { recursive: true });
-  await fs.mkdir(artifactsDir, { recursive: true });
+function compareStoredRuns(left: StoredDemoRunArtifact, right: StoredDemoRunArtifact) {
+  return toRunTimestamp(right.run) - toRunTimestamp(left.run);
+}
+
+function isDemoRun(value: unknown): value is DemoRun {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "conversationId" in value &&
+    typeof (value as { conversationId?: unknown }).conversationId === "string"
+  );
+}
+
+async function ensureDemoRunDirectories() {
+  await fs.mkdir(DEMO_RUNS_DOCS_DIR, { recursive: true });
+  await fs.mkdir(DEMO_RUNS_ARTIFACTS_DIR, { recursive: true });
+}
+
+export async function writeDemoRunArtifacts(run: DemoRun, timeZone: string) {
+  await ensureDemoRunDirectories();
 
   const stem = buildFileStem(run.conversationId, timeZone);
-  const markdownPath = path.join(docsDir, `${stem}.md`);
-  const jsonPath = path.join(artifactsDir, `${stem}.json`);
+  const markdownPath = path.join(DEMO_RUNS_DOCS_DIR, `${stem}.md`);
+  const jsonPath = path.join(DEMO_RUNS_ARTIFACTS_DIR, `${stem}.json`);
 
   await fs.writeFile(markdownPath, renderDemoRunMarkdown(run, timeZone), "utf8");
   await fs.writeFile(jsonPath, JSON.stringify(run, null, 2), "utf8");
@@ -148,4 +182,81 @@ export async function writeDemoRunArtifacts(run: DemoRun, timeZone: string) {
     markdownPath,
     jsonPath,
   };
+}
+
+export async function listStoredDemoRunArtifacts(): Promise<StoredDemoRunArtifact[]> {
+  try {
+    const entries = await fs.readdir(DEMO_RUNS_ARTIFACTS_DIR, { withFileTypes: true });
+    const records = await Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map(async (entry) => {
+          const jsonPath = path.join(DEMO_RUNS_ARTIFACTS_DIR, entry.name);
+          const [raw, stat] = await Promise.all([
+            fs.readFile(jsonPath, "utf8"),
+            fs.stat(jsonPath),
+          ]);
+          const parsed = JSON.parse(raw) as unknown;
+          if (!isDemoRun(parsed)) {
+            return null;
+          }
+
+          return {
+            run: parsed,
+            jsonPath,
+            modifiedAt: stat.mtime.toISOString(),
+          } satisfies StoredDemoRunArtifact;
+        })
+    );
+
+    const deduped = new Map<string, StoredDemoRunArtifact>();
+    for (const record of records.filter((value): value is StoredDemoRunArtifact => value !== null).sort(compareStoredRuns)) {
+      if (!deduped.has(record.run.conversationId)) {
+        deduped.set(record.run.conversationId, record);
+      }
+    }
+
+    return [...deduped.values()].sort(compareStoredRuns);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
+export async function readStoredDemoRun(conversationId: string) {
+  const artifacts = await listStoredDemoRunArtifacts();
+  return artifacts.find((artifact) => artifact.run.conversationId === conversationId) ?? null;
+}
+
+export async function readLastKnownPhoneConversationId(): Promise<string | null> {
+  try {
+    const raw = await fs.readFile(LAST_KNOWN_PHONE_CONVERSATION_PATH, "utf8");
+    const parsed = JSON.parse(raw) as { conversationId?: unknown };
+    return typeof parsed.conversationId === "string" && parsed.conversationId.length > 0
+      ? parsed.conversationId
+      : null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function writeLastKnownPhoneConversationId(conversationId: string) {
+  await ensureDemoRunDirectories();
+  await fs.writeFile(
+    LAST_KNOWN_PHONE_CONVERSATION_PATH,
+    JSON.stringify(
+      {
+        conversationId,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
 }

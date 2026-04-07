@@ -1,0 +1,16 @@
+[
+  {
+    "conversationId": "conv_1101knhpm2hnf8a949ax2teetp5g",
+    "label": "second-slot loop with stale first-slot resurrection",
+    "expectedTailCoverageRequired": true,
+    "expectedLastRole": "agent",
+    "artifactPath": "artifacts/demo-runs/2026-04-07-0042-conv_1101knhpm2hnf8a949ax2teetp5g.json"
+  },
+  {
+    "conversationId": "conv_8601knhy0bfef33sqh2fr0w8dn1f",
+    "label": "prompt leak and broken closing tail gap",
+    "expectedTailCoverageRequired": true,
+    "expectedLastRole": "agent",
+    "documentationOnly": true
+  }
+]
