@@ -10,21 +10,24 @@
 7. `could not establish pc connection` が出る端末では、アプリが自動で WebSocket fallback を試す。失敗する場合はページを再読み込みしてから再度 `開始` を押す。
 8. 会話終了後の analysis 成功時に、Web の接続時間と初回応答時間が `docs/latency-report.md` に自動集計される。
 9. UI で Eleven v3 や voice を手動変更した場合、公開後に `npm run agent:apply-demo-config` を実行しても、その時点の live agent の TTS 設定を維持する。`.env` に `ELEVENLABS_TTS_MODEL_ID` や `ELEVENLABS_VOICE_ID` を入れた場合だけ明示的に上書きする。
+10. `npm run agent:apply-demo-config` は managed knowledge base documents も同期する。公開情報と FAQ は KB に寄せ、prompt は flow と guardrail を優先する。
 
 ## 即日電話デモ
 1. `npm run agent:apply-demo-config` を実行し、歯科受付用の prompt と Data Collection を live agent に再適用する。
-2. ElevenLabs の Phone Numbers で Twilio 連携を行い、Verified Caller ID を import する。
-3. Verified Caller ID は `outbound-only` のため agent には割り当てられない。電話番号詳細画面に `この電話番号は着信通話をサポートしておらず、エージェントに割り当てることはできません` と表示されたら想定どおり。
-4. `.env` の `DEMO_OUTBOUND_TARGET_NUMBER` か画面入力欄には、実際に受ける着信先番号を入れる。`TWILIO_CALLER_ID` や `ELEVENLABS_AGENT_PHONE_NUMBER` と同じ番号は使わない。
-5. アプリの `AI から電話をかける` から発信先番号を入力して outbound call を送る。ダッシュボードの `発信コール` を使ってもよい。
-6. Twilio アカウントが Trial のままなら、接続直後に英語の trial アナウンスが先に流れる。そこですぐ切ると ElevenLabs 側の会話が始まらないので、案内が終わるまで数秒待つ。
-7. 通話終了後、アプリの「最新の電話会話を取り込む」か `npm run demo:import-last-call` を実行する。
-8. `確認してアポ登録` を押し、表示された payload を見ながらアポツールへ手動登録する。
-9. 生成された `docs/demo-runs/*.md` を証跡として確認する。
-10. transcript に時刻情報があれば、電話の応答間隔も `docs/latency-report.md` に自動集計される。
-11. inbound デモが必要になったら、Twilio の購入番号か SIP trunk を別途用意する。
-12. Verified Caller ID に自分の携帯番号を使っている場合、自分の携帯そのものを着信先には使わない。自分で受けるには別の caller ID か Twilio 購入番号が必要。
-13. 発信後は UI の outbound result か `npm run monitor:live` で `resolvePhoneNumberMs`、`twilioAccountLookupMs`、`outboundRequestMs`、`totalMs` を確認する。2 本目以降は cache hit になっているかも見る。
+2. 同コマンドは `emiha-public-facts-*` と `emiha-faq-*` の KB document を自動で作成または再利用し、agent に紐づける。
+3. `monitoringApplied: false` と表示された場合、これは ElevenLabs 側の plan 制限で realtime phone monitoring が無効な状態を示す。prompt / turn / TTS の更新はそのまま反映されるので、そのまま次へ進む。
+3. ElevenLabs の Phone Numbers で Twilio 連携を行い、Verified Caller ID を import する。
+4. Verified Caller ID は `outbound-only` のため agent には割り当てられない。電話番号詳細画面に `この電話番号は着信通話をサポートしておらず、エージェントに割り当てることはできません` と表示されたら想定どおり。
+5. `.env` の `DEMO_OUTBOUND_TARGET_NUMBER` か画面入力欄には、実際に受ける着信先番号を入れる。`TWILIO_CALLER_ID` や `ELEVENLABS_AGENT_PHONE_NUMBER` と同じ番号は使わない。
+6. アプリの `AI から電話をかける` から発信先番号を入力して outbound call を送る。ダッシュボードの `発信コール` を使ってもよい。
+7. Twilio アカウントが Trial のままなら、接続直後に英語の trial アナウンスが先に流れる。そこですぐ切ると ElevenLabs 側の会話が始まらないので、案内が終わるまで数秒待つ。
+8. 通話終了後、アプリの「最新の電話会話を取り込む」か `npm run demo:import-last-call` を実行する。
+9. `確認してアポ登録` を押し、表示された payload を見ながらアポツールへ手動登録する。
+10. 生成された `docs/demo-runs/*.md` を証跡として確認する。
+11. transcript に時刻情報があれば、電話の応答間隔も `docs/latency-report.md` に自動集計される。
+12. inbound デモが必要になったら、Twilio の購入番号か SIP trunk を別途用意する。
+13. Verified Caller ID に自分の携帯番号を使っている場合、自分の携帯そのものを着信先には使わない。自分で受けるには別の caller ID か Twilio 購入番号が必要。
+14. 発信後は UI の outbound result か `npm run monitor:live` で `resolvePhoneNumberMs`、`twilioAccountLookupMs`、`outboundRequestMs`、`totalMs` を確認する。monitor が unavailable の場合は transcript / analysis import を主観測に切り替え、2 本目以降は cache hit になっているかも見る。
 
 ## 将来の inbound 移行
 1. Twilio 日本 `national number` の規制申請を通す。

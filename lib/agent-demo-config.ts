@@ -2,8 +2,11 @@ import {
   EMIHA_BOOKING_RULES,
   EMIHA_CLINIC_PROFILE,
   EMIHA_ESCALATION_RULES,
-  EMIHA_FAQ_ENTRIES,
 } from "@/lib/clinic-config/emiha";
+import {
+  DENTAL_DEMO_KB_SUMMARY_LINES,
+  DENTAL_DEMO_KNOWLEDGE_BASE_GUIDANCE,
+} from "@/lib/agent-knowledge-base";
 
 export type DemoDataCollectionItem = {
   identifier: string;
@@ -35,10 +38,6 @@ const BOOKING_RULE_LINES = EMIHA_BOOKING_RULES.map(
     `- ${rule.label}: ${rule.chairFootprint} / ${rule.staffing} / 患者向け案内: ${rule.patientFacingNotes.join(
       " "
     )}`
-).join("\n");
-
-const FAQ_FACT_LINES = EMIHA_FAQ_ENTRIES.map(
-  (entry) => `- ${entry.question}: ${entry.answer}`
 ).join("\n");
 
 const ESCALATION_RULE_LINES = EMIHA_ESCALATION_RULES.map(
@@ -83,23 +82,15 @@ export const DENTAL_DEMO_PROMPT = `# Role
 - 相手が「今週」「来週」「再来週」「平日」「土日」「午前」「午後」「夕方」などの相対表現を使ったら、医院タイムゾーン基準の絶対日付または期間に言い換えて短く復唱する
 - 相対表現のままでは予約確定に見える言い方をせず、曜日または時間帯を一段だけ追加確認する
 
-# Public facts
-- 医院名: ${DENTAL_DEMO_CLINIC_PROFILE.clinicName}
-- 住所: ${DENTAL_DEMO_CLINIC_PROFILE.address}
+# Clinic summary
+${DENTAL_DEMO_KB_SUMMARY_LINES}
 - 電話番号: ${DENTAL_DEMO_CLINIC_PROFILE.phoneNumber}
-- 診療時間: ${DENTAL_DEMO_CLINIC_PROFILE.businessHours}
-- 休診日: ${DENTAL_DEMO_CLINIC_PROFILE.closedDays}
-- 予約制: ${DENTAL_DEMO_CLINIC_PROFILE.reservationPolicy}
-- 初診案内: ${DENTAL_DEMO_CLINIC_PROFILE.firstVisitArrivalNote}
-- 急患対応: ${DENTAL_DEMO_CLINIC_PROFILE.emergencyPolicy}
-- アクセス: ${DENTAL_DEMO_CLINIC_PROFILE.accessSummary}
-- 駐車場: ${DENTAL_DEMO_CLINIC_PROFILE.parking}
+- 当日案内の要点: ${DENTAL_DEMO_CLINIC_PROFILE.sameDayPolicy}
 
 # Booking rules
 ${BOOKING_RULE_LINES}
 
-# FAQ answers
-${FAQ_FACT_LINES}
+${DENTAL_DEMO_KNOWLEDGE_BASE_GUIDANCE}
 
 # Escalation
 ${ESCALATION_RULE_LINES}

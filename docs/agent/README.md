@@ -20,6 +20,7 @@
 - Speed: `1.0` から始めて `0.98-1.05` を試す
 - 返答長: `1-2文`
 - 1ターン1質問
+- 公開情報と FAQ は knowledge base を優先し、prompt には行動ルールと回収フローを残す
 
 voice / prompt / 発音辞書の詳細設計は [docs/agent/japanese-phone-voice-design.md](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/japanese-phone-voice-design.md) にまとめてある。
 発音辞書のアップロード用サンプルは [docs/agent/pronunciation-dictionary-ja-demo.pls](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/pronunciation-dictionary-ja-demo.pls) を使う。
@@ -88,6 +89,7 @@ v3 の利用可否と `eleven_v3` / `eleven_v3_conversational` の違いは [doc
 第2希望は任意で、`preferred_date_2` `preferred_time_range_2` は未確定なら `null` のままでよい。
 
 具体的な文面、想定シナリオ、評価観点は [docs/agent/dental-demo-config.md](/C:/Dev/Work/デンタル%20一次受付AI/docs/agent/dental-demo-config.md) にまとめてある。
+`npm run agent:apply-demo-config` は managed knowledge base documents も同期し、`emiha-public-facts-*` と `emiha-faq-*` を agent に関連付ける。
 
 ## Twilio 運用
 - 即日デモは Twilio Verified Caller ID または既存番号を使った outbound-only を本線にする。

@@ -13,6 +13,9 @@ import {
   DENTAL_DEMO_VOICE_NAME,
 } from "../lib/agent-demo-config";
 import {
+  buildManagedKnowledgeBaseDocuments,
+} from "../lib/agent-knowledge-base";
+import {
   DENTAL_DEMO_FAST_CASCADE_TIMEOUT_SECONDS,
   DENTAL_DEMO_FAST_FIRST_MESSAGE,
   DENTAL_DEMO_FAST_MAX_TOKENS,
@@ -27,6 +30,9 @@ import { getServerConfig } from "../lib/env";
 import { loadDotenvFile } from "./load-dotenv";
 
 type JsonObject = Record<string, unknown>;
+
+const DENTAL_DEMO_MANAGED_KB_DOCUMENTS = buildManagedKnowledgeBaseDocuments();
+const DENTAL_DEMO_MANAGED_KB_PREFIX = "emiha-";
 
 type RequestJsonErrorDetail =
   | string
@@ -51,7 +57,7 @@ class RequestJsonError extends Error {
 function requestJson(
   url: URL,
   init: {
-    method: "GET" | "PATCH";
+    method: "GET" | "PATCH" | "POST" | "DELETE";
     apiKey: string;
     body?: JsonObject;
   }
@@ -103,6 +109,49 @@ function requestJson(
     if (init.body) {
       request.write(JSON.stringify(init.body));
     }
+
+    request.end();
+  });
+}
+
+function requestText(
+  url: URL,
+  init: {
+    method: "GET";
+    apiKey: string;
+  }
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const request = httpsRequest(
+      url,
+      {
+        method: init.method,
+        headers: {
+          "xi-api-key": init.apiKey,
+        },
+      },
+      (response) => {
+        let rawBody = "";
+        response.setEncoding("utf8");
+
+        response.on("data", (chunk) => {
+          rawBody += chunk;
+        });
+
+        response.on("end", () => {
+          if ((response.statusCode ?? 500) >= 400) {
+            reject(new Error(`ElevenLabs text request failed with ${response.statusCode ?? 500}`));
+            return;
+          }
+
+          resolve(rawBody);
+        });
+      }
+    );
+
+    request.on("error", (error) => {
+      reject(error);
+    });
 
     request.end();
   });
@@ -176,6 +225,180 @@ function readOptionalStringArrayEnv(name: string): string[] | null {
     .filter((item) => item.length > 0);
 }
 
+function normalizeKnowledgeBaseContent(value: string) {
+  return value.replace(/\r\n/g, "\n").trim();
+}
+
+type ManagedKnowledgeBaseEntry = {
+  id: string;
+  name: string;
+  type: "text";
+  usage_mode: "auto" | "prompt";
+};
+
+type ExistingKnowledgeBaseEntry = {
+  id: string;
+  name?: string;
+  type?: string;
+  usage_mode?: string;
+};
+
+type KnowledgeBaseDocumentRecord = {
+  id: string;
+  name?: string;
+  type?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeExistingKnowledgeBaseEntries(value: unknown): ExistingKnowledgeBaseEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.id !== "string" || entry.id.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        id: entry.id,
+        name: typeof entry.name === "string" ? entry.name : undefined,
+        type: typeof entry.type === "string" ? entry.type : undefined,
+        usage_mode: typeof entry.usage_mode === "string" ? entry.usage_mode : undefined,
+      },
+    ];
+  });
+}
+
+function mergeKnowledgeBaseEntries(
+  currentEntries: ExistingKnowledgeBaseEntry[],
+  managedEntries: ManagedKnowledgeBaseEntry[]
+) {
+  const managedNames = new Set(DENTAL_DEMO_MANAGED_KB_DOCUMENTS.map((entry) => entry.name));
+  const retainedEntries = currentEntries.filter((entry) => !managedNames.has(entry.name ?? ""));
+  return [...retainedEntries, ...managedEntries];
+}
+
+async function listKnowledgeBaseDocuments(apiKey: string, search: string) {
+  const url = new URL("https://api.elevenlabs.io/v1/convai/knowledge-base");
+  url.searchParams.set("search", search);
+  url.searchParams.set("types", "text");
+  url.searchParams.set("page_size", "100");
+
+  const payload = await requestJson(url, {
+    method: "GET",
+    apiKey,
+  });
+
+  const documents = Array.isArray(payload.documents) ? payload.documents : [];
+  return documents.flatMap((entry): KnowledgeBaseDocumentRecord[] => {
+    if (!isRecord(entry) || typeof entry.id !== "string" || entry.id.length === 0) {
+      return [];
+    }
+
+    return [
+      {
+        id: entry.id,
+        name: typeof entry.name === "string" ? entry.name : undefined,
+        type: typeof entry.type === "string" ? entry.type : undefined,
+      },
+    ];
+  });
+}
+
+async function getKnowledgeBaseDocumentContent(apiKey: string, documentId: string) {
+  const url = new URL(`https://api.elevenlabs.io/v1/convai/knowledge-base/${documentId}/content`);
+  return requestText(url, {
+    method: "GET",
+    apiKey,
+  });
+}
+
+async function createKnowledgeBaseDocumentFromText(args: {
+  apiKey: string;
+  name: string;
+  text: string;
+}) {
+  const url = new URL("https://api.elevenlabs.io/v1/convai/knowledge-base/text");
+  const payload = await requestJson(url, {
+    method: "POST",
+    apiKey: args.apiKey,
+    body: {
+      name: args.name,
+      text: args.text,
+    },
+  });
+
+  const id =
+    typeof payload.id === "string"
+      ? payload.id
+      : typeof payload.documentation_id === "string"
+        ? payload.documentation_id
+        : null;
+  const name = typeof payload.name === "string" ? payload.name : args.name;
+  if (!id) {
+    throw new Error(`Failed to create knowledge base document: ${args.name}`);
+  }
+
+  return {
+    id,
+    name,
+  };
+}
+
+async function deleteKnowledgeBaseDocument(apiKey: string, documentId: string) {
+  const url = new URL(`https://api.elevenlabs.io/v1/convai/knowledge-base/${documentId}`);
+  await requestJson(url, {
+    method: "DELETE",
+    apiKey,
+  });
+}
+
+async function ensureManagedKnowledgeBaseDocuments(apiKey: string): Promise<ManagedKnowledgeBaseEntry[]> {
+  const resolvedDocuments: ManagedKnowledgeBaseEntry[] = [];
+
+  for (const desired of DENTAL_DEMO_MANAGED_KB_DOCUMENTS) {
+    const existingDocuments = (await listKnowledgeBaseDocuments(apiKey, desired.name)).filter(
+      (entry) => entry.name === desired.name
+    );
+
+    let resolvedId: string | null = null;
+    for (const existing of existingDocuments) {
+      const content = await getKnowledgeBaseDocumentContent(apiKey, existing.id);
+      if (normalizeKnowledgeBaseContent(content) === normalizeKnowledgeBaseContent(desired.text)) {
+        resolvedId = existing.id;
+        break;
+      }
+    }
+
+    if (!resolvedId) {
+      for (const existing of existingDocuments) {
+        await deleteKnowledgeBaseDocument(apiKey, existing.id);
+      }
+
+      const created = await createKnowledgeBaseDocumentFromText({
+        apiKey,
+        name: desired.name,
+        text: desired.text,
+      });
+      resolvedId = created.id;
+    }
+
+    resolvedDocuments.push({
+      id: resolvedId,
+      name: desired.name,
+      type: "text",
+      usage_mode: desired.usageMode,
+    });
+  }
+
+  return resolvedDocuments;
+}
+
 function isMonitoringEnterpriseOnlyError(error: unknown) {
   if (!(error instanceof RequestJsonError)) {
     return false;
@@ -199,6 +422,7 @@ function buildPatchBody(args: {
   currentPlatformSettings: JsonObject;
   currentGuardrails: JsonObject;
   currentFocusGuardrail: JsonObject;
+  managedKnowledgeBaseEntries: ManagedKnowledgeBaseEntry[];
   resolvedTtsModelId: string;
   resolvedVoiceId: string;
   resolvedExpressiveMode: boolean;
@@ -216,6 +440,12 @@ function buildPatchBody(args: {
   const conversationSettings: JsonObject = {
     ...args.currentConversationSettings,
   };
+  const currentRagConfig = ((args.currentPromptConfig.rag ?? {}) as JsonObject) satisfies JsonObject;
+  const mergedKnowledgeBaseEntries = mergeKnowledgeBaseEntries(
+    normalizeExistingKnowledgeBaseEntries(args.currentPromptConfig.knowledge_base),
+    args.managedKnowledgeBaseEntries
+  );
+  const ragEnabled = mergedKnowledgeBaseEntries.some((item) => item.usage_mode === "auto");
 
   if (args.includeMonitoring) {
     conversationSettings.monitoring_enabled = true;
@@ -257,11 +487,25 @@ function buildPatchBody(args: {
         prompt: {
           ...args.currentPromptConfig,
           prompt: `${DENTAL_DEMO_PROMPT}\n\n${DENTAL_DEMO_FAST_PROMPT}`,
+          knowledge_base: mergedKnowledgeBaseEntries,
           llm: "gemini-3-flash-preview",
           temperature: 0.1,
           max_tokens: args.resolvedMaxTokens,
           cascade_timeout_seconds: args.resolvedCascadeTimeoutSeconds,
           timezone: DENTAL_DEMO_TIMEZONE,
+          rag: {
+            ...currentRagConfig,
+            enabled: ragEnabled,
+            embedding_model:
+              typeof currentRagConfig.embedding_model === "string" &&
+              currentRagConfig.embedding_model.length > 0
+                ? currentRagConfig.embedding_model
+                : "e5_mistral_7b_instruct",
+            max_documents_length:
+              typeof currentRagConfig.max_documents_length === "number"
+                ? currentRagConfig.max_documents_length
+                : 10000,
+          },
         },
       },
     },
@@ -304,6 +548,7 @@ async function main() {
   const currentPlatformSettings = ((currentAgent.platform_settings ?? {}) as JsonObject) satisfies JsonObject;
   const currentGuardrails = ((currentPlatformSettings.guardrails ?? {}) as JsonObject) satisfies JsonObject;
   const currentFocusGuardrail = ((currentGuardrails.focus ?? {}) as JsonObject) satisfies JsonObject;
+  const managedKnowledgeBaseEntries = await ensureManagedKnowledgeBaseDocuments(apiKey);
   const resolvedTtsModelId =
     readOptionalEnv("ELEVENLABS_TTS_MODEL_ID") ??
     (typeof currentTtsConfig.model_id === "string" && currentTtsConfig.model_id.length > 0
@@ -395,6 +640,7 @@ async function main() {
         resolvedCascadeTimeoutSeconds,
         resolvedDisableFirstMessageInterruptions,
         includeMonitoring: true,
+        managedKnowledgeBaseEntries,
       }),
     });
   } catch (error) {
@@ -432,6 +678,7 @@ async function main() {
         resolvedCascadeTimeoutSeconds,
         resolvedDisableFirstMessageInterruptions,
         includeMonitoring: false,
+        managedKnowledgeBaseEntries,
       }),
     });
   }
@@ -474,6 +721,10 @@ async function main() {
     }`
   );
   console.log(`defaultVoiceName: ${DENTAL_DEMO_VOICE_NAME}`);
+  console.log(`managedKnowledgeBaseDocuments: ${managedKnowledgeBaseEntries.length}`);
+  console.log(
+    `knowledgeBaseDocumentNames: ${managedKnowledgeBaseEntries.map((item) => item.name).join(",")}`
+  );
   console.log(`dataCollectionItems: ${Object.keys(updatedDataCollection).length}`);
   console.log(`evaluationCriteria: ${updatedCriteria.length}`);
 }

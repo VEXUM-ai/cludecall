@@ -2,6 +2,12 @@
 
 ## 2026-04-07
 
+### Checkpoint: 公開情報と FAQ を managed knowledge base に分離
+- Added [`lib/agent-knowledge-base.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-knowledge-base.ts) to generate two managed KB documents from the typed clinic config: `emiha-public-facts-*` and `emiha-faq-*`.
+- Updated [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts) so the system prompt now keeps only a short clinic summary plus KB usage guidance, instead of inlining the full public-facts and FAQ payload.
+- Updated [`scripts/apply-agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/scripts/apply-agent-demo-config.ts) so `npm run agent:apply-demo-config` now creates or reuses those KB documents via the ElevenLabs API, attaches them to the agent prompt, and enables RAG when managed `auto` documents are present.
+- Decision: keep flow, guardrails, name-handling rules, and closing rules in the prompt; move public knowledge into KB; avoid moving booking-control behavior into KB.
+
 ### Checkpoint: monitor root cause confirmed and remote config fallback added
 - Verified against the live ElevenLabs agent API that the remote agent still had `conversation_config.conversation.monitoring_enabled = false`, `turn_eagerness = eager`, and the old phone prompt before re-apply.
 - Proved the monitor failure cause directly by sending a minimal PATCH with `monitoring_enabled = true`, which returned `403` with `feature_not_available` / `monitoring_enterprise_only` and the message `Real-time monitoring is an enterprise-only feature. Please upgrade your subscription.`
@@ -51,6 +57,12 @@
 - Updated [`lib/agent-speed-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-speed-config.ts) to mirror the same behavior in the speed overlay: pronunciation-only name confirmation, no script-type instructions, skip optional items near the end, and no repeated closing.
 - Updated [`app/api/demo/import-last-call/route.ts`](/C:/Dev/Work/デンタル%20一次受付AI/app/api/demo/import-last-call/route.ts) so phone import now records `lastTranscriptRole` / `lastTranscriptPreview` and emits `phone transcript ended during agent playback` when a long tail gap ends on an agent utterance.
 - Search across current evidence confirms the same family of issue has recurred at least twice: the previously documented `conv_1101knhpm2hnf8a949ax2teetp5g` loop and the newer `conv_8601knhy0bfef33sqh2fr0w8dn1f` tail-gap case.
+
+### Checkpoint: FAQ と公開情報を managed knowledge base へ切り出し
+- Added [`lib/agent-knowledge-base.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-knowledge-base.ts) to define managed ElevenLabs knowledge-base documents for clinic public facts and patient-facing FAQ.
+- Updated [`lib/agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/lib/agent-demo-config.ts) so the prompt now keeps only a compact clinic summary plus explicit guidance to use the attached knowledge base for detailed public information and FAQ.
+- Updated [`scripts/apply-agent-demo-config.ts`](/C:/Dev/Work/デンタル%20一次受付AI/scripts/apply-agent-demo-config.ts) so `npm run agent:apply-demo-config` now upserts the managed text documents, reuses matching docs when content is unchanged, replaces stale docs when content changed, and attaches them to the agent prompt with `usage_mode = auto`.
+- The apply script now prints the managed KB document count and names, so remote sync state is visible after each config push.
 
 ## 2026-04-06
 
