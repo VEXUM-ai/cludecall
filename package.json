@@ -1,0 +1,25 @@
+{
+    "name": "cludecall",
+    "version": "2.0.0",
+    "description": "えみは総合歯科 - AI電話対応エージェント（Retell AI + Apotool連携）",
+    "type": "module",
+    "scripts": {
+        "start": "node src/server/index.js",
+        "dev": "node --watch src/server/index.js",
+        "deploy": "node src/deploy.js",
+        "create-flow": "node src/create-flow.js",
+        "create-agent": "node src/create-agent.js",
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
+    "dependencies": {
+        "retell-sdk": "^4.0.0",
+        "dotenv": "^16.4.0",
+        "express": "^4.21.0",
+        "playwright": "^1.49.0",
+        "cors": "^2.8.5"
+    },
+    "devDependencies": {
+        "vitest": "^3.0.0"
+    }
+}
