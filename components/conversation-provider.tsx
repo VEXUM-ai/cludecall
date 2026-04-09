@@ -13,6 +13,10 @@ import {
   type ReactNode,
 } from "react";
 
+import {
+  applyLiveConversationGuardrailEvent,
+  createLiveConversationGuardrailState,
+} from "@/lib/live-conversation-guardrails";
 import type {
   AnalyzeConversationResponse,
   AudioDiagnostics,
@@ -273,6 +277,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const turnCounter = useRef(0);
   const analysisViewConversationIdRef = useRef<string | null>(null);
   const audioDiagnosticsRef = useRef<AudioDiagnostics>(createAudioDiagnosticsState("unknown"));
+  const liveGuardrailStateRef = useRef(createLiveConversationGuardrailState());
   const isAnalyzing = analysisStatus === "pending";
 
   const pushSessionEvent = useCallback(
@@ -313,6 +318,26 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     },
     []
   );
+
+  function applyGuardrailEvent(
+    event: Parameters<typeof applyLiveConversationGuardrailEvent>[1],
+    eventConversationId?: string | null
+  ) {
+    const result = applyLiveConversationGuardrailEvent(liveGuardrailStateRef.current, event);
+    liveGuardrailStateRef.current = result.state;
+
+    if (!result.update) {
+      return;
+    }
+
+    conversation.sendContextualUpdate(result.update.message);
+    pushSessionEvent(
+      `guardrail update: ${result.update.label}`,
+      "warning",
+      eventConversationId ?? conversation.getId() ?? conversationId,
+      result.update.details
+    );
+  }
 
   useEffect(() => {
     setPreferredTransport(readLastWorkingTransport());
@@ -373,6 +398,13 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           },
         });
       }
+
+      applyGuardrailEvent(
+        role === "agent"
+          ? { kind: "agent_message", text }
+          : { kind: "user_message", text },
+        conversation.getId() ?? conversationId
+      );
 
       setTranscript((current) => {
         const last = current[current.length - 1];
@@ -462,6 +494,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         connectMs,
         transport: sessionTiming.current?.transport ?? activeTransport,
       });
+    },
+    onInterruption: () => {
+      applyGuardrailEvent(
+        {
+          kind: "interruption",
+        },
+        conversation.getId() ?? conversationId
+      );
     },
     onError: (event) => {
       const errorValue: unknown = event;
@@ -634,6 +674,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     lastUserMessageAtMs.current = null;
     turnCounter.current = 0;
     analysisViewConversationIdRef.current = null;
+    liveGuardrailStateRef.current = createLiveConversationGuardrailState();
 
     const initialTransport = preferredTransport === "websocket" ? "websocket" : "webrtc";
     sessionTiming.current = {
