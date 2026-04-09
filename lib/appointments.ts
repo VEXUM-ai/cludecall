@@ -1,8 +1,11 @@
-import { EMIHA_BOOKING_RULES, EMIHA_CLINIC_PROFILE } from "@/lib/clinic-config/emiha";
+import { EMIHA_KNOWLEDGE_PACK } from "@/lib/clinic-config/emiha";
 import { resolvePreferredSlot } from "@/lib/date-preferences";
 import { getServerConfig } from "@/lib/env";
 import type {
+  AppointmentAuditRef,
+  AppointmentAvailabilityCandidate,
   AppointmentDraft,
+  AppointmentExecutionState,
   AppointmentSubmissionMode,
   AppointmentSubmissionState,
   AppointmentToolPayload,
@@ -10,6 +13,7 @@ import type {
   LineFormStatus,
   ReservationMemo,
   ServiceLine,
+  ServiceMenuMapping,
   TranscriptEntry,
   TriageLevel,
 } from "@/lib/types";
@@ -82,10 +86,20 @@ export const LINE_FORM_STATUS_LABELS: Record<LineFormStatus, string> = {
 
 export const SUBMISSION_STATE_LABELS: Record<AppointmentSubmissionState, string> = {
   drafted: "仮受付ドラフト",
-  confirmed_pending_submission: "確認済み / 送信待ち",
+  confirmed_pending_submission: "レビュー承認済み / 実行待ち",
   needs_manual_entry: "人手登録待ち",
   submitted: "送信済み",
   submission_failed: "送信失敗",
+};
+
+export const EXECUTION_STATE_LABELS: Record<AppointmentExecutionState, string> = {
+  not_started: "未着手",
+  reviewed: "レビュー承認済み",
+  availability_checked: "候補枠取得済み",
+  executing: "投入中",
+  submitted: "投入完了",
+  manual_fallback: "手動対応へ切替",
+  failed: "実行失敗",
 };
 
 function normalizeComparableText(value: string | null | undefined) {
@@ -99,8 +113,10 @@ function normalizeKeywordHit(text: string, keyword: string) {
 function joinConversationText(memo: ReservationMemo, transcript: TranscriptEntry[]) {
   return [
     memo.visit_reason,
+    memo.symptom_summary,
     memo.notes_for_staff,
     memo.unresolved_questions,
+    memo.preferred_datetime_raw,
     ...transcript.map((entry) => entry.text),
   ]
     .filter((value): value is string => Boolean(value))
@@ -109,6 +125,18 @@ function joinConversationText(memo: ReservationMemo, transcript: TranscriptEntry
 
 function resolveSubmissionMode(): AppointmentSubmissionMode {
   return getServerConfig().appointmentToolMode;
+}
+
+function resolveProvider() {
+  return getServerConfig().appointmentToolProvider;
+}
+
+function addMinutesToTime(time: string, minutesToAdd: number) {
+  const [hours, minutes] = time.split(":").map((value) => Number(value));
+  const totalMinutes = hours * 60 + minutes + minutesToAdd;
+  const nextHours = Math.floor(totalMinutes / 60);
+  const nextMinutes = totalMinutes % 60;
+  return `${String(nextHours).padStart(2, "0")}:${String(nextMinutes).padStart(2, "0")}`;
 }
 
 export function normalizeServiceLine(
@@ -243,21 +271,6 @@ export function normalizeLineFormStatus(
   return "unknown";
 }
 
-function buildPreferredSlots(memo: ReservationMemo) {
-  return [
-    {
-      label: "第1希望",
-      date: memo.preferred_date_1,
-      timeRange: memo.preferred_time_range_1,
-    },
-    {
-      label: "第2希望",
-      date: memo.preferred_date_2,
-      timeRange: memo.preferred_time_range_2,
-    },
-  ].filter((slot) => slot.date || slot.timeRange);
-}
-
 function buildNormalizedPreferredSlots(
   memo: ReservationMemo,
   anchorAt: string,
@@ -279,15 +292,6 @@ function buildNormalizedPreferredSlots(
   return candidates
     .map((candidate) => resolvePreferredSlot({ ...candidate, anchorAt, timeZone }))
     .filter((slot): slot is ResolvedPreferredSlotEntry => Boolean(slot));
-}
-
-function buildManualReviewReasonWithDateNotes(
-  memo: ReservationMemo,
-  serviceLine: ServiceLine,
-  preferredSlotNotes: string[]
-) {
-  const baseReason = summarizeManualReviewReason(memo, serviceLine);
-  return [baseReason, ...preferredSlotNotes].filter(Boolean).join(" / ") || null;
 }
 
 function summarizeManualReviewReason(memo: ReservationMemo, serviceLine: ServiceLine) {
@@ -321,6 +325,20 @@ function summarizeManualReviewReason(memo: ReservationMemo, serviceLine: Service
   return reasons.length > 0 ? reasons.join(" / ") : null;
 }
 
+function buildManualReviewReasonWithDateNotes(
+  memo: ReservationMemo,
+  serviceLine: ServiceLine,
+  menuMapping: ServiceMenuMapping | null,
+  preferredSlotNotes: string[]
+) {
+  const baseReason = summarizeManualReviewReason(memo, serviceLine);
+  const automationReason =
+    menuMapping?.automationPolicy === "manual_review_only"
+      ? "この受付区分は review 後も手動確認を優先"
+      : null;
+  return [baseReason, automationReason, ...preferredSlotNotes].filter(Boolean).join(" / ") || null;
+}
+
 function buildHandoffSummary(
   memo: ReservationMemo,
   serviceLine: ServiceLine,
@@ -335,6 +353,12 @@ function buildHandoffSummary(
 
   if (memo.visit_reason) {
     summaryParts.push(`主訴: ${memo.visit_reason}`);
+  }
+  if (memo.symptom_summary && memo.symptom_summary !== memo.visit_reason) {
+    summaryParts.push(`症状要約: ${memo.symptom_summary}`);
+  }
+  if (memo.urgency_reason) {
+    summaryParts.push(`緊急度理由: ${memo.urgency_reason}`);
   }
   if (memo.patient_name_yomi) {
     summaryParts.push(`氏名読み: ${memo.patient_name_yomi}`);
@@ -364,6 +388,65 @@ function buildHandoffSummaryWithDateNotes(
   return `${baseSummary} / 希望解釈: ${preferredSlotNotes.join(" / ")}`;
 }
 
+function createAuditRef(
+  current: AppointmentAuditRef | null,
+  next: Partial<AppointmentAuditRef> & {
+    lastAction: AppointmentAuditRef["lastAction"];
+  }
+): AppointmentAuditRef {
+  return {
+    auditId: next.auditId ?? current?.auditId ?? null,
+    logPath: next.logPath ?? current?.logPath ?? null,
+    screenshotPaths: next.screenshotPaths ?? current?.screenshotPaths ?? [],
+    lastAction: next.lastAction,
+    updatedAt: next.updatedAt ?? new Date().toISOString(),
+  };
+}
+
+function syncPayloadFromDraft(draft: AppointmentDraft): AppointmentDraft {
+  return {
+    ...draft,
+    appointmentToolPayload: {
+      ...draft.appointmentToolPayload,
+      request: {
+        ...draft.appointmentToolPayload.request,
+        serviceLine: draft.serviceLine,
+        visitReason: draft.visitReason,
+        symptomSummary: draft.symptomSummary,
+        preferredSlots: draft.preferredSlots,
+        callbackOk: draft.callbackOk,
+        lineFormStatus: draft.lineFormStatus,
+        triageLevel: draft.triageLevel,
+        urgencyReason: draft.urgencyReason,
+      },
+      internal: {
+        ...draft.appointmentToolPayload.internal,
+        bookingStatus: draft.bookingStatus,
+        notesForStaff: draft.notesForStaff,
+        unresolvedQuestions: draft.unresolvedQuestions,
+        manualReviewReason: draft.manualReviewReason,
+        handoffSummary: draft.handoffSummary,
+      },
+      integration: {
+        ...draft.appointmentToolPayload.integration,
+        provider: draft.provider,
+        mode: draft.submissionMode,
+        knowledgeVersion: draft.knowledgeVersion,
+        menuMapping: draft.menuMapping,
+      },
+      execution: {
+        availabilityCandidates: draft.availabilityCandidates,
+        state: draft.executionState,
+        error: draft.executionError,
+        reviewedBy: draft.reviewedBy,
+        reviewedAt: draft.reviewedAt,
+        selectedCandidateId: draft.selectedCandidateId,
+        auditRef: draft.auditRef,
+      },
+    },
+  };
+}
+
 function buildAppointmentToolPayload(args: {
   memo: ReservationMemo;
   preferredSlots: DraftPreferredSlot[];
@@ -373,13 +456,12 @@ function buildAppointmentToolPayload(args: {
   lineFormStatus: LineFormStatus;
   handoffSummary: string;
   channel: ConversationChannel;
+  menuMapping: ServiceMenuMapping | null;
 }): AppointmentToolPayload {
-  const config = getServerConfig();
-
   return {
     clinic: {
-      name: EMIHA_CLINIC_PROFILE.clinicName,
-      phoneNumber: EMIHA_CLINIC_PROFILE.phoneNumber,
+      name: EMIHA_KNOWLEDGE_PACK.publicProfile.clinicName,
+      phoneNumber: EMIHA_KNOWLEDGE_PACK.publicProfile.phoneNumber,
     },
     patient: {
       name: args.memo.patient_name,
@@ -390,10 +472,12 @@ function buildAppointmentToolPayload(args: {
     request: {
       serviceLine: args.serviceLine,
       visitReason: args.memo.visit_reason,
+      symptomSummary: args.memo.symptom_summary,
       preferredSlots: args.preferredSlots,
       callbackOk: args.memo.callback_ok,
       lineFormStatus: args.lineFormStatus,
       triageLevel: args.triageLevel,
+      urgencyReason: args.memo.urgency_reason,
     },
     internal: {
       bookingStatus: args.memo.booking_status,
@@ -403,25 +487,49 @@ function buildAppointmentToolPayload(args: {
       handoffSummary: args.handoffSummary,
     },
     integration: {
-      provider: config.appointmentToolProvider,
-      mode: config.appointmentToolMode,
+      provider: resolveProvider(),
+      mode: resolveSubmissionMode(),
       sourceChannel: args.channel,
+      knowledgeVersion: EMIHA_KNOWLEDGE_PACK.version,
+      menuMapping: args.menuMapping,
+    },
+    execution: {
+      availabilityCandidates: [],
+      state: "not_started",
+      error: null,
+      reviewedBy: null,
+      reviewedAt: null,
+      selectedCandidateId: null,
+      auditRef: null,
     },
   };
 }
 
 function mergeStoredState(base: AppointmentDraft, stored: AppointmentDraft | null) {
   if (!stored) {
-    return base;
+    return syncPayloadFromDraft(base);
   }
 
-  return {
+  return syncPayloadFromDraft({
     ...base,
-    submissionMode: stored.submissionMode,
     submissionState: stored.submissionState,
+    executionState: stored.executionState,
+    executionError: stored.executionError,
+    availabilityCandidates: stored.availabilityCandidates,
+    reviewedBy: stored.reviewedBy,
+    reviewedAt: stored.reviewedAt,
+    selectedCandidateId: stored.selectedCandidateId,
     confirmedAt: stored.confirmedAt,
     lastUpdatedAt: stored.lastUpdatedAt,
-  };
+    auditRef: stored.auditRef,
+  });
+}
+
+export function findServiceMenuMapping(serviceLine: ServiceLine) {
+  return (
+    EMIHA_KNOWLEDGE_PACK.menuMappings.find((mapping) => mapping.serviceLine === serviceLine) ??
+    null
+  );
 }
 
 export function buildAppointmentDraft(args: {
@@ -439,6 +547,7 @@ export function buildAppointmentDraft(args: {
     normalizeServiceLine(
       args.memo.service_line,
       args.memo.visit_reason,
+      args.memo.symptom_summary,
       args.memo.notes_for_staff,
       combinedText
     ) ?? "other_manual_review";
@@ -447,6 +556,8 @@ export function buildAppointmentDraft(args: {
       args.memo.triage_level,
       serviceLine,
       args.memo.visit_reason,
+      args.memo.symptom_summary,
+      args.memo.urgency_reason,
       args.memo.notes_for_staff,
       combinedText
     ) ??
@@ -467,9 +578,11 @@ export function buildAppointmentDraft(args: {
   const preferredSlotNotes = preferredSlotEntries
     .map((entry) => entry.reviewNote ?? entry.handoffNote)
     .filter((note): note is string => Boolean(note));
+  const menuMapping = findServiceMenuMapping(serviceLine);
   const normalizedManualReviewReason = buildManualReviewReasonWithDateNotes(
     args.memo,
     serviceLine,
+    menuMapping,
     preferredSlotNotes
   );
   const handoffSummary = buildHandoffSummaryWithDateNotes(
@@ -479,12 +592,11 @@ export function buildAppointmentDraft(args: {
     lineFormStatus,
     preferredSlotNotes
   );
-  const submissionMode = resolveSubmissionMode();
   const now = new Date().toISOString();
 
   const draft: AppointmentDraft = {
     conversationId: args.conversationId,
-    clinicName: EMIHA_CLINIC_PROFILE.clinicName,
+    clinicName: EMIHA_KNOWLEDGE_PACK.publicProfile.clinicName,
     patientName: args.memo.patient_name,
     patientNameYomi: args.memo.patient_name_yomi,
     phoneNumber: args.memo.phone_number,
@@ -493,6 +605,8 @@ export function buildAppointmentDraft(args: {
     triageLevel,
     lineFormStatus,
     visitReason: args.memo.visit_reason,
+    symptomSummary: args.memo.symptom_summary,
+    urgencyReason: args.memo.urgency_reason,
     preferredSlots,
     callbackOk: args.memo.callback_ok,
     notesForStaff: args.memo.notes_for_staff,
@@ -500,8 +614,18 @@ export function buildAppointmentDraft(args: {
     bookingStatus: args.memo.booking_status,
     manualReviewReason: normalizedManualReviewReason,
     handoffSummary,
-    submissionMode,
+    submissionMode: resolveSubmissionMode(),
     submissionState: "drafted",
+    provider: resolveProvider(),
+    knowledgeVersion: args.memo.knowledge_version ?? EMIHA_KNOWLEDGE_PACK.version,
+    menuMapping,
+    availabilityCandidates: [],
+    executionState: "not_started",
+    executionError: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    selectedCandidateId: null,
+    auditRef: null,
     confirmedAt: null,
     lastUpdatedAt: now,
     appointmentToolPayload: buildAppointmentToolPayload({
@@ -513,31 +637,140 @@ export function buildAppointmentDraft(args: {
       lineFormStatus,
       handoffSummary,
       channel: args.channel,
+      menuMapping,
     }),
   };
 
   return mergeStoredState(draft, args.storedDraft ?? null);
 }
 
-export function confirmAppointmentDraft(draft: AppointmentDraft): AppointmentDraft {
+export function confirmAppointmentDraft(
+  draft: AppointmentDraft,
+  reviewedBy: string | null
+): AppointmentDraft {
   const now = new Date().toISOString();
-  const nextState: AppointmentSubmissionState =
-    draft.submissionMode === "manual_review"
-      ? "needs_manual_entry"
-      : "confirmed_pending_submission";
 
-  return {
+  return syncPayloadFromDraft({
     ...draft,
-    submissionState: nextState,
+    submissionState: "confirmed_pending_submission",
+    executionState: draft.executionState === "submitted" ? "submitted" : "reviewed",
+    executionError: null,
+    reviewedBy,
+    reviewedAt: now,
     confirmedAt: now,
     lastUpdatedAt: now,
+    auditRef: createAuditRef(draft.auditRef, {
+      lastAction: "review",
+      updatedAt: now,
+    }),
+  });
+}
+
+export function applyAvailabilityResults(
+  draft: AppointmentDraft,
+  candidates: AppointmentAvailabilityCandidate[],
+  auditRef: AppointmentAuditRef | null,
+  error: string | null = null
+): AppointmentDraft {
+  const now = new Date().toISOString();
+  return syncPayloadFromDraft({
+    ...draft,
+    availabilityCandidates: candidates,
+    executionState: error ? "manual_fallback" : "availability_checked",
+    executionError: error,
+    selectedCandidateId: candidates[0]?.id ?? draft.selectedCandidateId,
+    lastUpdatedAt: now,
+    auditRef: auditRef
+      ? createAuditRef(draft.auditRef, { ...auditRef, lastAction: "availability", updatedAt: now })
+      : createAuditRef(draft.auditRef, { lastAction: "availability", updatedAt: now }),
+  });
+}
+
+export function markAppointmentExecutionStarted(
+  draft: AppointmentDraft,
+  selectedCandidateId: string
+): AppointmentDraft {
+  return syncPayloadFromDraft({
+    ...draft,
+    executionState: "executing",
+    executionError: null,
+    selectedCandidateId,
+    lastUpdatedAt: new Date().toISOString(),
+  });
+}
+
+export function markAppointmentExecutionSubmitted(
+  draft: AppointmentDraft,
+  selectedCandidateId: string,
+  auditRef: AppointmentAuditRef | null
+): AppointmentDraft {
+  const now = new Date().toISOString();
+  return syncPayloadFromDraft({
+    ...draft,
+    submissionState: "submitted",
+    executionState: "submitted",
+    executionError: null,
+    selectedCandidateId,
+    lastUpdatedAt: now,
+    auditRef: auditRef
+      ? createAuditRef(draft.auditRef, { ...auditRef, lastAction: "execute", updatedAt: now })
+      : createAuditRef(draft.auditRef, { lastAction: "execute", updatedAt: now }),
+  });
+}
+
+export function markAppointmentExecutionFailed(
+  draft: AppointmentDraft,
+  error: string,
+  auditRef: AppointmentAuditRef | null,
+  fallbackToManual = false
+): AppointmentDraft {
+  const now = new Date().toISOString();
+  return syncPayloadFromDraft({
+    ...draft,
+    submissionState: fallbackToManual ? "needs_manual_entry" : "submission_failed",
+    executionState: fallbackToManual ? "manual_fallback" : "failed",
+    executionError: error,
+    lastUpdatedAt: now,
+    auditRef: auditRef
+      ? createAuditRef(draft.auditRef, { ...auditRef, lastAction: "execute", updatedAt: now })
+      : createAuditRef(draft.auditRef, { lastAction: "execute", updatedAt: now }),
+  });
+}
+
+export function buildExecutionCandidatePreview(
+  candidate: AppointmentAvailabilityCandidate
+) {
+  return `${candidate.date} ${candidate.tcStartTime} / ${candidate.tcUnit} -> ${candidate.treatmentUnit}`;
+}
+
+export function createAvailabilityCandidate(args: {
+  date: string;
+  tcStartTime: string;
+  tcUnit: string;
+  treatmentUnit: string;
+  notes?: string[];
+}): AppointmentAvailabilityCandidate {
+  return {
+    id: crypto.randomUUID(),
+    provider: "apotool_rpa",
+    date: args.date,
+    tcStartTime: args.tcStartTime,
+    tcEndTime: addMinutesToTime(args.tcStartTime, 30),
+    treatmentStartTime: addMinutesToTime(args.tcStartTime, 30),
+    treatmentEndTime: addMinutesToTime(args.tcStartTime, 90),
+    tcUnit: args.tcUnit,
+    treatmentUnit: args.treatmentUnit,
+    label: `${args.date} ${args.tcStartTime}`,
+    notes: args.notes ?? [],
   };
 }
 
 export function findBookingRule(serviceLine: ServiceLine) {
   return (
-    EMIHA_BOOKING_RULES.find((rule) => rule.serviceLine === serviceLine) ??
-    EMIHA_BOOKING_RULES.find((rule) => rule.serviceLine === "other_manual_review") ??
+    EMIHA_KNOWLEDGE_PACK.bookingRules.find((rule) => rule.serviceLine === serviceLine) ??
+    EMIHA_KNOWLEDGE_PACK.bookingRules.find(
+      (rule) => rule.serviceLine === "other_manual_review"
+    ) ??
     null
   );
 }

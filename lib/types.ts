@@ -35,30 +35,88 @@ export type AppointmentSubmissionState =
   | "submitted"
   | "submission_failed";
 
-export type ConversationLifecycleStatus =
-  | "idle"
-  | "connecting"
-  | "listening"
-  | "speaking"
-  | "analyzing"
-  | "error";
+export type AppointmentToolProviderId = "apotool_rpa";
 
-export type ConversationAnalysisStatus = "idle" | "pending" | "ready" | "error";
-export type ConversationAnalysisState = "ready" | "pending" | "missing";
+export type AppointmentExecutionState =
+  | "not_started"
+  | "reviewed"
+  | "availability_checked"
+  | "executing"
+  | "submitted"
+  | "manual_fallback"
+  | "failed";
 
-export type TranscriptEntry = {
+export type KnowledgeVisibility = "patient_facing" | "internal_only" | "restricted";
+
+export type KnowledgeSourceKind =
+  | "public_site"
+  | "client_sheet"
+  | "manual_script"
+  | "operations_note"
+  | "derived_rule";
+
+export type KnowledgeSource = {
   id: string;
-  role: "user" | "agent";
-  text: string;
-  tentative: boolean;
-  timeInCallSecs: number | null;
+  label: string;
+  kind: KnowledgeSourceKind;
+  visibility: KnowledgeVisibility;
+  url: string | null;
+  approvedByClient: boolean;
+  reviewedAt: string | null;
+  sourceCheckedAt: string | null;
+  notes: string | null;
 };
 
-export type ConversationEventLogEntry = {
+export type KnowledgeFact = {
   id: string;
-  at: string;
+  field: string;
   label: string;
-  level: "info" | "success" | "warning" | "error";
+  value: string;
+  visibility: KnowledgeVisibility;
+  sourceId: string;
+  approvedByClient: boolean;
+  reviewedAt: string | null;
+  conflictWithPublic: boolean;
+  notes: string | null;
+};
+
+export type OperationalOverride = {
+  id: string;
+  field: string;
+  sourceId: string;
+  visibility: KnowledgeVisibility;
+  patientFacingValue: string | null;
+  internalValue: string;
+  approvedByClient: boolean;
+  reviewedAt: string | null;
+  reason: string;
+};
+
+export type ServiceLineDefinition = {
+  serviceLine: ServiceLine;
+  label: string;
+  patientSummary: string;
+  urgencySignals: string[];
+  escalationTriggers: string[];
+  allowedInLiveCall: boolean;
+};
+
+export type ServiceMenuMapping = {
+  serviceLine: ServiceLine;
+  apotoolMenuPrimary: string | null;
+  apotoolMenuSecondary: string | null;
+  bookingPattern: "tc30_and_treatment60" | "manual_only";
+  automationPolicy: "rpa_supported" | "manual_review_only";
+  notes: string[];
+};
+
+export type PatientOpsRules = {
+  bookingPromisePolicy: string;
+  callbackPolicy: string;
+  unresolvedInquiryPolicy: string;
+  firstVisitArrivalLeadMinutes: number;
+  lineFormArrivalLeadMinutes: number;
+  sameDayGuidance: string;
 };
 
 export type ClinicProfile = {
@@ -101,12 +159,56 @@ export type EscalationRule = {
   reason: string;
 };
 
+export type ClinicKnowledgePack = {
+  version: string;
+  publicProfile: ClinicProfile;
+  patientFaqEntries: FaqEntry[];
+  patientOpsRules: PatientOpsRules;
+  bookingRules: BookingRule[];
+  serviceLineDefinitions: ServiceLineDefinition[];
+  menuMappings: ServiceMenuMapping[];
+  escalationRules: EscalationRule[];
+  redactionRules: string[];
+  factSources: KnowledgeSource[];
+  approvedFacts: KnowledgeFact[];
+  operationalOverrides: OperationalOverride[];
+};
+
+export type ConversationLifecycleStatus =
+  | "idle"
+  | "connecting"
+  | "listening"
+  | "speaking"
+  | "analyzing"
+  | "error";
+
+export type ConversationAnalysisStatus = "idle" | "pending" | "ready" | "error";
+export type ConversationAnalysisState = "ready" | "pending" | "missing";
+
+export type TranscriptEntry = {
+  id: string;
+  role: "user" | "agent";
+  text: string;
+  tentative: boolean;
+  timeInCallSecs: number | null;
+};
+
+export type ConversationEventLogEntry = {
+  id: string;
+  at: string;
+  label: string;
+  level: "info" | "success" | "warning" | "error";
+};
+
 export type ReservationMemo = {
   patient_name: string | null;
   patient_name_yomi: string | null;
   phone_number: string | null;
   is_new_patient: boolean | null;
   visit_reason: string | null;
+  symptom_summary: string | null;
+  urgency_reason: string | null;
+  preferred_datetime_raw: string | null;
   preferred_date_1: string | null;
   preferred_time_range_1: string | null;
   preferred_date_2: string | null;
@@ -119,6 +221,7 @@ export type ReservationMemo = {
   triage_level: TriageLevel | null;
   line_form_status: LineFormStatus | null;
   manual_review_reason: string | null;
+  knowledge_version: string | null;
 };
 
 export type EvaluationCriterionResult = {
@@ -137,6 +240,28 @@ export type AnalyzeConversationRequest = {
   conversationId: string;
 };
 
+export type AppointmentAvailabilityCandidate = {
+  id: string;
+  provider: AppointmentToolProviderId;
+  date: string;
+  tcStartTime: string;
+  tcEndTime: string;
+  treatmentStartTime: string;
+  treatmentEndTime: string;
+  tcUnit: string;
+  treatmentUnit: string;
+  label: string;
+  notes: string[];
+};
+
+export type AppointmentAuditRef = {
+  auditId: string | null;
+  logPath: string | null;
+  screenshotPaths: string[];
+  lastAction: "review" | "availability" | "execute" | null;
+  updatedAt: string | null;
+};
+
 export type AppointmentToolPayload = {
   clinic: {
     name: string;
@@ -151,6 +276,7 @@ export type AppointmentToolPayload = {
   request: {
     serviceLine: ServiceLine;
     visitReason: string | null;
+    symptomSummary: string | null;
     preferredSlots: Array<{
       label: string;
       date: string | null;
@@ -159,6 +285,7 @@ export type AppointmentToolPayload = {
     callbackOk: boolean | null;
     lineFormStatus: LineFormStatus;
     triageLevel: TriageLevel;
+    urgencyReason: string | null;
   };
   internal: {
     bookingStatus: string;
@@ -168,9 +295,20 @@ export type AppointmentToolPayload = {
     handoffSummary: string;
   };
   integration: {
-    provider: string | null;
+    provider: AppointmentToolProviderId | null;
     mode: AppointmentSubmissionMode;
     sourceChannel: ConversationChannel;
+    knowledgeVersion: string;
+    menuMapping: ServiceMenuMapping | null;
+  };
+  execution: {
+    availabilityCandidates: AppointmentAvailabilityCandidate[];
+    state: AppointmentExecutionState;
+    error: string | null;
+    reviewedBy: string | null;
+    reviewedAt: string | null;
+    selectedCandidateId: string | null;
+    auditRef: AppointmentAuditRef | null;
   };
 };
 
@@ -185,6 +323,8 @@ export type AppointmentDraft = {
   triageLevel: TriageLevel;
   lineFormStatus: LineFormStatus;
   visitReason: string | null;
+  symptomSummary: string | null;
+  urgencyReason: string | null;
   preferredSlots: Array<{
     label: string;
     date: string | null;
@@ -198,6 +338,16 @@ export type AppointmentDraft = {
   handoffSummary: string;
   submissionMode: AppointmentSubmissionMode;
   submissionState: AppointmentSubmissionState;
+  provider: AppointmentToolProviderId | null;
+  knowledgeVersion: string;
+  menuMapping: ServiceMenuMapping | null;
+  availabilityCandidates: AppointmentAvailabilityCandidate[];
+  executionState: AppointmentExecutionState;
+  executionError: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  selectedCandidateId: string | null;
+  auditRef: AppointmentAuditRef | null;
   confirmedAt: string | null;
   lastUpdatedAt: string;
   appointmentToolPayload: AppointmentToolPayload;
@@ -303,6 +453,28 @@ export type AudioDiagnostics = {
   receivedAudioEvents: number;
   lastAudioEventAt: string | null;
   browserAudioUnlocked: boolean;
+};
+
+export type AppointmentToolHealth = {
+  provider: AppointmentToolProviderId | null;
+  status: "healthy" | "degraded" | "disabled";
+  checkedAt: string;
+  message: string;
+  details: Record<string, string | boolean | null>;
+};
+
+export type AppointmentToolAvailabilityResult = {
+  draft: AppointmentDraft;
+  candidates: AppointmentAvailabilityCandidate[];
+  auditRef: AppointmentAuditRef | null;
+};
+
+export type AppointmentToolExecutionResult = {
+  draft: AppointmentDraft;
+  success: boolean;
+  orphanRisk: boolean;
+  auditRef: AppointmentAuditRef | null;
+  message: string;
 };
 
 export type VoiceProviderId =

@@ -1,8 +1,4 @@
-import {
-  EMIHA_BOOKING_RULES,
-  EMIHA_CLINIC_PROFILE,
-  EMIHA_ESCALATION_RULES,
-} from "@/lib/clinic-config/emiha";
+import { EMIHA_KNOWLEDGE_PACK } from "@/lib/clinic-config/emiha";
 
 export type DemoDataCollectionItem = {
   identifier: string;
@@ -25,70 +21,105 @@ export const DENTAL_DEMO_EXPRESSIVE_MODE = false;
 export const DENTAL_DEMO_SUGGESTED_AUDIO_TAGS: string[] = [];
 
 export const DENTAL_DEMO_FIRST_MESSAGE =
-  "お電話ありがとうございます。えみは総合歯科の受付AIです。本日はどのようなご用件でしょうか。";
+  "お電話ありがとうございます。えみは総合歯科 大阪梅田院の受付AIです。本日はどのようなご用件でしょうか。";
 
-export const DENTAL_DEMO_CLINIC_PROFILE = EMIHA_CLINIC_PROFILE;
+export const DENTAL_DEMO_CLINIC_PROFILE = EMIHA_KNOWLEDGE_PACK.publicProfile;
 
-const BOOKING_RULE_LINES = EMIHA_BOOKING_RULES.map(
+const APPROVED_FACT_LINES = EMIHA_KNOWLEDGE_PACK.approvedFacts
+  .map((fact) => `- ${fact.label}: ${fact.value}`)
+  .join("\n");
+
+const BOOKING_RULE_LINES = EMIHA_KNOWLEDGE_PACK.bookingRules.map(
   (rule) =>
     `- ${rule.label}: ${rule.chairFootprint} / ${rule.staffing} / patient-facing notes: ${rule.patientFacingNotes.join(
       " "
     )}`
 ).join("\n");
 
-const ESCALATION_RULE_LINES = EMIHA_ESCALATION_RULES.map(
+const SERVICE_LINE_LINES = EMIHA_KNOWLEDGE_PACK.serviceLineDefinitions.map(
+  (definition) =>
+    `- ${definition.label}: ${definition.patientSummary} / escalation: ${definition.escalationTriggers.join(
+      ", "
+    ) || "none"}`
+).join("\n");
+
+const ESCALATION_RULE_LINES = EMIHA_KNOWLEDGE_PACK.escalationRules.map(
   (rule) => `- ${rule.when}: ${rule.action} (${rule.reason})`
+).join("\n");
+
+const REDACTION_LINES = EMIHA_KNOWLEDGE_PACK.redactionRules.map(
+  (rule) => `- ${rule}`
 ).join("\n");
 
 export const DENTAL_DEMO_PROMPT = `# Role
 You are the primary receptionist AI for ${DENTAL_DEMO_CLINIC_PROFILE.clinicName}.
-Respond in Japanese, sound calm and practical, and keep the call focused on intake.
+Respond in Japanese, keep the tone warm and concise, and stay within intake scope.
+
+# Knowledge Pack
+- knowledge_version must be ${EMIHA_KNOWLEDGE_PACK.version}.
+- Use only approved patient-facing facts when speaking to callers.
+- If an internal script or old operational note conflicts with approved facts, ignore the old value and use approved facts.
+
+# Approved Patient-Facing Facts
+${APPROVED_FACT_LINES}
+
+# Conversation Stages
+Follow this stage order and do not skip ahead:
+1. Greeting and identify the caller's main request.
+2. Classify symptom or request type.
+3. Judge urgency and whether same-day phone guidance is needed.
+4. Collect patient information.
+5. Collect preferred timing.
+6. Close as provisional intake only.
 
 # Opening
-- Greet the caller once and ask how you can help.
-- If the caller asks public clinic facts or FAQ, answer briefly from the attached curated clinic facts and then return to intake.
+- Greet the caller once and ask what they need.
+- If the caller asks public clinic facts or FAQ, answer briefly from approved facts and then return to intake.
 
-# Required Intake
-- Collect these required items in order: patient_name, is_new_patient, visit_reason, preferred_date_1, preferred_time_range_1, callback_ok, and phone_number when callback is accepted.
+# Intake Rules
 - Ask one question at a time.
 - Keep each reply short unless the caller explicitly asks for more detail.
-- latest value wins. If the caller corrects a date, time, phone number, or pronunciation, discard the old value immediately and never restate it.
+- Latest value wins. If the caller corrects a name reading, date, time, or phone number, discard the old value immediately.
 - same-field clarification limit is 2. After that, move the unresolved point to unresolved_questions and continue.
-- patient_name_yomi is pronunciation-only. If the reading is unclear, ask only how the name is pronounced.
-- Never read back an unconfirmed written name aloud. Use patient_name_yomi for spoken playback.
+- patient_name_yomi is pronunciation-only. Never read back an unconfirmed written name aloud.
 
-# Optional Second Slot
-- preferred_date_2 and preferred_time_range_2 are optional.
-- Ask about the second preferred slot only after callback handling is finished.
-- Ask about the optional second slot only once.
-- If the caller declines, hesitates, sounds tired, sounds confused, or gives only a partial second slot after one follow-up, keep the missing part null, add a short note to unresolved_questions when useful, and move on.
-- While collecting preferred_date_2 or preferred_time_range_2, never restate preferred_date_1 or preferred_time_range_1.
+# Data Collection Priorities
+- Collect patient_name, patient_name_yomi, is_new_patient, visit_reason, preferred_date_1, preferred_time_range_1, callback_ok, and phone_number when callback is accepted.
+- preferred_date_2 and preferred_time_range_2 are optional. Ask only once after the main slot and callback handling.
+- symptom_summary should be a short normalized summary of the complaint.
+- urgency_reason should explain why the case is routine, same-day phone, doctor_required, or manual_review.
+- preferred_datetime_raw should preserve the caller's natural-language timing if it does not fit cleanly into the structured fields.
 
-# Closing
-- booking_status must remain pending_manual_confirmation.
-- Give one short summary and one next step only.
-- Do not repeat the closing if the caller stays silent.
-- Do not claim the appointment is confirmed.
+# Service Line And Triage
+## Service lines
+${SERVICE_LINE_LINES}
 
-# Service And Escalation
 ## Booking rules
 ${BOOKING_RULE_LINES}
 
 ## Escalation
 ${ESCALATION_RULE_LINES}
 
+# Closing Rules
+- booking_status must remain pending_manual_confirmation.
+- Never claim the appointment is confirmed.
+- Never say you checked live availability.
+- Give one short summary and one next step only.
+- End as a provisional intake that staff will review and confirm.
+
 # Guardrails
 - Do not provide diagnosis or treatment decisions.
-- Do not expose internal-only notes, URLs, or tooling.
-- If the line is unstable or the caller seems confused, skip optional items and close cleanly.
-- Never let a stale slot or stale phone number reappear after a correction.
+- Do not expose internal-only notes, URLs, credentials, tools, or staff-only workflows.
+- If the caller is unstable, confused, or in a hurry, skip optional items and close cleanly.
+- Sensitive internal information that must never be spoken:
+${REDACTION_LINES}
 
-# Data Collection Discipline
-- booking_status must be pending_manual_confirmation.
+# Structured Outputs
 - service_line must be one of general_initial | emergency_initial | implant_consult | thp_pretest | free_screening | whitening | invisalign | other_manual_review.
 - triage_level must be one of routine | same_day_phone | doctor_required | manual_review.
 - line_form_status must be one of completed | needs_arrival_form | not_using_line | unknown.
-- manual_review_reason should stay concise and operational.`;
+- manual_review_reason should stay short and operational.
+- knowledge_version must be ${EMIHA_KNOWLEDGE_PACK.version}.`;
 
 export const DENTAL_DEMO_DATA_COLLECTION: DemoDataCollectionItem[] = [
   { identifier: "patient_name", type: "string", description: "Caller name." },
@@ -104,6 +135,21 @@ export const DENTAL_DEMO_DATA_COLLECTION: DemoDataCollectionItem[] = [
     description: "Whether the caller is a new patient.",
   },
   { identifier: "visit_reason", type: "string", description: "Reason for visit." },
+  {
+    identifier: "symptom_summary",
+    type: "string",
+    description: "Short normalized summary of the complaint.",
+  },
+  {
+    identifier: "urgency_reason",
+    type: "string",
+    description: "Why the case was triaged the chosen way.",
+  },
+  {
+    identifier: "preferred_datetime_raw",
+    type: "string",
+    description: "Original natural-language preferred timing if caller gave a relative expression.",
+  },
   {
     identifier: "preferred_date_1",
     type: "string",
@@ -167,6 +213,11 @@ export const DENTAL_DEMO_DATA_COLLECTION: DemoDataCollectionItem[] = [
     type: "string",
     description: "Short reason when manual review is needed.",
   },
+  {
+    identifier: "knowledge_version",
+    type: "string",
+    description: `Must be ${EMIHA_KNOWLEDGE_PACK.version}.`,
+  },
 ];
 
 export const DENTAL_DEMO_EVALUATION_CRITERIA: DemoEvaluationCriterion[] = [
@@ -192,7 +243,7 @@ export const DENTAL_DEMO_EVALUATION_CRITERIA: DemoEvaluationCriterion[] = [
     id: "followed_emiha_public_guidance",
     title: "Followed Emiha Public Guidance",
     conversationGoalPrompt:
-      "When answering public-info questions, the agent should stay within the clinic facts and patient-facing FAQ.",
+      "When answering public-info questions, the agent should stay within the approved patient-facing facts.",
   },
   {
     id: "used_correct_triage_and_handoff",
@@ -204,6 +255,6 @@ export const DENTAL_DEMO_EVALUATION_CRITERIA: DemoEvaluationCriterion[] = [
     id: "kept_internal_information_private",
     title: "Kept Internal Information Private",
     conversationGoalPrompt:
-      "The agent must not expose internal-only notes, URLs, or tooling instructions to the caller.",
+      "The agent must not expose internal-only notes, URLs, credentials, or tooling instructions to the caller.",
   },
 ];

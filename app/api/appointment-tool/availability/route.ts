@@ -1,21 +1,20 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { checkAvailabilityWithProvider } from "@/lib/appointment-tool/provider";
 import { writeStoredAppointmentDraft } from "@/lib/appointment-store";
-import { confirmAppointmentDraft } from "@/lib/appointments";
 import { syncStoredAppointmentDraft } from "@/lib/demo-runs";
+import { getServerConfig } from "@/lib/env";
 import {
   ElevenLabsApiError,
   getConversationHistoryDetail,
 } from "@/lib/elevenlabs/api";
-import { getServerConfig } from "@/lib/env";
 import { appendLiveMonitorEvent } from "@/lib/live-monitor";
 
 export const runtime = "nodejs";
 
 const requestSchema = z.object({
   conversationId: z.string().min(1, "conversationId is required."),
-  reviewedBy: z.string().trim().min(1).optional(),
 });
 
 export async function POST(request: Request) {
@@ -26,12 +25,11 @@ export async function POST(request: Request) {
       channel: "system",
       level: "info",
       conversationId: body.conversationId,
-      message: "appointment confirmation requested",
+      message: "appointment availability requested",
       details: null,
     });
 
     const detail = await getConversationHistoryDetail(body.conversationId);
-
     if (!detail.appointmentDraft) {
       return NextResponse.json(
         { error: "No appointment draft is available for this conversation." },
@@ -39,36 +37,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const reviewedBy =
-      body.reviewedBy?.trim() || getServerConfig().appointmentDefaultReviewer || "staff";
-    const draft = confirmAppointmentDraft(detail.appointmentDraft, reviewedBy);
-    const result = await writeStoredAppointmentDraft(draft);
-    await syncStoredAppointmentDraft(draft, getServerConfig().demoTimezone);
+    const result = await checkAvailabilityWithProvider(detail.appointmentDraft);
+    await writeStoredAppointmentDraft(result.draft);
+    await syncStoredAppointmentDraft(result.draft, getServerConfig().demoTimezone);
 
     await appendLiveMonitorEvent({
       kind: "appointment",
       channel: detail.channel,
-      level: "success",
+      level: result.candidates.length > 0 ? "success" : "warning",
       conversationId: body.conversationId,
-      message: "appointment draft review approved",
+      message:
+        result.candidates.length > 0
+          ? "appointment availability resolved"
+          : "appointment availability requires manual follow-up",
       details: {
-        patientName: draft.patientName,
-        patientNameYomi: draft.patientNameYomi,
-        serviceLine: draft.serviceLine,
-        triageLevel: draft.triageLevel,
-        submissionMode: draft.submissionMode,
-        submissionState: draft.submissionState,
-        executionState: draft.executionState,
-        reviewedBy: draft.reviewedBy,
-        reviewedAt: draft.reviewedAt,
-        preferredSlots: draft.preferredSlots,
+        candidateCount: result.candidates.length,
+        executionState: result.draft.executionState,
+        executionError: result.draft.executionError,
+        auditId: result.auditRef?.auditId ?? null,
       },
     });
 
-    return NextResponse.json({
-      appointmentDraft: result.draft,
-      filePath: result.filePath,
-    });
+    return NextResponse.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -78,14 +68,14 @@ export async function POST(request: Request) {
     }
 
     const message =
-      error instanceof Error ? error.message : "Failed to confirm the appointment draft.";
+      error instanceof Error ? error.message : "Failed to resolve appointment availability.";
     const status = error instanceof ElevenLabsApiError ? error.status : 500;
     await appendLiveMonitorEvent({
       kind: "error",
       channel: "system",
       level: "error",
       conversationId: null,
-      message: `appointment confirmation failed: ${message}`,
+      message: `appointment availability failed: ${message}`,
       details: null,
     });
 

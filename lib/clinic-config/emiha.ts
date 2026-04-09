@@ -1,9 +1,18 @@
 import type {
   BookingRule,
+  ClinicKnowledgePack,
   ClinicProfile,
   EscalationRule,
   FaqEntry,
+  KnowledgeFact,
+  KnowledgeSource,
+  OperationalOverride,
+  PatientOpsRules,
+  ServiceLineDefinition,
+  ServiceMenuMapping,
 } from "@/lib/types";
+
+export const EMIHA_KNOWLEDGE_VERSION = "emiha-2026-04-09";
 
 export const EMIHA_CLINIC_PROFILE: ClinicProfile = {
   clinicName: "えみは総合歯科 大阪梅田院",
@@ -25,6 +34,153 @@ export const EMIHA_CLINIC_PROFILE: ClinicProfile = {
   officialSiteUrl: "https://umeda-emihadc.com/",
   sourceCheckedAt: "2026-04-06",
 };
+
+export const EMIHA_KNOWLEDGE_SOURCES: KnowledgeSource[] = [
+  {
+    id: "emiha-public-site",
+    label: "えみは総合歯科 公開サイト",
+    kind: "public_site",
+    visibility: "patient_facing",
+    url: "https://umeda-emihadc.com/",
+    approvedByClient: true,
+    reviewedAt: "2026-04-06",
+    sourceCheckedAt: "2026-04-06",
+    notes: "患者向け公開情報の基準値。",
+  },
+  {
+    id: "emiha-client-sheet",
+    label: "先方シート / 現場ルール",
+    kind: "client_sheet",
+    visibility: "internal_only",
+    url: null,
+    approvedByClient: true,
+    reviewedAt: "2026-04-06",
+    sourceCheckedAt: "2026-04-06",
+    notes: "予約制約、メニュー運用、例外対応の基準値。",
+  },
+  {
+    id: "cludecall-retell-script",
+    label: "先方 Retell 会話フロー",
+    kind: "manual_script",
+    visibility: "internal_only",
+    url: "https://github.com/kato4096/cludecall",
+    approvedByClient: false,
+    reviewedAt: "2026-04-09",
+    sourceCheckedAt: "2026-04-09",
+    notes: "会話段取りと post-call analysis 項目の参照実装。",
+  },
+  {
+    id: "emiha-derived-runtime-rules",
+    label: "統合アプリ用 正規化ルール",
+    kind: "derived_rule",
+    visibility: "internal_only",
+    url: null,
+    approvedByClient: true,
+    reviewedAt: "2026-04-09",
+    sourceCheckedAt: "2026-04-09",
+    notes: "患者向け発話と staff review のために整形したルール。",
+  },
+];
+
+export const EMIHA_APPROVED_FACTS: KnowledgeFact[] = [
+  {
+    id: "clinic-name",
+    field: "clinicName",
+    label: "医院名",
+    value: EMIHA_CLINIC_PROFILE.clinicName,
+    visibility: "patient_facing",
+    sourceId: "emiha-public-site",
+    approvedByClient: true,
+    reviewedAt: "2026-04-06",
+    conflictWithPublic: false,
+    notes: null,
+  },
+  {
+    id: "business-hours",
+    field: "businessHours",
+    label: "診療時間",
+    value: EMIHA_CLINIC_PROFILE.businessHours,
+    visibility: "patient_facing",
+    sourceId: "emiha-public-site",
+    approvedByClient: true,
+    reviewedAt: "2026-04-06",
+    conflictWithPublic: false,
+    notes: "患者向け案内はこの値を優先する。",
+  },
+  {
+    id: "closed-days",
+    field: "closedDays",
+    label: "休診日",
+    value: EMIHA_CLINIC_PROFILE.closedDays,
+    visibility: "patient_facing",
+    sourceId: "emiha-public-site",
+    approvedByClient: true,
+    reviewedAt: "2026-04-06",
+    conflictWithPublic: false,
+    notes: null,
+  },
+  {
+    id: "reservation-policy",
+    field: "reservationPolicy",
+    label: "予約ポリシー",
+    value: EMIHA_CLINIC_PROFILE.reservationPolicy,
+    visibility: "patient_facing",
+    sourceId: "emiha-derived-runtime-rules",
+    approvedByClient: true,
+    reviewedAt: "2026-04-09",
+    conflictWithPublic: false,
+    notes: "予約確定を AI が約束しないガードレール込み。",
+  },
+  {
+    id: "first-visit-arrival",
+    field: "firstVisitArrivalNote",
+    label: "初診来院案内",
+    value: EMIHA_CLINIC_PROFILE.firstVisitArrivalNote,
+    visibility: "patient_facing",
+    sourceId: "emiha-client-sheet",
+    approvedByClient: true,
+    reviewedAt: "2026-04-06",
+    conflictWithPublic: true,
+    notes: "患者向け案内として承認済み。",
+  },
+  {
+    id: "same-day-policy",
+    field: "sameDayPolicy",
+    label: "急患案内",
+    value: EMIHA_CLINIC_PROFILE.sameDayPolicy,
+    visibility: "patient_facing",
+    sourceId: "emiha-client-sheet",
+    approvedByClient: true,
+    reviewedAt: "2026-04-06",
+    conflictWithPublic: true,
+    notes: null,
+  },
+];
+
+export const EMIHA_OPERATIONAL_OVERRIDES: OperationalOverride[] = [
+  {
+    id: "legacy-retell-business-hours",
+    field: "businessHours",
+    sourceId: "cludecall-retell-script",
+    visibility: "internal_only",
+    patientFacingValue: EMIHA_CLINIC_PROFILE.businessHours,
+    internalValue: "月〜土 9:30〜18:00（日・祝休診）",
+    approvedByClient: false,
+    reviewedAt: "2026-04-09",
+    reason: "先方サンプル実装の旧値。患者向けには使わない。",
+  },
+  {
+    id: "legacy-retell-clinic-name",
+    field: "clinicName",
+    sourceId: "cludecall-retell-script",
+    visibility: "internal_only",
+    patientFacingValue: EMIHA_CLINIC_PROFILE.clinicName,
+    internalValue: "えみは総合歯科",
+    approvedByClient: false,
+    reviewedAt: "2026-04-09",
+    reason: "先方サンプルは院名が短縮表記。患者向け UI / prompt では正式院名を使う。",
+  },
+];
 
 export const EMIHA_FAQ_ENTRIES: FaqEntry[] = [
   {
@@ -81,6 +237,84 @@ export const EMIHA_FAQ_ENTRIES: FaqEntry[] = [
     answer:
       "THP事前検査は90分3枠、費用は9,500円です。ドクター不在でも歯科衛生士対応が可能です。",
     tags: ["thp"],
+  },
+];
+
+export const EMIHA_PATIENT_OPS_RULES: PatientOpsRules = {
+  bookingPromisePolicy: "AI は live 通話中に予約確定を約束せず、仮受付として締める。",
+  callbackPolicy: "院内確認後に必要があれば折り返し連絡する。",
+  unresolvedInquiryPolicy:
+    "同一項目の確認は 2 回までに留め、解決しない場合は unresolved_questions に残して review に回す。",
+  firstVisitArrivalLeadMinutes: 10,
+  lineFormArrivalLeadMinutes: 15,
+  sameDayGuidance:
+    "急患や強い痛みは電話優先案内に寄せ、空き状況の断定はせず当日案内の可能性のみ伝える。",
+};
+
+export const EMIHA_SERVICE_LINE_DEFINITIONS: ServiceLineDefinition[] = [
+  {
+    serviceLine: "general_initial",
+    label: "通常初診",
+    patientSummary: "通常の初診相談。検査中心で必要時のみ応急処置。",
+    urgencySignals: [],
+    escalationTriggers: [],
+    allowedInLiveCall: true,
+  },
+  {
+    serviceLine: "emergency_initial",
+    label: "急患初診",
+    patientSummary: "強い痛みや腫れなどで当日案内が必要なケース。",
+    urgencySignals: ["強い痛み", "ズキズキ", "腫れ", "出血", "夜眠れない"],
+    escalationTriggers: ["当日電話優先", "応急処置のみになる可能性"],
+    allowedInLiveCall: true,
+  },
+  {
+    serviceLine: "implant_consult",
+    label: "インプラント相談",
+    patientSummary: "検査後説明が前提。ドクター確認必須。",
+    urgencySignals: [],
+    escalationTriggers: ["担当ドクター必須", "自動確定しない"],
+    allowedInLiveCall: true,
+  },
+  {
+    serviceLine: "thp_pretest",
+    label: "THP事前検査",
+    patientSummary: "90分3枠の事前検査。衛生士対応が可能。",
+    urgencySignals: [],
+    escalationTriggers: ["担当衛生士のブロック確認"],
+    allowedInLiveCall: true,
+  },
+  {
+    serviceLine: "free_screening",
+    label: "無料歯科検診",
+    patientSummary: "審査診断まで無料。治療希望有無で所要時間が変わる。",
+    urgencySignals: [],
+    escalationTriggers: ["当日治療希望か要確認"],
+    allowedInLiveCall: true,
+  },
+  {
+    serviceLine: "whitening",
+    label: "ホワイトニング",
+    patientSummary: "専用機材 1 台のため重複制御が必要。",
+    urgencySignals: [],
+    escalationTriggers: ["機材 1 台", "自動確定しない"],
+    allowedInLiveCall: true,
+  },
+  {
+    serviceLine: "invisalign",
+    label: "インビザライン",
+    patientSummary: "内容により時間が変動。担当ドクター確認必須。",
+    urgencySignals: [],
+    escalationTriggers: ["担当ドクター必須", "内容別に所要時間が変わる"],
+    allowedInLiveCall: true,
+  },
+  {
+    serviceLine: "other_manual_review",
+    label: "個別確認案件",
+    patientSummary: "美容系や紹介案件など、人確認が前提の問い合わせ。",
+    urgencySignals: [],
+    escalationTriggers: ["院内確認後に折り返し"],
+    allowedInLiveCall: true,
   },
 ];
 
@@ -160,9 +394,7 @@ export const EMIHA_BOOKING_RULES: BookingRule[] = [
     patientFacingNotes: [
       "機材が1台のため同時刻の重複予約はできません。",
     ],
-    internalNotes: [
-      "機械1台のため重ね取り不可。",
-    ],
+    internalNotes: ["機械1台のため重ね取り不可。"],
   },
   {
     serviceLine: "invisalign",
@@ -182,12 +414,77 @@ export const EMIHA_BOOKING_RULES: BookingRule[] = [
     label: "個別確認が必要な予約",
     chairFootprint: "内容により個別調整",
     staffing: "内容に応じて人確認",
-    patientFacingNotes: [
-      "内容確認のうえ、折り返しご案内します。",
-    ],
+    patientFacingNotes: ["内容確認のうえ、折り返しご案内します。"],
     internalNotes: [
       "美容系、紹介、レーザー可否などは口腔内確認や人判断が前提。",
     ],
+  },
+];
+
+export const EMIHA_SERVICE_MENU_MAPPINGS: ServiceMenuMapping[] = [
+  {
+    serviceLine: "general_initial",
+    apotoolMenuPrimary: "初診   (60分)",
+    apotoolMenuSecondary: "治療前TC",
+    bookingPattern: "tc30_and_treatment60",
+    automationPolicy: "rpa_supported",
+    notes: ["RPA v1 対応対象。TC30分 + 初診60分の連続枠で投入する。"],
+  },
+  {
+    serviceLine: "emergency_initial",
+    apotoolMenuPrimary: "初診   (60分)",
+    apotoolMenuSecondary: "治療前TC",
+    bookingPattern: "tc30_and_treatment60",
+    automationPolicy: "rpa_supported",
+    notes: ["RPA v1 対応対象。ただし review で当日案内可否を確認してから投入する。"],
+  },
+  {
+    serviceLine: "implant_consult",
+    apotoolMenuPrimary: null,
+    apotoolMenuSecondary: null,
+    bookingPattern: "manual_only",
+    automationPolicy: "manual_review_only",
+    notes: ["担当ドクターと追加確認が必要。"],
+  },
+  {
+    serviceLine: "thp_pretest",
+    apotoolMenuPrimary: null,
+    apotoolMenuSecondary: null,
+    bookingPattern: "manual_only",
+    automationPolicy: "manual_review_only",
+    notes: ["3枠 / 90分対応のため v1 RPA 対象外。"],
+  },
+  {
+    serviceLine: "free_screening",
+    apotoolMenuPrimary: "初診   (60分)",
+    apotoolMenuSecondary: "無料歯科検診",
+    bookingPattern: "manual_only",
+    automationPolicy: "manual_review_only",
+    notes: ["当日治療希望有無で時間が変わるため v1 は手動。"],
+  },
+  {
+    serviceLine: "whitening",
+    apotoolMenuPrimary: null,
+    apotoolMenuSecondary: null,
+    bookingPattern: "manual_only",
+    automationPolicy: "manual_review_only",
+    notes: ["専用機材1台のため手動確認を維持する。"],
+  },
+  {
+    serviceLine: "invisalign",
+    apotoolMenuPrimary: null,
+    apotoolMenuSecondary: null,
+    bookingPattern: "manual_only",
+    automationPolicy: "manual_review_only",
+    notes: ["担当ドクター必須。"],
+  },
+  {
+    serviceLine: "other_manual_review",
+    apotoolMenuPrimary: null,
+    apotoolMenuSecondary: null,
+    bookingPattern: "manual_only",
+    automationPolicy: "manual_review_only",
+    notes: ["内容に応じて院内判断。"],
   },
 ];
 
@@ -224,3 +521,18 @@ export const EMIHA_REDACTION_LEDGER: string[] = [
   "個人LINE、共有LINE、グループLINE の運用手順",
   "担当者個人名に依存する内部オペレーション",
 ];
+
+export const EMIHA_KNOWLEDGE_PACK: ClinicKnowledgePack = {
+  version: EMIHA_KNOWLEDGE_VERSION,
+  publicProfile: EMIHA_CLINIC_PROFILE,
+  patientFaqEntries: EMIHA_FAQ_ENTRIES,
+  patientOpsRules: EMIHA_PATIENT_OPS_RULES,
+  bookingRules: EMIHA_BOOKING_RULES,
+  serviceLineDefinitions: EMIHA_SERVICE_LINE_DEFINITIONS,
+  menuMappings: EMIHA_SERVICE_MENU_MAPPINGS,
+  escalationRules: EMIHA_ESCALATION_RULES,
+  redactionRules: EMIHA_REDACTION_LEDGER,
+  factSources: EMIHA_KNOWLEDGE_SOURCES,
+  approvedFacts: EMIHA_APPROVED_FACTS,
+  operationalOverrides: EMIHA_OPERATIONAL_OVERRIDES,
+};

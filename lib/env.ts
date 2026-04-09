@@ -1,4 +1,7 @@
-import type { AppointmentSubmissionMode } from "@/lib/types";
+import type {
+  AppointmentSubmissionMode,
+  AppointmentToolProviderId,
+} from "@/lib/types";
 
 type ServerConfig = {
   apiKey: string;
@@ -11,7 +14,13 @@ type ServerConfig = {
   demoOutboundTargetNumber: string | null;
   demoTimezone: string;
   appointmentToolMode: AppointmentSubmissionMode;
-  appointmentToolProvider: string | null;
+  appointmentToolProvider: AppointmentToolProviderId | null;
+  apotoolEmail: string | null;
+  apotoolPassword: string | null;
+  apotoolLoginUrl: string;
+  apotoolClinicName: string;
+  apotoolHeadless: boolean;
+  appointmentDefaultReviewer: string | null;
   geminiApiKey: string | null;
   voiceBenchmarkEnabled: boolean;
   voiceBenchmarkDefaultProvider: string;
@@ -40,7 +49,7 @@ function readBooleanEnv(name: string, fallback = false): boolean {
   return value.toLowerCase() === "true";
 }
 
-export function getServerConfig(): ServerConfig {
+function readAppointmentToolMode(): AppointmentSubmissionMode {
   const appointmentToolMode =
     (readEnv("APPOINTMENT_TOOL_MODE") as AppointmentSubmissionMode | null) ??
     "manual_review";
@@ -55,6 +64,22 @@ export function getServerConfig(): ServerConfig {
     );
   }
 
+  return appointmentToolMode;
+}
+
+function readAppointmentToolProvider(): AppointmentToolProviderId | null {
+  const provider =
+    (readEnv("APPOINTMENT_TOOL_PROVIDER") as AppointmentToolProviderId | null) ??
+    "apotool_rpa";
+
+  if (provider !== "apotool_rpa") {
+    throw new Error("APPOINTMENT_TOOL_PROVIDER must be apotool_rpa when configured.");
+  }
+
+  return provider;
+}
+
+export function getServerConfig(): ServerConfig {
   return {
     apiKey: requireEnv("ELEVENLABS_API_KEY"),
     agentId: requireEnv("ELEVENLABS_AGENT_ID"),
@@ -65,8 +90,15 @@ export function getServerConfig(): ServerConfig {
     twilioCallerId: readEnv("TWILIO_CALLER_ID"),
     demoOutboundTargetNumber: readEnv("DEMO_OUTBOUND_TARGET_NUMBER"),
     demoTimezone: readEnv("DEMO_TIMEZONE") ?? "Asia/Tokyo",
-    appointmentToolMode,
-    appointmentToolProvider: readEnv("APPOINTMENT_TOOL_PROVIDER"),
+    appointmentToolMode: readAppointmentToolMode(),
+    appointmentToolProvider: readAppointmentToolProvider(),
+    apotoolEmail: readEnv("APOTOOL_EMAIL"),
+    apotoolPassword: readEnv("APOTOOL_PASSWORD"),
+    apotoolLoginUrl: readEnv("APOTOOL_LOGIN_URL") ?? "https://user.stransa.co.jp/login",
+    apotoolClinicName:
+      readEnv("APOTOOL_CLINIC_NAME") ?? "えみは総合歯科 大阪梅田院",
+    apotoolHeadless: readBooleanEnv("APOTOOL_HEADLESS", true),
+    appointmentDefaultReviewer: readEnv("APPOINTMENT_DEFAULT_REVIEWER"),
     geminiApiKey: readEnv("GEMINI_API_KEY"),
     voiceBenchmarkEnabled: readBooleanEnv("VOICE_BENCHMARK_ENABLED", true),
     voiceBenchmarkDefaultProvider:
@@ -84,5 +116,6 @@ export function getDemoRuntimeSettings() {
   return {
     demoOutboundTargetNumber: readEnv("DEMO_OUTBOUND_TARGET_NUMBER") ?? "",
     demoTimezone: getDemoTimezone(),
+    defaultReviewer: readEnv("APPOINTMENT_DEFAULT_REVIEWER") ?? "",
   };
 }

@@ -1,3 +1,4 @@
+import { EMIHA_KNOWLEDGE_VERSION } from "@/lib/clinic-config/emiha";
 import {
   normalizeLineFormStatus,
   normalizeServiceLine,
@@ -8,6 +9,7 @@ import type {
   EvaluationCriterionResult,
   ReservationMemo,
   TranscriptEntry,
+  TriageLevel,
 } from "@/lib/types";
 
 type UnknownRecord = Record<string, unknown>;
@@ -18,6 +20,9 @@ const MEMO_KEYS = [
   "phone_number",
   "is_new_patient",
   "visit_reason",
+  "symptom_summary",
+  "urgency_reason",
+  "preferred_datetime_raw",
   "preferred_date_1",
   "preferred_time_range_1",
   "preferred_date_2",
@@ -151,6 +156,28 @@ function extractMessageText(value: unknown): string | null {
   return null;
 }
 
+function mapLegacyUrgencyLevel(rawUrgencyLevel: string | null): TriageLevel | null {
+  if (!rawUrgencyLevel) {
+    return null;
+  }
+
+  const normalized = rawUrgencyLevel.trim().toLowerCase();
+
+  if (normalized === "緊急" || normalized === "urgent") {
+    return "same_day_phone";
+  }
+
+  if (normalized === "通常" || normalized === "routine") {
+    return "routine";
+  }
+
+  if (normalized === "定期" || normalized === "periodic") {
+    return "routine";
+  }
+
+  return null;
+}
+
 export function normalizeTranscript(transcript: unknown): TranscriptEntry[] {
   if (!Array.isArray(transcript)) {
     return [];
@@ -186,22 +213,35 @@ export function normalizeTranscript(transcript: unknown): TranscriptEntry[] {
 
 export function normalizeReservationMemo(dataCollectionResults: unknown): ReservationMemo {
   const source = isRecord(dataCollectionResults) ? dataCollectionResults : {};
-  const visitReason = toNullableString(source.visit_reason);
+  const legacySymptom = toNullableString(source.symptom);
+  const visitReason = toNullableString(source.visit_reason) ?? legacySymptom;
+  const symptomSummary =
+    toNullableString(source.symptom_summary) ?? legacySymptom ?? visitReason;
   const notesForStaff = toNullableString(source.notes_for_staff);
   const unresolvedQuestions = toNullableString(source.unresolved_questions);
   const isNewPatient = toNullableBoolean(source.is_new_patient);
+  const preferredDatetimeRaw =
+    toNullableString(source.preferred_datetime_raw) ??
+    toNullableString(source.preferred_datetime);
+  const rawUrgencyReason =
+    toNullableString(source.urgency_reason) ?? toNullableString(source.urgency_level);
+  const rawTriageLevel =
+    toNullableString(source.triage_level) ??
+    mapLegacyUrgencyLevel(toNullableString(source.urgency_level));
   const serviceLine =
     normalizeServiceLine(
       toNullableString(source.service_line),
       visitReason,
       notesForStaff,
-      unresolvedQuestions
+      unresolvedQuestions,
+      preferredDatetimeRaw
     ) ?? null;
   const triageLevel =
     normalizeTriageLevel(
-      toNullableString(source.triage_level),
+      rawTriageLevel,
       serviceLine,
       visitReason,
+      rawUrgencyReason,
       notesForStaff,
       unresolvedQuestions
     ) ?? null;
@@ -219,7 +259,11 @@ export function normalizeReservationMemo(dataCollectionResults: unknown): Reserv
     phone_number: toNullableString(source.phone_number),
     is_new_patient: isNewPatient,
     visit_reason: visitReason,
-    preferred_date_1: toNullableString(source.preferred_date_1),
+    symptom_summary: symptomSummary,
+    urgency_reason: rawUrgencyReason,
+    preferred_datetime_raw: preferredDatetimeRaw,
+    preferred_date_1:
+      toNullableString(source.preferred_date_1) ?? preferredDatetimeRaw,
     preferred_time_range_1: toNullableString(source.preferred_time_range_1),
     preferred_date_2: toNullableString(source.preferred_date_2),
     preferred_time_range_2: toNullableString(source.preferred_time_range_2),
@@ -232,6 +276,8 @@ export function normalizeReservationMemo(dataCollectionResults: unknown): Reserv
     triage_level: triageLevel,
     line_form_status: lineFormStatus,
     manual_review_reason: toNullableString(source.manual_review_reason),
+    knowledge_version:
+      toNullableString(source.knowledge_version) ?? EMIHA_KNOWLEDGE_VERSION,
   };
 }
 

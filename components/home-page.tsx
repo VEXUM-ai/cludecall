@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useConversationController } from "@/components/conversation-provider";
 import { EMIHA_CLINIC_PROFILE } from "@/lib/clinic-config/emiha";
 import {
+  buildExecutionCandidatePreview,
+  EXECUTION_STATE_LABELS,
   findBookingRule,
   LINE_FORM_STATUS_LABELS,
   SERVICE_LINE_LABELS,
@@ -13,7 +15,9 @@ import {
   TRIAGE_LEVEL_LABELS,
 } from "@/lib/appointments";
 import type {
+  AppointmentAvailabilityCandidate,
   AppointmentDraft,
+  AppointmentToolHealth,
   ConversationEventLogEntry,
   ConversationHistoryDetail,
   ConversationHistorySummary,
@@ -200,14 +204,32 @@ function ClinicProfileCard() {
 function AppointmentDraftCard({
   title,
   draft,
-  onConfirm,
+  reviewerName,
+  onReviewerNameChange,
+  onConfirmReview,
+  onCheckAvailability,
+  onSelectCandidate,
+  onExecute,
+  selectedCandidateId,
   isConfirming,
+  isCheckingAvailability,
+  isExecuting,
+  health,
   error,
 }: {
   title: string;
   draft: AppointmentDraft | null;
-  onConfirm: (() => void) | null;
+  reviewerName: string;
+  onReviewerNameChange: (value: string) => void;
+  onConfirmReview: (() => void) | null;
+  onCheckAvailability: (() => void) | null;
+  onSelectCandidate: (candidateId: string) => void;
+  onExecute: (() => void) | null;
+  selectedCandidateId: string | null;
   isConfirming: boolean;
+  isCheckingAvailability: boolean;
+  isExecuting: boolean;
+  health: AppointmentToolHealth | null;
   error: string | null;
 }) {
   if (!draft) {
@@ -215,12 +237,21 @@ function AppointmentDraftCard({
   }
 
   const rule = findBookingRule(draft.serviceLine);
+  const selectedCandidate =
+    draft.availabilityCandidates.find((candidate) => candidate.id === selectedCandidateId) ??
+    draft.availabilityCandidates[0] ??
+    null;
   const rows = [
     ["受付区分", SERVICE_LINE_LABELS[draft.serviceLine]],
     ["優先度", TRIAGE_LEVEL_LABELS[draft.triageLevel]],
     ["LINE問診", LINE_FORM_STATUS_LABELS[draft.lineFormStatus]],
+    ["provider", draft.provider ?? "none"],
+    ["knowledge", draft.knowledgeVersion],
     ["提出モード", draft.submissionMode],
     ["提出状態", SUBMISSION_STATE_LABELS[draft.submissionState]],
+    ["実行状態", EXECUTION_STATE_LABELS[draft.executionState]],
+    ["reviewer", draft.reviewedBy ?? "未設定"],
+    ["reviewedAt", formatOptional(draft.reviewedAt)],
     ["人確認理由", draft.manualReviewReason ?? "なし"],
     ["引き継ぎ要約", draft.handoffSummary],
   ] as const;
@@ -229,7 +260,7 @@ function AppointmentDraftCard({
     <section className="card">
       <div className="section-heading">
         <h3>{title}</h3>
-        <p>アポツール投入前の正規化済みドラフトです。今回のデモでは人確認後に手動登録します。</p>
+        <p>review 承認後に候補枠を取得し、選択した枠を Apotool へ投入します。</p>
       </div>
       <dl className="memo-grid">
         {rows.map(([label, value]) => (
@@ -266,17 +297,96 @@ function AppointmentDraftCard({
           </article>
         </div>
       ) : null}
+      <div className="field-stack appointment-section">
+        <label className="field-label" htmlFor={`${draft.conversationId}-reviewer`}>
+          reviewer
+        </label>
+        <input
+          id={`${draft.conversationId}-reviewer`}
+          className="text-input"
+          type="text"
+          value={reviewerName}
+          onChange={(event) => onReviewerNameChange(event.target.value)}
+          placeholder="reviewer name"
+        />
+        {health ? (
+          <p className="helper-text">
+            provider health: {health.status} / {health.message}
+          </p>
+        ) : null}
+      </div>
       <div className="button-row appointment-actions">
         <button
           type="button"
           className="primary-button"
-          onClick={onConfirm ?? undefined}
-          disabled={!onConfirm || isConfirming || draft.submissionState !== "drafted"}
+          onClick={onConfirmReview ?? undefined}
+          disabled={!onConfirmReview || isConfirming || draft.submissionState !== "drafted"}
         >
-          {isConfirming ? "確認中..." : "確認してアポ登録"}
+          {isConfirming ? "承認中..." : "review を承認"}
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={onCheckAvailability ?? undefined}
+          disabled={
+            !onCheckAvailability ||
+            isCheckingAvailability ||
+            draft.submissionState === "drafted" ||
+            draft.submissionState === "submitted"
+          }
+        >
+          {isCheckingAvailability ? "候補確認中..." : "候補枠を確認"}
+        </button>
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={onExecute ?? undefined}
+          disabled={
+            !onExecute ||
+            isExecuting ||
+            !selectedCandidate ||
+            draft.submissionState === "drafted" ||
+            draft.submissionState === "submitted"
+          }
+        >
+          {isExecuting ? "投入中..." : "選択枠で投入"}
         </button>
       </div>
       {error ? <p className="error-text">{error}</p> : null}
+      {draft.executionError ? <p className="warning-text">{draft.executionError}</p> : null}
+      {draft.availabilityCandidates.length > 0 ? (
+        <div className="stack-tight appointment-section">
+          <strong>候補枠</strong>
+          <div className="candidate-list">
+            {draft.availabilityCandidates.map((candidate) => (
+              <label key={candidate.id} className="candidate-option">
+                <input
+                  type="radio"
+                  name={`${draft.conversationId}-candidate`}
+                  checked={candidate.id === selectedCandidate?.id}
+                  onChange={() => onSelectCandidate(candidate.id)}
+                />
+                <span>{buildExecutionCandidatePreview(candidate)}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {draft.auditRef ? (
+        <div className="stack-tight appointment-section">
+          <strong>audit</strong>
+          <p className="helper-text">log: {draft.auditRef.logPath ?? "未保存"}</p>
+          {draft.auditRef.screenshotPaths.length > 0 ? (
+            <div className="stack-tight">
+              {draft.auditRef.screenshotPaths.map((screenshotPath) => (
+                <p key={screenshotPath} className="helper-text">
+                  screenshot: {screenshotPath}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="stack-tight appointment-section">
         <strong>アポツール投入用 payload</strong>
         <pre className="payload-block">
@@ -506,16 +616,34 @@ function HistoryDetailDrawer({
   detail,
   summary,
   onClose,
-  onConfirm,
+  reviewerName,
+  onReviewerNameChange,
+  onConfirmReview,
+  onCheckAvailability,
+  onSelectCandidate,
+  onExecute,
+  selectedCandidateId,
   isConfirming,
+  isCheckingAvailability,
+  isExecuting,
+  health,
   error,
 }: {
   open: boolean;
   detail: ConversationHistoryDetail | null;
   summary: ConversationHistorySummary | null;
   onClose: () => void;
-  onConfirm: (() => void) | null;
+  reviewerName: string;
+  onReviewerNameChange: (value: string) => void;
+  onConfirmReview: (() => void) | null;
+  onCheckAvailability: (() => void) | null;
+  onSelectCandidate: (candidateId: string) => void;
+  onExecute: (() => void) | null;
+  selectedCandidateId: string | null;
   isConfirming: boolean;
+  isCheckingAvailability: boolean;
+  isExecuting: boolean;
+  health: AppointmentToolHealth | null;
   error: string | null;
 }) {
   if (!open || !detail) {
@@ -568,8 +696,17 @@ function HistoryDetailDrawer({
           <AppointmentDraftCard
             title="アポツールドラフト"
             draft={detail.appointmentDraft}
-            onConfirm={onConfirm}
+            reviewerName={reviewerName}
+            onReviewerNameChange={onReviewerNameChange}
+            onConfirmReview={onConfirmReview}
+            onCheckAvailability={onCheckAvailability}
+            onSelectCandidate={onSelectCandidate}
+            onExecute={onExecute}
+            selectedCandidateId={selectedCandidateId}
             isConfirming={isConfirming}
+            isCheckingAvailability={isCheckingAvailability}
+            isExecuting={isExecuting}
+            health={health}
             error={error}
           />
           <EvaluationTable
@@ -634,9 +771,16 @@ export function HomePage({
   const [importError, setImportError] = useState<string | null>(null);
   const [isImportingPhoneCall, setIsImportingPhoneCall] = useState(false);
   const [appointmentActionError, setAppointmentActionError] = useState<string | null>(null);
+  const [appointmentToolHealth, setAppointmentToolHealth] =
+    useState<AppointmentToolHealth | null>(null);
+  const [reviewerName, setReviewerName] = useState("");
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<Record<string, string>>({});
   const [isConfirmingConversationId, setIsConfirmingConversationId] = useState<string | null>(
     null
   );
+  const [isCheckingAvailabilityConversationId, setIsCheckingAvailabilityConversationId] =
+    useState<string | null>(null);
+  const [isExecutingConversationId, setIsExecutingConversationId] = useState<string | null>(null);
   const [liveAppointmentOverride, setLiveAppointmentOverride] =
     useState<AppointmentDraft | null>(null);
 
@@ -660,6 +804,60 @@ export function HomePage({
   }, [canStop]);
 
   const liveAppointmentDraft = liveAppointmentOverride ?? analysisResult?.appointmentDraft ?? null;
+
+  const rememberSelectedCandidate = useCallback((draft: AppointmentDraft) => {
+    setSelectedCandidateIds((current) => {
+      const nextSelectedCandidateId =
+        draft.selectedCandidateId ?? draft.availabilityCandidates[0]?.id ?? current[draft.conversationId];
+
+      if (!nextSelectedCandidateId) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [draft.conversationId]: nextSelectedCandidateId,
+      };
+    });
+  }, []);
+
+  const applyDraftUpdate = useCallback(
+    (nextDraft: AppointmentDraft) => {
+      setHistoryItems((current) =>
+        current.map((item) =>
+          item.conversationId === nextDraft.conversationId
+            ? { ...item, appointmentDraft: nextDraft }
+            : item
+        )
+      );
+
+      if (analysisResult?.conversationId === nextDraft.conversationId) {
+        setLiveAppointmentOverride(nextDraft);
+      }
+
+      setSelectedHistoryDetail((current) =>
+        current && current.conversationId === nextDraft.conversationId
+          ? { ...current, appointmentDraft: nextDraft }
+          : current
+      );
+
+      rememberSelectedCandidate(nextDraft);
+    },
+    [analysisResult?.conversationId, rememberSelectedCandidate]
+  );
+
+  const loadAppointmentToolHealth = useCallback(async () => {
+    try {
+      const response = await fetch("/api/appointment-tool/health");
+      const payload = (await response.json()) as AppointmentToolHealth | { error?: string };
+      if (!response.ok) {
+        return;
+      }
+      setAppointmentToolHealth(payload as AppointmentToolHealth);
+    } catch {
+      // Best effort only.
+    }
+  }, []);
 
   const loadHistoryDetail = useCallback(async (conversationIdToLoad: string) => {
     setDetailError(null);
@@ -774,10 +972,22 @@ export function HomePage({
   }, [analysisResult]);
 
   useEffect(() => {
-    if (defaultOutboundNumber) {
-      return;
+    if (liveAppointmentDraft) {
+      rememberSelectedCandidate(liveAppointmentDraft);
     }
+  }, [liveAppointmentDraft, rememberSelectedCandidate]);
 
+  useEffect(() => {
+    if (selectedHistoryDetail?.appointmentDraft) {
+      rememberSelectedCandidate(selectedHistoryDetail.appointmentDraft);
+    }
+  }, [rememberSelectedCandidate, selectedHistoryDetail?.appointmentDraft]);
+
+  useEffect(() => {
+    void loadAppointmentToolHealth();
+  }, [loadAppointmentToolHealth]);
+
+  useEffect(() => {
     let isCancelled = false;
 
     void (async () => {
@@ -785,16 +995,27 @@ export function HomePage({
         const response = await fetch("/api/demo/defaults");
         const payload = (await response.json()) as {
           demoOutboundTargetNumber?: string;
+          defaultReviewer?: string;
         };
 
         if (!response.ok || isCancelled) {
           return;
         }
 
-        if (typeof payload.demoOutboundTargetNumber === "string") {
+        if (
+          !defaultOutboundNumber &&
+          typeof payload.demoOutboundTargetNumber === "string"
+        ) {
           setOutboundNumber((current) =>
             current.length > 0 ? current : payload.demoOutboundTargetNumber ?? ""
           );
+        }
+
+        if (
+          typeof payload.defaultReviewer === "string" &&
+          payload.defaultReviewer.length > 0
+        ) {
+          setReviewerName((current) => (current.length > 0 ? current : payload.defaultReviewer ?? ""));
         }
       } catch {
         // Best effort only.
@@ -880,10 +1101,7 @@ export function HomePage({
     await loadHistoryDetail(conversationIdToLoad);
   }
 
-  async function handleConfirmAppointment(
-    conversationIdToConfirm: string,
-    target: "live" | "history"
-  ) {
+  async function handleConfirmAppointment(conversationIdToConfirm: string) {
     setAppointmentActionError(null);
     setIsConfirmingConversationId(conversationIdToConfirm);
 
@@ -891,7 +1109,10 @@ export function HomePage({
       const response = await fetch("/api/demo/appointments/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: conversationIdToConfirm }),
+        body: JSON.stringify({
+          conversationId: conversationIdToConfirm,
+          reviewedBy: reviewerName.trim(),
+        }),
       });
       const payload = (await response.json()) as
         | { appointmentDraft: AppointmentDraft }
@@ -906,24 +1127,7 @@ export function HomePage({
       }
 
       const nextDraft = payload.appointmentDraft;
-
-      setHistoryItems((current) =>
-        current.map((item) =>
-          item.conversationId === conversationIdToConfirm
-            ? { ...item, appointmentDraft: nextDraft }
-            : item
-        )
-      );
-
-      if (target === "live") {
-        setLiveAppointmentOverride(nextDraft);
-      }
-
-      setSelectedHistoryDetail((current) =>
-        current && current.conversationId === conversationIdToConfirm
-          ? { ...current, appointmentDraft: nextDraft }
-          : current
-      );
+      applyDraftUpdate(nextDraft);
     } catch (confirmError) {
       setAppointmentActionError(
         confirmError instanceof Error
@@ -932,6 +1136,86 @@ export function HomePage({
       );
     } finally {
       setIsConfirmingConversationId(null);
+    }
+  }
+
+  async function handleCheckAvailability(conversationIdToCheck: string) {
+    setAppointmentActionError(null);
+    setIsCheckingAvailabilityConversationId(conversationIdToCheck);
+
+    try {
+      const response = await fetch("/api/appointment-tool/availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: conversationIdToCheck }),
+      });
+      const payload = (await response.json()) as
+        | { draft: AppointmentDraft }
+        | { error?: string };
+
+      if (!response.ok || !("draft" in payload)) {
+        throw new Error(
+          "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "Failed to resolve appointment availability."
+        );
+      }
+
+      applyDraftUpdate(payload.draft);
+    } catch (availabilityError) {
+      setAppointmentActionError(
+        availabilityError instanceof Error
+          ? availabilityError.message
+          : "Failed to resolve appointment availability."
+      );
+    } finally {
+      setIsCheckingAvailabilityConversationId(null);
+    }
+  }
+
+  async function handleExecuteAppointment(conversationIdToExecute: string) {
+    setAppointmentActionError(null);
+    setIsExecutingConversationId(conversationIdToExecute);
+
+    try {
+      const selectedCandidateId = selectedCandidateIds[conversationIdToExecute];
+      if (!selectedCandidateId) {
+        throw new Error("候補枠を選択してから投入してください。");
+      }
+
+      const response = await fetch("/api/appointment-tool/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: conversationIdToExecute,
+          candidateId: selectedCandidateId,
+        }),
+      });
+      const payload = (await response.json()) as
+        | { draft: AppointmentDraft; success: boolean; message: string }
+        | { error?: string };
+
+      if ("draft" in payload) {
+        applyDraftUpdate(payload.draft);
+      }
+
+      if (!response.ok || !("draft" in payload)) {
+        throw new Error(
+          "error" in payload && typeof payload.error === "string"
+            ? payload.error
+            : "message" in payload && typeof payload.message === "string"
+              ? payload.message
+            : "Failed to execute the appointment booking."
+        );
+      }
+    } catch (executionError) {
+      setAppointmentActionError(
+        executionError instanceof Error
+          ? executionError.message
+          : "Failed to execute the appointment booking."
+      );
+    } finally {
+      setIsExecutingConversationId(null);
     }
   }
 
@@ -1029,18 +1313,50 @@ export function HomePage({
               <AppointmentDraftCard
                 title="Web 会話のアポツールドラフト"
                 draft={liveAppointmentDraft}
-                onConfirm={
+                reviewerName={reviewerName}
+                onReviewerNameChange={setReviewerName}
+                onConfirmReview={
                   analysisResult.conversationId
-                    ? () =>
-                        void handleConfirmAppointment(
-                          analysisResult.conversationId,
-                          "live"
-                        )
+                    ? () => void handleConfirmAppointment(analysisResult.conversationId)
+                    : null
+                }
+                onCheckAvailability={
+                  liveAppointmentDraft?.conversationId
+                    ? () => void handleCheckAvailability(liveAppointmentDraft.conversationId)
+                    : null
+                }
+                onSelectCandidate={(candidateId) =>
+                  liveAppointmentDraft
+                    ? setSelectedCandidateIds((current) => ({
+                        ...current,
+                        [liveAppointmentDraft.conversationId]: candidateId,
+                      }))
+                    : undefined
+                }
+                onExecute={
+                  liveAppointmentDraft?.conversationId
+                    ? () => void handleExecuteAppointment(liveAppointmentDraft.conversationId)
+                    : null
+                }
+                selectedCandidateId={
+                  liveAppointmentDraft
+                    ? selectedCandidateIds[liveAppointmentDraft.conversationId] ?? null
                     : null
                 }
                 isConfirming={isConfirmingConversationId === analysisResult.conversationId}
+                isCheckingAvailability={
+                  liveAppointmentDraft?.conversationId !== undefined &&
+                  isCheckingAvailabilityConversationId === liveAppointmentDraft?.conversationId
+                }
+                isExecuting={
+                  liveAppointmentDraft?.conversationId !== undefined &&
+                  isExecutingConversationId === liveAppointmentDraft?.conversationId
+                }
+                health={appointmentToolHealth}
                 error={
                   isConfirmingConversationId === analysisResult.conversationId ||
+                  isCheckingAvailabilityConversationId === analysisResult.conversationId ||
+                  isExecutingConversationId === analysisResult.conversationId ||
                   appointmentActionError === null
                     ? null
                     : appointmentActionError
@@ -1208,7 +1524,10 @@ export function HomePage({
               <li>Twilio Trial の場合は、最初に英語の trial アナウンスが流れ終わるまで待つ。</li>
               <li>その後に電話で予約会話を行う。</li>
               <li>通話後に `最新の電話会話を取り込む` を実行する。</li>
-              <li>`確認してアポ登録` を押して、payload を見ながらアポツールへ手動登録する。</li>
+              <li>
+                {`review を承認`} {"->"} {`候補枠を確認`} {"->"} {`選択枠で投入`} の順で
+                staff review を進める。
+              </li>
               <li>`npm run demo:import-last-call` で Markdown 記録も保存する。</li>
             </ol>
           </section>
@@ -1220,9 +1539,35 @@ export function HomePage({
         detail={selectedHistoryDetail}
         summary={selectedSummary}
         onClose={() => setIsHistoryDetailOpen(false)}
-        onConfirm={
+        reviewerName={reviewerName}
+        onReviewerNameChange={setReviewerName}
+        onConfirmReview={
           selectedHistoryDetail
-            ? () => void handleConfirmAppointment(selectedHistoryDetail.conversationId, "history")
+            ? () => void handleConfirmAppointment(selectedHistoryDetail.conversationId)
+            : null
+        }
+        onCheckAvailability={
+          selectedHistoryDetail
+            ? () => void handleCheckAvailability(selectedHistoryDetail.conversationId)
+            : null
+        }
+        onSelectCandidate={(candidateId) => {
+          if (!selectedHistoryDetail) {
+            return;
+          }
+          setSelectedCandidateIds((current) => ({
+            ...current,
+            [selectedHistoryDetail.conversationId]: candidateId,
+          }));
+        }}
+        onExecute={
+          selectedHistoryDetail
+            ? () => void handleExecuteAppointment(selectedHistoryDetail.conversationId)
+            : null
+        }
+        selectedCandidateId={
+          selectedHistoryDetail
+            ? selectedCandidateIds[selectedHistoryDetail.conversationId] ?? null
             : null
         }
         isConfirming={
@@ -1231,9 +1576,24 @@ export function HomePage({
               isConfirmingConversationId === selectedHistoryDetail.conversationId
           )
         }
+        isCheckingAvailability={
+          Boolean(
+            selectedHistoryDetail &&
+              isCheckingAvailabilityConversationId === selectedHistoryDetail.conversationId
+          )
+        }
+        isExecuting={
+          Boolean(
+            selectedHistoryDetail &&
+              isExecutingConversationId === selectedHistoryDetail.conversationId
+          )
+        }
+        health={appointmentToolHealth}
         error={
           selectedHistoryDetail &&
-          isConfirmingConversationId !== selectedHistoryDetail.conversationId
+          isConfirmingConversationId !== selectedHistoryDetail.conversationId &&
+          isCheckingAvailabilityConversationId !== selectedHistoryDetail.conversationId &&
+          isExecutingConversationId !== selectedHistoryDetail.conversationId
             ? appointmentActionError
             : null
         }

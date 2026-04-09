@@ -8,7 +8,7 @@ import {
   TRIAGE_LEVEL_LABELS,
 } from "@/lib/appointments";
 import { summarizeMissingMemoFields } from "@/lib/elevenlabs/memo";
-import type { DemoRun } from "@/lib/types";
+import type { AppointmentDraft, DemoRun } from "@/lib/types";
 
 type StoredDemoRunArtifact = {
   run: DemoRun;
@@ -103,7 +103,13 @@ ${
 - triage_level: ${TRIAGE_LEVEL_LABELS[run.appointmentDraft.triageLevel]}
 - line_form_status: ${LINE_FORM_STATUS_LABELS[run.appointmentDraft.lineFormStatus]}
 - submission_state: ${SUBMISSION_STATE_LABELS[run.appointmentDraft.submissionState]}
+- execution_state: ${run.appointmentDraft.executionState}
+- provider: ${run.appointmentDraft.provider ?? "none"}
+- knowledge_version: ${run.appointmentDraft.knowledgeVersion}
+- reviewed_by: ${run.appointmentDraft.reviewedBy ?? "未設定"}
+- reviewed_at: ${run.appointmentDraft.reviewedAt ?? "未設定"}
 - manual_review_reason: ${run.appointmentDraft.manualReviewReason ?? "なし"}
+- execution_error: ${run.appointmentDraft.executionError ?? "なし"}
 - handoff_summary: ${run.appointmentDraft.handoffSummary}`
     : "- ドラフトなし"
 }
@@ -228,6 +234,56 @@ export async function listStoredDemoRunArtifacts(): Promise<StoredDemoRunArtifac
 export async function readStoredDemoRun(conversationId: string) {
   const artifacts = await listStoredDemoRunArtifacts();
   return artifacts.find((artifact) => artifact.run.conversationId === conversationId) ?? null;
+}
+
+export async function syncStoredAppointmentDraft(
+  draft: AppointmentDraft,
+  timeZone: string
+) {
+  await ensureDemoRunDirectories();
+
+  let entries: string[] = [];
+  try {
+    entries = await fs.readdir(DEMO_RUNS_ARTIFACTS_DIR);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { updatedJsonPaths: [], updatedMarkdownPaths: [] };
+    }
+    throw error;
+  }
+
+  const updatedJsonPaths: string[] = [];
+  const updatedMarkdownPaths: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+
+    const jsonPath = path.join(DEMO_RUNS_ARTIFACTS_DIR, entry);
+    const raw = await fs.readFile(jsonPath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isDemoRun(parsed) || parsed.conversationId !== draft.conversationId) {
+      continue;
+    }
+
+    const updatedRun: DemoRun = {
+      ...parsed,
+      appointmentDraft: draft,
+    };
+
+    await fs.writeFile(jsonPath, JSON.stringify(updatedRun, null, 2), "utf8");
+    updatedJsonPaths.push(jsonPath);
+
+    const markdownPath = path.join(
+      DEMO_RUNS_DOCS_DIR,
+      `${path.basename(entry, ".json")}.md`
+    );
+    await fs.writeFile(markdownPath, renderDemoRunMarkdown(updatedRun, timeZone), "utf8");
+    updatedMarkdownPaths.push(markdownPath);
+  }
+
+  return { updatedJsonPaths, updatedMarkdownPaths };
 }
 
 export async function readLastKnownPhoneConversationId(): Promise<string | null> {
