@@ -266,7 +266,7 @@ export const EMIHA_SERVICE_LINE_DEFINITIONS: ServiceLineDefinition[] = [
     patientSummary: "強い痛みや腫れなどで当日案内が必要なケース。",
     urgencySignals: ["強い痛み", "ズキズキ", "腫れ", "出血", "夜眠れない"],
     escalationTriggers: ["当日電話優先", "応急処置のみになる可能性"],
-    allowedInLiveCall: true,
+    allowedInLiveCall: false,
   },
   {
     serviceLine: "implant_consult",
@@ -435,8 +435,8 @@ export const EMIHA_SERVICE_MENU_MAPPINGS: ServiceMenuMapping[] = [
     apotoolMenuPrimary: "初診   (60分)",
     apotoolMenuSecondary: "治療前TC",
     bookingPattern: "tc30_and_treatment60",
-    automationPolicy: "rpa_supported",
-    notes: ["RPA v1 対応対象。ただし review で当日案内可否を確認してから投入する。"],
+    automationPolicy: "manual_review_only",
+    notes: ["急患初診は v1 の自動候補枠確認・自動投入の対象外です。スタッフ折り返しで当日案内可否を確認します。"],
   },
   {
     serviceLine: "implant_consult",

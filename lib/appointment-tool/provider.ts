@@ -3,6 +3,7 @@ import {
   buildExecutionCandidatePreview,
   createAvailabilityCandidate,
   findServiceMenuMapping,
+  getAppointmentAutomationBlockReason,
   markAppointmentExecutionFailed,
   markAppointmentExecutionStarted,
   markAppointmentExecutionSubmitted,
@@ -41,8 +42,12 @@ function getDraftCandidateDates(draft: AppointmentDraft) {
 }
 
 function buildManualOnlyError(draft: AppointmentDraft) {
+  const menuMapping = draft.menuMapping ?? findServiceMenuMapping(draft.serviceLine);
   return (
-    draft.menuMapping?.notes[0] ??
+    getAppointmentAutomationBlockReason({
+      triageLevel: draft.triageLevel,
+      menuMapping,
+    }) ??
     "この受付区分は v1 では RPA 実行対象外のため、手動確認が必要です。"
   );
 }
@@ -161,7 +166,13 @@ export async function checkAvailabilityWithProvider(
     };
   }
 
-  if (!draft.menuMapping || draft.menuMapping.automationPolicy !== "rpa_supported") {
+  const menuMapping = draft.menuMapping ?? findServiceMenuMapping(draft.serviceLine);
+  if (
+    getAppointmentAutomationBlockReason({
+      triageLevel: draft.triageLevel,
+      menuMapping,
+    })
+  ) {
     const error = buildManualOnlyError(draft);
     const auditRef = await writeAppointmentAudit({
       action: "availability",
@@ -276,7 +287,34 @@ export async function submitBookingWithProvider(args: {
   }
 
   const menuMapping = draft.menuMapping ?? findServiceMenuMapping(draft.serviceLine);
-  if (!menuMapping || menuMapping.automationPolicy !== "rpa_supported") {
+  if (
+    getAppointmentAutomationBlockReason({
+      triageLevel: draft.triageLevel,
+      menuMapping,
+    })
+  ) {
+    const error = buildManualOnlyError(draft);
+    const auditRef = await writeAppointmentAudit({
+      action: "execute",
+      conversationId: draft.conversationId,
+      provider: draft.provider,
+      request: {
+        conversationId: draft.conversationId,
+        selectedCandidateId,
+        serviceLine: draft.serviceLine,
+      },
+      error,
+    });
+    return {
+      draft: markAppointmentExecutionFailed(draft, error, auditRef, true),
+      success: false,
+      orphanRisk: false,
+      auditRef,
+      message: error,
+    };
+  }
+
+  if (!menuMapping) {
     const error = buildManualOnlyError(draft);
     const auditRef = await writeAppointmentAudit({
       action: "execute",

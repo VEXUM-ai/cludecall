@@ -102,6 +102,15 @@ export const EXECUTION_STATE_LABELS: Record<AppointmentExecutionState, string> =
   failed: "実行失敗",
 };
 
+const NON_ROUTINE_AUTOMATION_MESSAGES: Record<Exclude<TriageLevel, "routine">, string> = {
+  same_day_phone:
+    "急患や当日優先の問い合わせは v1 の自動候補枠確認・自動投入の対象外です。スタッフ折り返しで対応します。",
+  doctor_required:
+    "ドクター確認が必要な受付は v1 の自動候補枠確認・自動投入の対象外です。院内確認後の折り返し対応に寄せます。",
+  manual_review:
+    "この受付内容は v1 の自動候補枠確認・自動投入の対象外です。スタッフ確認後に折り返します。",
+};
+
 function normalizeComparableText(value: string | null | undefined) {
   return (value ?? "").toLowerCase();
 }
@@ -137,6 +146,21 @@ function addMinutesToTime(time: string, minutesToAdd: number) {
   const nextHours = Math.floor(totalMinutes / 60);
   const nextMinutes = totalMinutes % 60;
   return `${String(nextHours).padStart(2, "0")}:${String(nextMinutes).padStart(2, "0")}`;
+}
+
+export function getAppointmentAutomationBlockReason(args: {
+  triageLevel: TriageLevel;
+  menuMapping: ServiceMenuMapping | null;
+}): string | null {
+  if (args.triageLevel !== "routine") {
+    return NON_ROUTINE_AUTOMATION_MESSAGES[args.triageLevel];
+  }
+
+  if (!args.menuMapping || args.menuMapping.automationPolicy !== "rpa_supported") {
+    return args.menuMapping?.notes[0] ?? "この受付区分は v1 では review 後も手動確認を優先します。";
+  }
+
+  return null;
 }
 
 export function normalizeServiceLine(
@@ -328,14 +352,15 @@ function summarizeManualReviewReason(memo: ReservationMemo, serviceLine: Service
 function buildManualReviewReasonWithDateNotes(
   memo: ReservationMemo,
   serviceLine: ServiceLine,
+  triageLevel: TriageLevel,
   menuMapping: ServiceMenuMapping | null,
   preferredSlotNotes: string[]
 ) {
   const baseReason = summarizeManualReviewReason(memo, serviceLine);
-  const automationReason =
-    menuMapping?.automationPolicy === "manual_review_only"
-      ? "この受付区分は review 後も手動確認を優先"
-      : null;
+  const automationReason = getAppointmentAutomationBlockReason({
+    triageLevel,
+    menuMapping,
+  });
   return [baseReason, automationReason, ...preferredSlotNotes].filter(Boolean).join(" / ") || null;
 }
 
@@ -582,6 +607,7 @@ export function buildAppointmentDraft(args: {
   const normalizedManualReviewReason = buildManualReviewReasonWithDateNotes(
     args.memo,
     serviceLine,
+    triageLevel,
     menuMapping,
     preferredSlotNotes
   );

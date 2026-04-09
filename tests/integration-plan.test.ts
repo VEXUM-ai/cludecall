@@ -14,6 +14,7 @@ import {
   confirmAppointmentDraft,
   createAvailabilityCandidate,
   findServiceMenuMapping,
+  getAppointmentAutomationBlockReason,
   markAppointmentExecutionSubmitted,
 } from "@/lib/appointments";
 import { evaluateAppointmentExecutionGuard } from "@/lib/appointment-tool/provider";
@@ -58,6 +59,13 @@ test("legacy Retell-style fields normalize into the unified reservation memo and
   assert.equal(memo.triage_level, "same_day_phone");
   assert.equal(draft.serviceLine, "emergency_initial");
   assert.equal(draft.triageLevel, "same_day_phone");
+  assert.equal(
+    getAppointmentAutomationBlockReason({
+      triageLevel: draft.triageLevel,
+      menuMapping: draft.menuMapping,
+    }),
+    "急患や当日優先の問い合わせは v1 の自動候補枠確認・自動投入の対象外です。スタッフ折り返しで対応します。"
+  );
   assert.equal(draft.knowledgeVersion, EMIHA_KNOWLEDGE_PACK.version);
   assert.ok(draft.preferredSlots.length >= 1);
 });
@@ -94,7 +102,15 @@ test("draft review and execution metadata stay synchronized with menu mappings",
   );
 
   assert.equal(findServiceMenuMapping("general_initial")?.automationPolicy, "rpa_supported");
+  assert.equal(findServiceMenuMapping("emergency_initial")?.automationPolicy, "manual_review_only");
   assert.equal(findServiceMenuMapping("implant_consult")?.automationPolicy, "manual_review_only");
+  assert.equal(
+    getAppointmentAutomationBlockReason({
+      triageLevel: reviewedDraft.triageLevel,
+      menuMapping: reviewedDraft.menuMapping,
+    }),
+    null
+  );
   assert.equal(reviewedDraft.reviewedBy, "reviewer-a");
   assert.equal(reviewedDraft.submissionState, "confirmed_pending_submission");
   assert.equal(availabilityDraft.availabilityCandidates[0]?.id, candidate.id);
@@ -162,4 +178,35 @@ test("test-only execution policy blocks live-style bookings and allows explicit 
     candidate: futureCandidate,
   });
   assert.equal(allowed, null);
+});
+
+test("non-routine triage stays manual-review only after review", () => {
+  const draft = confirmAppointmentDraft(
+    buildAppointmentDraft({
+      conversationId: "conv_test_004",
+      memo: normalizeReservationMemo({
+        patient_name: "急患 花子",
+        patient_name_yomi: "きゅうかん はなこ",
+        phone_number: "090-1234-5678",
+        is_new_patient: true,
+        symptom: "急患で強い痛みがあり夜眠れない",
+        urgency_level: "急患",
+      }),
+      transcript: [],
+      channel: "phone",
+      anchorAt: "2026-04-09T10:00:00.000Z",
+    }),
+    "reviewer-b"
+  );
+
+  assert.equal(draft.serviceLine, "emergency_initial");
+  assert.equal(draft.triageLevel, "same_day_phone");
+  assert.match(draft.manualReviewReason ?? "", /自動候補枠確認・自動投入の対象外/);
+  assert.match(
+    getAppointmentAutomationBlockReason({
+      triageLevel: draft.triageLevel,
+      menuMapping: draft.menuMapping,
+    }) ?? "",
+    /自動候補枠確認・自動投入の対象外/
+  );
 });

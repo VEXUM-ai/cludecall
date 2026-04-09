@@ -9,6 +9,7 @@ import {
   buildExecutionCandidatePreview,
   EXECUTION_STATE_LABELS,
   findBookingRule,
+  getAppointmentAutomationBlockReason,
   LINE_FORM_STATUS_LABELS,
   SERVICE_LINE_LABELS,
   SUBMISSION_STATE_LABELS,
@@ -241,6 +242,10 @@ function AppointmentDraftCard({
     draft.availabilityCandidates.find((candidate) => candidate.id === selectedCandidateId) ??
     draft.availabilityCandidates[0] ??
     null;
+  const automationBlockReason = getAppointmentAutomationBlockReason({
+    triageLevel: draft.triageLevel,
+    menuMapping: draft.menuMapping,
+  });
   const rows = [
     ["受付区分", SERVICE_LINE_LABELS[draft.serviceLine]],
     ["優先度", TRIAGE_LEVEL_LABELS[draft.triageLevel]],
@@ -331,6 +336,7 @@ function AppointmentDraftCard({
           disabled={
             !onCheckAvailability ||
             isCheckingAvailability ||
+            Boolean(automationBlockReason) ||
             draft.submissionState === "drafted" ||
             draft.submissionState === "submitted"
           }
@@ -344,6 +350,7 @@ function AppointmentDraftCard({
           disabled={
             !onExecute ||
             isExecuting ||
+            Boolean(automationBlockReason) ||
             !selectedCandidate ||
             draft.submissionState === "drafted" ||
             draft.submissionState === "submitted"
@@ -352,6 +359,7 @@ function AppointmentDraftCard({
           {isExecuting ? "投入中..." : "選択枠で投入"}
         </button>
       </div>
+      {automationBlockReason ? <p className="warning-text">{automationBlockReason}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
       {draft.executionError ? <p className="warning-text">{draft.executionError}</p> : null}
       {draft.availabilityCandidates.length > 0 ? (
