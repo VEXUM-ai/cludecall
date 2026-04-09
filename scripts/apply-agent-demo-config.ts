@@ -35,26 +35,6 @@ const DENTAL_DEMO_MANAGED_PRONUNCIATION_DICTIONARY_NAME =
   "Dental Intake AI JA Pronunciation";
 const DENTAL_DEMO_MANAGED_PRONUNCIATION_DICTIONARY_DESCRIPTION =
   "Managed by scripts/apply-agent-demo-config.ts";
-/*
-const DENTAL_DEMO_MANAGED_PRONUNCIATION_RULES = [
-  {
-    string_to_replace: "えみは総合歯科 大阪梅田院",
-    alias: "えみはそうごうしか おおさかうめだいん",
-  },
-  {
-    string_to_replace: "えみは総合歯科",
-    alias: "えみはそうごうしか",
-  },
-  {
-    string_to_replace: "親知らず抜歯",
-    alias: "おやしらずばっし",
-  },
-  {
-    string_to_replace: "抜歯",
-    alias: "ばっし",
-  },
-] as const;
-*/
 const DENTAL_DEMO_MANAGED_PRONUNCIATION_RULES = [
   {
     string_to_replace:
