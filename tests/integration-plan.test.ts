@@ -16,6 +16,7 @@ import {
   findServiceMenuMapping,
   markAppointmentExecutionSubmitted,
 } from "@/lib/appointments";
+import { evaluateAppointmentExecutionGuard } from "@/lib/appointment-tool/provider";
 import { normalizeReservationMemo } from "@/lib/elevenlabs/memo";
 
 test("knowledge pack keeps approved patient facts separate from legacy override", () => {
@@ -104,4 +105,61 @@ test("draft review and execution metadata stay synchronized with menu mappings",
   assert.equal(submittedDraft.executionState, "submitted");
   assert.equal(submittedDraft.submissionState, "submitted");
   assert.equal(submittedDraft.appointmentToolPayload.execution.selectedCandidateId, candidate.id);
+});
+
+test("test-only execution policy blocks live-style bookings and allows explicit test bookings", () => {
+  process.env.APPOINTMENT_EXECUTION_POLICY = "test_only";
+  process.env.APPOINTMENT_TEST_PATIENT_PATTERNS = "予約,テスト";
+  process.env.APPOINTMENT_TEST_MIN_LEAD_DAYS = "30";
+
+  const draft = buildAppointmentDraft({
+    conversationId: "conv_test_003",
+    memo: normalizeReservationMemo({
+      patient_name: "山田 花子",
+      patient_name_yomi: "やまだ はなこ",
+      phone_number: "090-1234-5678",
+      is_new_patient: true,
+      visit_reason: "初診の相談",
+      preferred_date_1: "2099-06-20",
+      preferred_time_range_1: "午前",
+    }),
+    transcript: [],
+    channel: "web",
+    anchorAt: "2026-04-09T10:00:00.000Z",
+  });
+  const futureCandidate = createAvailabilityCandidate({
+    date: "2099-06-20",
+    tcStartTime: "10:00",
+    tcUnit: "カウンセリング",
+    treatmentUnit: "①治療",
+  });
+
+  const blockedByName = evaluateAppointmentExecutionGuard({
+    draft,
+    candidate: futureCandidate,
+  });
+  assert.match(blockedByName ?? "", /test_only/);
+
+  const blockedByDate = evaluateAppointmentExecutionGuard({
+    draft: {
+      ...draft,
+      patientName: "予約太郎",
+      patientNameYomi: "よやくたろう",
+    },
+    candidate: {
+      ...futureCandidate,
+      date: "2000-01-01",
+    },
+  });
+  assert.match(blockedByDate ?? "", /予約日は/);
+
+  const allowed = evaluateAppointmentExecutionGuard({
+    draft: {
+      ...draft,
+      patientName: "予約太郎",
+      patientNameYomi: "よやくたろう",
+    },
+    candidate: futureCandidate,
+  });
+  assert.equal(allowed, null);
 });

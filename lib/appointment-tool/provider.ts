@@ -47,6 +47,66 @@ function buildManualOnlyError(draft: AppointmentDraft) {
   );
 }
 
+function normalizeComparableText(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function getTodayIsoInTimeZone(timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date());
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${pick("year")}-${pick("month")}-${pick("day")}`;
+}
+
+function addDaysToIsoDate(isoDate: string, days: number) {
+  const [year, month, day] = isoDate.split("-").map((value) => Number.parseInt(value, 10));
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function evaluateAppointmentExecutionGuard(args: {
+  draft: AppointmentDraft;
+  candidate: AppointmentAvailabilityCandidate;
+}) {
+  const config = getServerConfig();
+  if (config.appointmentExecutionPolicy !== "test_only") {
+    return null;
+  }
+
+  const combinedPatientName = [args.draft.patientName, args.draft.patientNameYomi]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+  const patientMatchesPattern = config.appointmentTestPatientPatterns.some((pattern) =>
+    normalizeComparableText(combinedPatientName).includes(normalizeComparableText(pattern))
+  );
+  const minAllowedDate = addDaysToIsoDate(
+    getTodayIsoInTimeZone(config.demoTimezone),
+    config.appointmentTestMinLeadDays
+  );
+
+  const violations: string[] = [];
+  if (!patientMatchesPattern) {
+    violations.push(
+      `患者名にテスト用キーワード（${config.appointmentTestPatientPatterns.join(" / ")}）が含まれていません`
+    );
+  }
+  if (!args.candidate.date || args.candidate.date < minAllowedDate) {
+    violations.push(`予約日は ${minAllowedDate} 以降の候補だけ実行できます`);
+  }
+
+  if (violations.length === 0) {
+    return null;
+  }
+
+  return `APPOINTMENT_EXECUTION_POLICY=test_only のため実行を停止しました。${violations.join(" / ")}`;
+}
+
 export async function getAppointmentToolHealth(): Promise<AppointmentToolHealth> {
   const config = getServerConfig();
   if (!config.appointmentToolProvider) {
@@ -66,13 +126,16 @@ export async function getAppointmentToolHealth(): Promise<AppointmentToolHealth>
     status: credentialsReady ? "healthy" : "degraded",
     checkedAt: new Date().toISOString(),
     message: credentialsReady
-      ? "Apotool RPA adapter is configured. Browser session is started lazily."
+      ? `Apotool RPA adapter is configured. Execution policy: ${config.appointmentExecutionPolicy}. Browser session is started lazily.`
       : "Apotool credentials are missing. Review can continue, but execution will fall back to manual handling.",
     details: {
       credentialsReady,
       browserReady: sessionState.browserReady,
       contextReady: sessionState.contextReady,
       pageReady: sessionState.pageReady,
+      executionPolicy: config.appointmentExecutionPolicy,
+      testPatientPatterns: config.appointmentTestPatientPatterns.join(", "),
+      testMinLeadDays: String(config.appointmentTestMinLeadDays),
       loginUrl: config.apotoolLoginUrl,
       clinicName: config.apotoolClinicName,
     },
@@ -254,6 +317,31 @@ export async function submitBookingWithProvider(args: {
       orphanRisk: false,
       auditRef,
       message: error,
+    };
+  }
+
+  const executionGuardError = evaluateAppointmentExecutionGuard({
+    draft,
+    candidate: selectedCandidate,
+  });
+  if (executionGuardError) {
+    const auditRef = await writeAppointmentAudit({
+      action: "execute",
+      conversationId: draft.conversationId,
+      provider: draft.provider,
+      request: {
+        conversationId: draft.conversationId,
+        selectedCandidateId,
+        candidate: selectedCandidate,
+      },
+      error: executionGuardError,
+    });
+    return {
+      draft: markAppointmentExecutionFailed(draft, executionGuardError, auditRef, true),
+      success: false,
+      orphanRisk: false,
+      auditRef,
+      message: executionGuardError,
     };
   }
 
