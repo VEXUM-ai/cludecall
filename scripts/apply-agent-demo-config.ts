@@ -31,6 +31,50 @@ import { loadDotenvFile } from "./load-dotenv";
 type JsonObject = Record<string, unknown>;
 
 const DENTAL_DEMO_MANAGED_KB_DOCUMENTS = buildManagedKnowledgeBaseDocuments();
+const DENTAL_DEMO_MANAGED_PRONUNCIATION_DICTIONARY_NAME =
+  "Dental Intake AI JA Pronunciation";
+const DENTAL_DEMO_MANAGED_PRONUNCIATION_DICTIONARY_DESCRIPTION =
+  "Managed by scripts/apply-agent-demo-config.ts";
+/*
+const DENTAL_DEMO_MANAGED_PRONUNCIATION_RULES = [
+  {
+    string_to_replace: "えみは総合歯科 大阪梅田院",
+    alias: "えみはそうごうしか おおさかうめだいん",
+  },
+  {
+    string_to_replace: "えみは総合歯科",
+    alias: "えみはそうごうしか",
+  },
+  {
+    string_to_replace: "親知らず抜歯",
+    alias: "おやしらずばっし",
+  },
+  {
+    string_to_replace: "抜歯",
+    alias: "ばっし",
+  },
+] as const;
+*/
+const DENTAL_DEMO_MANAGED_PRONUNCIATION_RULES = [
+  {
+    string_to_replace:
+      "\u3048\u307f\u306f\u7dcf\u5408\u6b6f\u79d1 \u5927\u962a\u6885\u7530\u9662",
+    alias:
+      "\u3048\u307f\u306f\u305d\u3046\u3054\u3046\u3057\u304b \u304a\u304a\u3055\u304b\u3046\u3081\u3060\u3044\u3093",
+  },
+  {
+    string_to_replace: "\u3048\u307f\u306f\u7dcf\u5408\u6b6f\u79d1",
+    alias: "\u3048\u307f\u306f\u305d\u3046\u3054\u3046\u3057\u304b",
+  },
+  {
+    string_to_replace: "\u89aa\u77e5\u3089\u305a\u629c\u6b6f",
+    alias: "\u304a\u3084\u3057\u3089\u305a\u3070\u3063\u3057",
+  },
+  {
+    string_to_replace: "\u629c\u6b6f",
+    alias: "\u3070\u3063\u3057",
+  },
+] as const;
 type RequestJsonErrorDetail =
   | string
   | {
@@ -246,6 +290,33 @@ type KnowledgeBaseDocumentRecord = {
   type?: string;
 };
 
+type PronunciationRulePayload = {
+  string_to_replace: string;
+  type: "alias";
+  alias: string;
+};
+
+type PronunciationDictionaryMetadata = {
+  id: string;
+  name: string;
+  latest_version_id: string;
+  latest_version_rules_num: number | null;
+  description: string | null;
+};
+
+type PronunciationDictionaryLocator = {
+  pronunciation_dictionary_id: string;
+  version_id: string;
+};
+
+type ManagedPronunciationDictionary = {
+  dictionaryId: string;
+  dictionaryName: string;
+  versionId: string;
+  versionRulesNum: number | null;
+  created: boolean;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -271,6 +342,37 @@ function normalizeExistingKnowledgeBaseEntries(value: unknown): ExistingKnowledg
   });
 }
 
+function normalizeExistingPronunciationDictionaryLocators(
+  value: unknown
+): PronunciationDictionaryLocator[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    const pronunciationDictionaryId =
+      typeof entry.pronunciation_dictionary_id === "string"
+        ? entry.pronunciation_dictionary_id
+        : null;
+    const versionId = typeof entry.version_id === "string" ? entry.version_id : null;
+
+    if (!pronunciationDictionaryId || !versionId) {
+      return [];
+    }
+
+    return [
+      {
+        pronunciation_dictionary_id: pronunciationDictionaryId,
+        version_id: versionId,
+      },
+    ];
+  });
+}
+
 function mergeKnowledgeBaseEntries(
   currentEntries: ExistingKnowledgeBaseEntry[],
   managedEntries: ManagedKnowledgeBaseEntry[]
@@ -278,6 +380,25 @@ function mergeKnowledgeBaseEntries(
   const managedNames = new Set(DENTAL_DEMO_MANAGED_KB_DOCUMENTS.map((entry) => entry.name));
   const retainedEntries = currentEntries.filter((entry) => !managedNames.has(entry.name ?? ""));
   return [...retainedEntries, ...managedEntries];
+}
+
+function mergePronunciationDictionaryLocators(
+  currentLocators: PronunciationDictionaryLocator[],
+  managedLocator: PronunciationDictionaryLocator
+) {
+  const retainedLocators = currentLocators.filter(
+    (locator) =>
+      locator.pronunciation_dictionary_id !== managedLocator.pronunciation_dictionary_id
+  );
+  return [...retainedLocators, managedLocator];
+}
+
+function buildManagedPronunciationRulePayload(): PronunciationRulePayload[] {
+  return DENTAL_DEMO_MANAGED_PRONUNCIATION_RULES.map((rule) => ({
+    string_to_replace: rule.string_to_replace,
+    type: "alias",
+    alias: rule.alias,
+  }));
 }
 
 async function listKnowledgeBaseDocuments(apiKey: string, search: string) {
@@ -396,6 +517,161 @@ async function ensureManagedKnowledgeBaseDocuments(apiKey: string): Promise<Mana
   return resolvedDocuments;
 }
 
+async function listPronunciationDictionaries(apiKey: string): Promise<PronunciationDictionaryMetadata[]> {
+  const dictionaries: PronunciationDictionaryMetadata[] = [];
+  let nextCursor: string | null = null;
+
+  do {
+    const url = new URL("https://api.elevenlabs.io/v1/pronunciation-dictionaries");
+    url.searchParams.set("page_size", "100");
+    if (nextCursor) {
+      url.searchParams.set("cursor", nextCursor);
+    }
+
+    const payload = await requestJson(url, {
+      method: "GET",
+      apiKey,
+    });
+
+    const pageItems = Array.isArray(payload.pronunciation_dictionaries)
+      ? payload.pronunciation_dictionaries
+      : [];
+
+    dictionaries.push(
+      ...pageItems.flatMap((entry): PronunciationDictionaryMetadata[] => {
+        if (!isRecord(entry)) {
+          return [];
+        }
+
+        const id = typeof entry.id === "string" ? entry.id : null;
+        const name = typeof entry.name === "string" ? entry.name : null;
+        const latestVersionId =
+          typeof entry.latest_version_id === "string" ? entry.latest_version_id : null;
+
+        if (!id || !name || !latestVersionId) {
+          return [];
+        }
+
+        return [
+          {
+            id,
+            name,
+            latest_version_id: latestVersionId,
+            latest_version_rules_num:
+              typeof entry.latest_version_rules_num === "number"
+                ? entry.latest_version_rules_num
+                : null,
+            description: typeof entry.description === "string" ? entry.description : null,
+          },
+        ];
+      })
+    );
+
+    nextCursor =
+      payload.has_more === true && typeof payload.next_cursor === "string"
+        ? payload.next_cursor
+        : null;
+  } while (nextCursor);
+
+  return dictionaries;
+}
+
+async function createManagedPronunciationDictionary(apiKey: string) {
+  const url = new URL("https://api.elevenlabs.io/v1/pronunciation-dictionaries/add-from-rules");
+  const payload = await requestJson(url, {
+    method: "POST",
+    apiKey,
+    body: {
+      name: DENTAL_DEMO_MANAGED_PRONUNCIATION_DICTIONARY_NAME,
+      description: DENTAL_DEMO_MANAGED_PRONUNCIATION_DICTIONARY_DESCRIPTION,
+      rules: buildManagedPronunciationRulePayload(),
+    } satisfies JsonObject,
+  });
+
+  const dictionaryId = typeof payload.id === "string" ? payload.id : null;
+  const versionId = typeof payload.version_id === "string" ? payload.version_id : null;
+  const dictionaryName =
+    typeof payload.name === "string"
+      ? payload.name
+      : DENTAL_DEMO_MANAGED_PRONUNCIATION_DICTIONARY_NAME;
+
+  if (!dictionaryId || !versionId) {
+    throw new Error("Failed to create managed pronunciation dictionary.");
+  }
+
+  return {
+    dictionaryId,
+    dictionaryName,
+    versionId,
+    versionRulesNum:
+      typeof payload.version_rules_num === "number" ? payload.version_rules_num : null,
+    created: true,
+  } satisfies ManagedPronunciationDictionary;
+}
+
+async function setManagedPronunciationDictionaryRules(apiKey: string, dictionaryId: string) {
+  const url = new URL(
+    `https://api.elevenlabs.io/v1/pronunciation-dictionaries/${dictionaryId}/set-rules`
+  );
+  const payload = await requestJson(url, {
+    method: "POST",
+    apiKey,
+    body: {
+      rules: buildManagedPronunciationRulePayload(),
+    } satisfies JsonObject,
+  });
+
+  const returnedDictionaryId = typeof payload.id === "string" ? payload.id : null;
+  const versionId = typeof payload.version_id === "string" ? payload.version_id : null;
+
+  if (!returnedDictionaryId || !versionId) {
+    throw new Error("Failed to update managed pronunciation dictionary rules.");
+  }
+
+  return {
+    dictionaryId: returnedDictionaryId,
+    versionId,
+    versionRulesNum:
+      typeof payload.version_rules_num === "number" ? payload.version_rules_num : null,
+  };
+}
+
+async function ensureManagedPronunciationDictionary(
+  apiKey: string
+): Promise<ManagedPronunciationDictionary> {
+  const existingDictionaries = (await listPronunciationDictionaries(apiKey)).filter(
+    (entry) => entry.name === DENTAL_DEMO_MANAGED_PRONUNCIATION_DICTIONARY_NAME
+  );
+
+  const preferredExistingDictionary =
+    existingDictionaries.find(
+      (entry) => entry.description === DENTAL_DEMO_MANAGED_PRONUNCIATION_DICTIONARY_DESCRIPTION
+    ) ?? existingDictionaries[0];
+
+  if (!preferredExistingDictionary) {
+    return createManagedPronunciationDictionary(apiKey);
+  }
+
+  if (existingDictionaries.length > 1) {
+    console.warn(
+      `Multiple pronunciation dictionaries matched ${DENTAL_DEMO_MANAGED_PRONUNCIATION_DICTIONARY_NAME}; updating ${preferredExistingDictionary.id}.`
+    );
+  }
+
+  const updatedDictionary = await setManagedPronunciationDictionaryRules(
+    apiKey,
+    preferredExistingDictionary.id
+  );
+
+  return {
+    dictionaryId: updatedDictionary.dictionaryId,
+    dictionaryName: preferredExistingDictionary.name,
+    versionId: updatedDictionary.versionId,
+    versionRulesNum: updatedDictionary.versionRulesNum,
+    created: false,
+  };
+}
+
 function isMonitoringEnterpriseOnlyError(error: unknown) {
   if (!(error instanceof RequestJsonError)) {
     return false;
@@ -420,6 +696,7 @@ function buildPatchBody(args: {
   currentGuardrails: JsonObject;
   currentFocusGuardrail: JsonObject;
   managedKnowledgeBaseEntries: ManagedKnowledgeBaseEntry[];
+  managedPronunciationDictionary: ManagedPronunciationDictionary;
   resolvedTtsModelId: string;
   resolvedVoiceId: string;
   resolvedExpressiveMode: boolean;
@@ -441,6 +718,15 @@ function buildPatchBody(args: {
   const mergedKnowledgeBaseEntries = mergeKnowledgeBaseEntries(
     normalizeExistingKnowledgeBaseEntries(args.currentPromptConfig.knowledge_base),
     args.managedKnowledgeBaseEntries
+  );
+  const mergedPronunciationDictionaryLocators = mergePronunciationDictionaryLocators(
+    normalizeExistingPronunciationDictionaryLocators(
+      args.currentTtsConfig.pronunciation_dictionary_locators
+    ),
+    {
+      pronunciation_dictionary_id: args.managedPronunciationDictionary.dictionaryId,
+      version_id: args.managedPronunciationDictionary.versionId,
+    }
   );
   const ragEnabled = false;
 
@@ -475,6 +761,7 @@ function buildPatchBody(args: {
         expressive_mode: args.resolvedExpressiveMode,
         suggested_audio_tags: args.resolvedSuggestedAudioTags,
         speed: args.resolvedTtsSpeed,
+        pronunciation_dictionary_locators: mergedPronunciationDictionaryLocators,
       },
       agent: {
         ...args.currentAgentConfig,
@@ -546,6 +833,7 @@ async function main() {
   const currentGuardrails = ((currentPlatformSettings.guardrails ?? {}) as JsonObject) satisfies JsonObject;
   const currentFocusGuardrail = ((currentGuardrails.focus ?? {}) as JsonObject) satisfies JsonObject;
   const managedKnowledgeBaseEntries = await ensureManagedKnowledgeBaseDocuments(apiKey);
+  const managedPronunciationDictionary = await ensureManagedPronunciationDictionary(apiKey);
   const resolvedTtsModelId =
     readOptionalEnv("ELEVENLABS_TTS_MODEL_ID") ??
     (typeof currentTtsConfig.model_id === "string" && currentTtsConfig.model_id.length > 0
@@ -638,6 +926,7 @@ async function main() {
         resolvedDisableFirstMessageInterruptions,
         includeMonitoring: true,
         managedKnowledgeBaseEntries,
+        managedPronunciationDictionary,
       }),
     });
   } catch (error) {
@@ -676,6 +965,7 @@ async function main() {
         resolvedDisableFirstMessageInterruptions,
         includeMonitoring: false,
         managedKnowledgeBaseEntries,
+        managedPronunciationDictionary,
       }),
     });
   }
@@ -722,6 +1012,13 @@ async function main() {
   console.log(
     `knowledgeBaseDocumentNames: ${managedKnowledgeBaseEntries.map((item) => item.name).join(",")}`
   );
+  console.log(`pronunciationDictionaryName: ${managedPronunciationDictionary.dictionaryName}`);
+  console.log(`pronunciationDictionaryId: ${managedPronunciationDictionary.dictionaryId}`);
+  console.log(`pronunciationDictionaryVersionId: ${managedPronunciationDictionary.versionId}`);
+  console.log(
+    `pronunciationDictionaryRules: ${String(managedPronunciationDictionary.versionRulesNum ?? DENTAL_DEMO_MANAGED_PRONUNCIATION_RULES.length)}`
+  );
+  console.log(`pronunciationDictionaryCreated: ${String(managedPronunciationDictionary.created)}`);
   console.log(`dataCollectionItems: ${Object.keys(updatedDataCollection).length}`);
   console.log(`evaluationCriteria: ${updatedCriteria.length}`);
 }
