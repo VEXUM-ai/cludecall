@@ -264,6 +264,61 @@ export type AppointmentAuditRef = {
   updatedAt: string | null;
 };
 
+export type SlackNotificationKind =
+  | "appointment_success"
+  | "appointment_failure"
+  | "urgent_transfer";
+
+export type SlackNotificationStatus = "sent" | "skipped" | "failed";
+
+export type SlackNotificationField = {
+  label: string;
+  value: string | null;
+};
+
+export type SlackNotificationBase = {
+  kind: SlackNotificationKind;
+  conversationId: string;
+  patientName: string | null;
+  phoneNumber: string | null;
+  serviceLine: ServiceLine;
+  triageLevel: TriageLevel;
+  channelLabel: string | null;
+  auditId: string | null;
+  occurredAt: string;
+  fields: SlackNotificationField[];
+};
+
+export type SlackAppointmentSuccessNotification = SlackNotificationBase & {
+  kind: "appointment_success";
+  candidateLabel: string | null;
+  bookingStatus: string;
+};
+
+export type SlackAppointmentFailureNotification = SlackNotificationBase & {
+  kind: "appointment_failure";
+  candidateLabel: string | null;
+  bookingStatus: string;
+  error: string;
+};
+
+export type SlackUrgentTransferNotification = SlackNotificationBase & {
+  kind: "urgent_transfer";
+  transferTargetLabel: string;
+  transferTargetPhone: string;
+  handoffSummary: string;
+};
+
+export type SlackNotificationPayload =
+  | SlackAppointmentSuccessNotification
+  | SlackAppointmentFailureNotification
+  | SlackUrgentTransferNotification;
+
+export type SlackNotificationDelivery = {
+  status: SlackNotificationStatus;
+  reason: string | null;
+};
+
 export type AppointmentToolPayload = {
   clinic: {
     name: string;
