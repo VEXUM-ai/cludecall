@@ -9,6 +9,8 @@ type ServerConfig = {
   agentId: string;
   agentPhoneNumberId: string | null;
   agentPhoneNumber: string | null;
+  slackBotToken: string | null;
+  slackChannelId: string | null;
   slackWebhookUrl: string | null;
   slackChannelLabel: string | null;
   twilioAccountSid: string | null;
@@ -133,6 +135,8 @@ export function getServerConfig(): ServerConfig {
     agentId: requireEnv("ELEVENLABS_AGENT_ID"),
     agentPhoneNumberId: readEnv("ELEVENLABS_AGENT_PHONE_NUMBER_ID"),
     agentPhoneNumber: readEnv("ELEVENLABS_AGENT_PHONE_NUMBER"),
+    slackBotToken: readEnv("SLACK_BOT_TOKEN"),
+    slackChannelId: readEnv("SLACK_CHANNEL_ID"),
     slackWebhookUrl: readEnv("SLACK_WEBHOOK_URL"),
     slackChannelLabel: readEnv("SLACK_CHANNEL_LABEL"),
     twilioAccountSid: readEnv("TWILIO_ACCOUNT_SID"),

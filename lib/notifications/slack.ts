@@ -13,6 +13,8 @@ import type {
   AppointmentNotificationResult,
 } from "@/lib/types";
 
+type JsonRecord = Record<string, unknown>;
+
 function buildNotificationTitle(kind: AppointmentNotificationEventKind) {
   switch (kind) {
     case "booking_submitted":
@@ -46,14 +48,19 @@ function buildSlackText(event: AppointmentNotificationEvent) {
   return lines.join("\n");
 }
 
-function postJson(url: URL, body: Record<string, unknown>) {
-  return new Promise<void>((resolve, reject) => {
+function postJson(args: {
+  url: URL;
+  body: JsonRecord;
+  headers?: Record<string, string>;
+}) {
+  return new Promise<string>((resolve, reject) => {
     const request = httpsRequest(
-      url,
+      args.url,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(args.headers ?? {}),
         },
       },
       (response) => {
@@ -72,7 +79,7 @@ function postJson(url: URL, body: Record<string, unknown>) {
             return;
           }
 
-          resolve();
+          resolve(rawBody);
         });
       }
     );
@@ -80,9 +87,48 @@ function postJson(url: URL, body: Record<string, unknown>) {
     request.on("error", (error) => {
       reject(error);
     });
-    request.write(JSON.stringify(body));
+    request.write(JSON.stringify(args.body));
     request.end();
   });
+}
+
+async function postWithIncomingWebhook(url: string, body: JsonRecord) {
+  await postJson({
+    url: new URL(url),
+    body,
+  });
+}
+
+async function postWithBotToken(args: {
+  botToken: string;
+  channelId: string;
+  text: string;
+}) {
+  const rawBody = await postJson({
+    url: new URL("https://slack.com/api/chat.postMessage"),
+    headers: {
+      Authorization: `Bearer ${args.botToken}`,
+    },
+    body: {
+      channel: args.channelId,
+      text: args.text,
+      unfurl_links: false,
+      unfurl_media: false,
+    },
+  });
+
+  let payload: JsonRecord | null = null;
+  try {
+    payload = JSON.parse(rawBody) as JsonRecord;
+  } catch {
+    throw new Error("Slack API returned a non-JSON response.");
+  }
+
+  if (payload?.ok !== true) {
+    const error =
+      typeof payload?.error === "string" ? payload.error : "chat.postMessage failed.";
+    throw new Error(error);
+  }
 }
 
 export function createAppointmentNotificationEventFromDraft(args: {
@@ -115,19 +161,47 @@ export async function sendSlackAppointmentNotification(
   event: AppointmentNotificationEvent
 ): Promise<AppointmentNotificationResult> {
   const config = getServerConfig();
+  const text = buildSlackText(event);
+
+  if (config.slackBotToken && config.slackChannelId) {
+    try {
+      await postWithBotToken({
+        botToken: config.slackBotToken,
+        channelId: config.slackChannelId,
+        text,
+      });
+      return {
+        channel: "slack",
+        state: "sent",
+        sentAt: new Date().toISOString(),
+        error: null,
+        skippedReason: null,
+      };
+    } catch (error) {
+      return {
+        channel: "slack",
+        state: "failed",
+        sentAt: null,
+        error: error instanceof Error ? error.message : "Slack notification failed.",
+        skippedReason: null,
+      };
+    }
+  }
+
   if (!config.slackWebhookUrl) {
     return {
       channel: "slack",
       state: "skipped",
       sentAt: null,
       error: null,
-      skippedReason: "SLACK_WEBHOOK_URL is not configured.",
+      skippedReason:
+        "Slack delivery is not configured. Set SLACK_BOT_TOKEN and SLACK_CHANNEL_ID, or configure SLACK_WEBHOOK_URL.",
     };
   }
 
   try {
-    await postJson(new URL(config.slackWebhookUrl), {
-      text: buildSlackText(event),
+    await postWithIncomingWebhook(config.slackWebhookUrl, {
+      text,
       unfurl_links: false,
       unfurl_media: false,
     });

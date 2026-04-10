@@ -64,15 +64,15 @@
 
 ## 実装済みだが外部設定待ちのもの
 - Slack 通知
-  - コードは実装済み。`SLACK_WEBHOOK_URL` が入れば `予約成功 / 失敗 / 要確認 / 急患 handoff` を通知できる
+  - コードは実装済み。`SLACK_BOT_TOKEN` と `SLACK_CHANNEL_ID` が入れば `予約成功 / 失敗 / 要確認 / 急患 handoff` を通知できる
 - 急患 live handoff
   - Agent 設定と apply script は対応済み。`URGENT_TRANSFER_PHONE_NUMBER` が入れば ElevenLabs に転送 tool を付けられる
 - post-call webhook
   - `/api/eleven/post-call-webhook` は実装済み。ElevenLabs 側の webhook 設定が必要
 
 ## 加藤さん側でお願いしたい設定
-- Slack workspace 側に incoming webhook を用意してもらう
-  - 通知先チャンネルを1つ決めて、`SLACK_WEBHOOK_URL` とチャンネル名を共有してもらう
+- Slack workspace 側で bot token を発行してもらう
+  - 通知先チャンネルを1つ決めて、`SLACK_BOT_TOKEN` と channel id とチャンネル名を共有してもらう
 - 急患転送先の電話番号を1つ決めてもらう
   - 受付または院内の固定番号を `URGENT_TRANSFER_PHONE_NUMBER` に設定する
 - ElevenLabs の post-call webhook をこのアプリへ向ける
@@ -94,3 +94,4 @@
 - 急患や人対応希望は、折り返しではなくその場で人へ電話をつなぐ前提で進めている。
 - review UI は残しているが、主経路ではなく再実行と手動補正のための補助機能になっている。
 - 本番稼働には Slack webhook、急患転送先番号、ElevenLabs webhook 設定が必要。
+- 本番稼働には Slack bot token と channel id、急患転送先番号、ElevenLabs webhook 設定が必要。

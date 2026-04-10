@@ -9,7 +9,7 @@ WebRTC のブラウザ会話と、実電話会話の回収・Markdown 証跡化�
 - ライブ transcript 表示
 - 終話後に `analysis/run` で仮受付メモを抽出
 - 通常受付は終話後に `direct_auto` で候補枠確認と Apotool 投入を自動実行
-- Apotool 投入結果、要確認、急患 handoff を Slack webhook に通知
+- Apotool 投入結果、要確認、急患 handoff を Slack に通知
 - 急患や人対応希望は ElevenLabs の live transfer tool で電話をそのまま人へ転送
 - 最新の電話会話を import
 - Web と電話のレイテンシを計測して `docs/latency-report.md` に集計
@@ -51,7 +51,7 @@ Verified Caller ID に自分の携帯番号を使っている場合、自分の�
 - `POST /api/eleven/post-call-webhook`
   ElevenLabs の post-call webhook を受けて、再分析と自動予約フローを起動する
 - `POST /api/notifications/slack/test`
-  Slack webhook の疎通確認をする
+  Slack 通知の疎通確認をする
 - `GET /api/system-readiness`
   Apotool、Slack、urgent transfer の設定状態を返す
 - ホーム画面
@@ -67,7 +67,7 @@ Verified Caller ID に自分の携帯番号を使っている場合、自分の�
 - Apotool:
   `APOTOOL_EMAIL`, `APOTOOL_PASSWORD`, `APOTOOL_LOGIN_URL`, `APOTOOL_CLINIC_NAME`
 - Slack 通知:
-  `SLACK_WEBHOOK_URL`, `SLACK_CHANNEL_LABEL`
+  `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`, `SLACK_CHANNEL_LABEL`
 - 急患 live transfer:
   `URGENT_TRANSFER_PHONE_NUMBER`, `URGENT_TRANSFER_MODE`
 
@@ -75,14 +75,14 @@ Verified Caller ID に自分の携帯番号を使っている場合、自分の�
 
 ## 外部設定で必要なもの
 - ElevenLabs 側で post-call webhook をこのアプリの `/api/eleven/post-call-webhook` に向ける
-- 通知先 Slack workspace に incoming webhook を入れて `SLACK_WEBHOOK_URL` を発行する
+- 通知先 Slack workspace で bot token を発行し、`SLACK_BOT_TOKEN` と `SLACK_CHANNEL_ID` を設定する
 - 急患転送先の電話番号を `URGENT_TRANSFER_PHONE_NUMBER` に設定する
 - 本番で live transfer を安定運用する場合は、Verified Caller ID 前提のデモ番号ではなく、inbound 対応の Twilio 番号を ElevenLabs agent に割り当てる
 
 ## いまの制約
 - `general_initial` の通常受付を自動投入の対象にしている
 - 急患は自動予約せず、その場で人に電話をつなぐ前提
-- Slack webhook と転送先番号が未設定だと、その部分は `skipped` になる
+- Slack token/channel と転送先番号が未設定だと、その部分は `skipped` になる
 - 電話番号認識精度の改善はこの段階では未対応
 
 ## よく使うコマンド

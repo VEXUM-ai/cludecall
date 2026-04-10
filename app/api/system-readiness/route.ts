@@ -12,7 +12,16 @@ export async function GET() {
   return NextResponse.json({
     appointmentTool,
     slack: {
-      configured: Boolean(config.slackWebhookUrl),
+      configured: Boolean(
+        (config.slackBotToken && config.slackChannelId) || config.slackWebhookUrl
+      ),
+      mode:
+        config.slackBotToken && config.slackChannelId
+          ? "bot_token"
+          : config.slackWebhookUrl
+            ? "incoming_webhook"
+            : "none",
+      channelId: config.slackChannelId,
       channelLabel: config.slackChannelLabel,
     },
     urgentTransfer: {

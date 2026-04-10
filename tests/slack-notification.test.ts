@@ -61,7 +61,11 @@ test("creates a booking success notification event from a draft", () => {
 });
 
 test("skips gracefully when slack webhook url is missing", async () => {
+  const originalBotToken = process.env.SLACK_BOT_TOKEN;
+  const originalChannelId = process.env.SLACK_CHANNEL_ID;
   const originalWebhookUrl = process.env.SLACK_WEBHOOK_URL;
+  delete process.env.SLACK_BOT_TOKEN;
+  delete process.env.SLACK_CHANNEL_ID;
   delete process.env.SLACK_WEBHOOK_URL;
 
   const result = await sendSlackAppointmentNotification(
@@ -72,6 +76,18 @@ test("skips gracefully when slack webhook url is missing", async () => {
     })
   );
 
+  if (originalBotToken === undefined) {
+    delete process.env.SLACK_BOT_TOKEN;
+  } else {
+    process.env.SLACK_BOT_TOKEN = originalBotToken;
+  }
+
+  if (originalChannelId === undefined) {
+    delete process.env.SLACK_CHANNEL_ID;
+  } else {
+    process.env.SLACK_CHANNEL_ID = originalChannelId;
+  }
+
   if (originalWebhookUrl === undefined) {
     delete process.env.SLACK_WEBHOOK_URL;
   } else {
@@ -79,5 +95,5 @@ test("skips gracefully when slack webhook url is missing", async () => {
   }
 
   assert.equal(result.state, "skipped");
-  assert.match(result.skippedReason ?? "", /SLACK_WEBHOOK_URL/);
+  assert.match(result.skippedReason ?? "", /SLACK_BOT_TOKEN|SLACK_WEBHOOK_URL/);
 });
