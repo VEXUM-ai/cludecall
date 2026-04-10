@@ -117,6 +117,7 @@ Verified Caller ID に自分の携帯番号を使っている場合、自分の�
 - 全体計画は `docs/demo-plan.md`
 - ハイブリッド運用の方向性は `docs/AI一次受付ハイブリッド設計.md`
 - 自動予約と急患 live transfer の直近計画は `docs/client/auto-booking-live-handoff-plan-2026-04-10.md`
+- Slack デモ bot の作成手順は `docs/client/slack-demo-bot-setup.md`
 - Web 音声比較ラボの研究・実装・評価は `docs/voice-benchmark/latest-research-2026-04.md`、`docs/voice-benchmark/implementation-plan.md`、`docs/voice-benchmark/evaluation-rubric.md`
 - 実装ログは `docs/implementation-notes.md`
 - agent 設定は `docs/agent/README.md`

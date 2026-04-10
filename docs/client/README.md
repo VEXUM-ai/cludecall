@@ -25,6 +25,8 @@
   - `通常受付は終話後に自動予約、急患はその場で人へ転送、結果は Slack 通知` へ切り替えた直近計画。
 - [emiha-followup-plan-2026-04-09.md](/C:/Dev/Work/デンタル 一次受付AI/docs/client/emiha-followup-plan-2026-04-09.md)
   - 通知、電話番号精度、急患運用の論点整理。現在はこのうち急患運用を live handoff 前提で更新済み。
+- [slack-demo-bot-setup.md](/C:/Dev/Work/デンタル 一次受付AI/docs/client/slack-demo-bot-setup.md)
+  - VEXUM workspace 内でデモ用の Slack bot を作り、`bottest` に通知を出すための manifest と導入手順。
 - [../voice-benchmark/latest-research-2026-04.md](/C:/Dev/Work/デンタル 一次受付AI/docs/voice-benchmark/latest-research-2026-04.md)
   - Web 音声比較ラボの最新リサーチ。Gemini 3.1 Flash Live、Gemini TTS、ElevenAgents v3_conversational、Eleven v3 の比較前提を整理。
 - [../voice-benchmark/implementation-plan.md](/C:/Dev/Work/デンタル 一次受付AI/docs/voice-benchmark/implementation-plan.md)
