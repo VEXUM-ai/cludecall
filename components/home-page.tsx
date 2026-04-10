@@ -7,10 +7,13 @@ import { useConversationController } from "@/components/conversation-provider";
 import { EMIHA_CLINIC_PROFILE } from "@/lib/clinic-config/emiha";
 import {
   buildExecutionCandidatePreview,
+  CONVERSATION_OUTCOME_LABELS,
   EXECUTION_STATE_LABELS,
   findBookingRule,
   getAppointmentAutomationBlockReason,
+  HANDOFF_STATE_LABELS,
   LINE_FORM_STATUS_LABELS,
+  NOTIFICATION_STATE_LABELS,
   SERVICE_LINE_LABELS,
   SUBMISSION_STATE_LABELS,
   TRIAGE_LEVEL_LABELS,
@@ -255,17 +258,26 @@ function AppointmentDraftCard({
     ["提出モード", draft.submissionMode],
     ["提出状態", SUBMISSION_STATE_LABELS[draft.submissionState]],
     ["実行状態", EXECUTION_STATE_LABELS[draft.executionState]],
+    ["処理結果", CONVERSATION_OUTCOME_LABELS[draft.conversationOutcome]],
+    ["通知状態", NOTIFICATION_STATE_LABELS[draft.notificationState]],
+    ["引き継ぎ", HANDOFF_STATE_LABELS[draft.handoffState]],
     ["reviewer", draft.reviewedBy ?? "未設定"],
     ["reviewedAt", formatOptional(draft.reviewedAt)],
+    ["通知日時", formatDateTime(draft.notifiedAt)],
     ["人確認理由", draft.manualReviewReason ?? "なし"],
     ["引き継ぎ要約", draft.handoffSummary],
   ] as const;
+
+  const helperText =
+    draft.submissionMode === "direct_auto"
+      ? "通常受付は通話後に自動で候補確認・投入・Slack通知まで進みます。以下の操作は再実行や手動補正用です。"
+      : "review 承認後に候補枠を取得し、選択した枠を Apotool へ投入します。";
 
   return (
     <section className="card">
       <div className="section-heading">
         <h3>{title}</h3>
-        <p>review 承認後に候補枠を取得し、選択した枠を Apotool へ投入します。</p>
+        <p>{helperText}</p>
       </div>
       <dl className="memo-grid">
         {rows.map(([label, value]) => (
@@ -362,6 +374,9 @@ function AppointmentDraftCard({
       {automationBlockReason ? <p className="warning-text">{automationBlockReason}</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
       {draft.executionError ? <p className="warning-text">{draft.executionError}</p> : null}
+      {draft.notificationError ? (
+        <p className="warning-text">通知: {draft.notificationError}</p>
+      ) : null}
       {draft.availabilityCandidates.length > 0 ? (
         <div className="stack-tight appointment-section">
           <strong>候補枠</strong>
@@ -1523,7 +1538,7 @@ export function HomePage({
             <div className="section-heading">
               <h2>即日デモ手順</h2>
               <p>
-                Twilio outbound と仮受付ドラフト確認までを前提にしたデモ手順です。
+                Twilio outbound 後に、自動予約または急患引き継ぎまで進めるデモ手順です。
               </p>
             </div>
             <ol className="ordered-list">
@@ -1533,8 +1548,7 @@ export function HomePage({
               <li>その後に電話で予約会話を行う。</li>
               <li>通話後に `最新の電話会話を取り込む` を実行する。</li>
               <li>
-                {`review を承認`} {"->"} {`候補枠を確認`} {"->"} {`選択枠で投入`} の順で
-                staff review を進める。
+                通常受付は自動で候補確認・投入・Slack 通知まで進みます。画面の操作は再実行や手動補正用です。
               </li>
               <li>`npm run demo:import-last-call` で Markdown 記録も保存する。</li>
             </ol>

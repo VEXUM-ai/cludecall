@@ -16,6 +16,7 @@ import {
   findServiceMenuMapping,
   getAppointmentAutomationBlockReason,
   markAppointmentExecutionSubmitted,
+  selectBestAvailabilityCandidate,
 } from "@/lib/appointments";
 import { evaluateAppointmentExecutionGuard } from "@/lib/appointment-tool/provider";
 import { normalizeReservationMemo } from "@/lib/elevenlabs/memo";
@@ -64,10 +65,11 @@ test("legacy Retell-style fields normalize into the unified reservation memo and
       triageLevel: draft.triageLevel,
       menuMapping: draft.menuMapping,
     }),
-    "急患や当日優先の問い合わせは v1 の自動候補枠確認・自動投入の対象外です。スタッフ折り返しで対応します。"
+    "急患や当日優先の問い合わせは Apotool 自動投入の対象外です。通話中にスタッフへ電話転送する前提です。"
   );
   assert.equal(draft.knowledgeVersion, EMIHA_KNOWLEDGE_PACK.version);
   assert.ok(draft.preferredSlots.length >= 1);
+  assert.equal(draft.handoffState, "requires_live_handoff");
 });
 
 test("draft review and execution metadata stay synchronized with menu mappings", () => {
@@ -201,12 +203,61 @@ test("non-routine triage stays manual-review only after review", () => {
 
   assert.equal(draft.serviceLine, "emergency_initial");
   assert.equal(draft.triageLevel, "same_day_phone");
-  assert.match(draft.manualReviewReason ?? "", /自動候補枠確認・自動投入の対象外/);
+  assert.match(draft.manualReviewReason ?? "", /自動投入の対象外/);
   assert.match(
     getAppointmentAutomationBlockReason({
       triageLevel: draft.triageLevel,
       menuMapping: draft.menuMapping,
     }) ?? "",
-    /自動候補枠確認・自動投入の対象外/
+    /自動投入の対象外/
   );
+});
+
+test("candidate selection prefers the earliest slot on the highest-priority preferred date", () => {
+  const draft = buildAppointmentDraft({
+    conversationId: "conv_test_005",
+    memo: normalizeReservationMemo({
+      patient_name: "山田 花子",
+      patient_name_yomi: "やまだ はなこ",
+      phone_number: "090-1234-5678",
+      is_new_patient: true,
+      visit_reason: "初診の相談",
+      preferred_date_1: "2026-04-18",
+      preferred_time_range_1: "午前",
+      preferred_date_2: "2026-04-19",
+      preferred_time_range_2: "夕方",
+    }),
+    transcript: [],
+    channel: "phone",
+    anchorAt: "2026-04-09T10:00:00.000Z",
+  });
+
+  const candidates = [
+    createAvailabilityCandidate({
+      date: "2026-04-19",
+      tcStartTime: "17:00",
+      tcUnit: "カウンセリング",
+      treatmentUnit: "①治療",
+    }),
+    createAvailabilityCandidate({
+      date: "2026-04-18",
+      tcStartTime: "10:00",
+      tcUnit: "カウンセリング",
+      treatmentUnit: "①治療",
+    }),
+    createAvailabilityCandidate({
+      date: "2026-04-18",
+      tcStartTime: "09:00",
+      tcUnit: "カウンセリング",
+      treatmentUnit: "①治療",
+    }),
+  ];
+
+  const selected = selectBestAvailabilityCandidate({
+    preferredSlots: draft.preferredSlots,
+    availabilityCandidates: candidates,
+  });
+
+  assert.equal(selected?.date, "2026-04-18");
+  assert.equal(selected?.tcStartTime, "09:00");
 });

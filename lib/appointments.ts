@@ -6,6 +6,10 @@ import type {
   AppointmentAvailabilityCandidate,
   AppointmentDraft,
   AppointmentExecutionState,
+  ConversationOutcome,
+  HandoffState,
+  NotificationChannel,
+  NotificationState,
   AppointmentSubmissionMode,
   AppointmentSubmissionState,
   AppointmentToolPayload,
@@ -102,13 +106,34 @@ export const EXECUTION_STATE_LABELS: Record<AppointmentExecutionState, string> =
   failed: "実行失敗",
 };
 
+export const CONVERSATION_OUTCOME_LABELS: Record<ConversationOutcome, string> = {
+  pending: "処理待ち",
+  auto_booked: "自動予約済み",
+  requires_manual_followup: "要確認",
+  live_handoff: "人対応へ引き継ぎ",
+  failed: "処理失敗",
+};
+
+export const HANDOFF_STATE_LABELS: Record<HandoffState, string> = {
+  not_applicable: "対象外",
+  requires_live_handoff: "live転送対象",
+  handoff_unknown: "転送結果不明",
+};
+
+export const NOTIFICATION_STATE_LABELS: Record<NotificationState, string> = {
+  not_sent: "未通知",
+  sent: "通知済み",
+  skipped: "通知スキップ",
+  failed: "通知失敗",
+};
+
 const NON_ROUTINE_AUTOMATION_MESSAGES: Record<Exclude<TriageLevel, "routine">, string> = {
   same_day_phone:
-    "急患や当日優先の問い合わせは v1 の自動候補枠確認・自動投入の対象外です。スタッフ折り返しで対応します。",
+    "急患や当日優先の問い合わせは Apotool 自動投入の対象外です。通話中にスタッフへ電話転送する前提です。",
   doctor_required:
-    "ドクター確認が必要な受付は v1 の自動候補枠確認・自動投入の対象外です。院内確認後の折り返し対応に寄せます。",
+    "ドクター確認が必要な受付は自動投入の対象外です。院内確認のうえ人手対応に切り替えます。",
   manual_review:
-    "この受付内容は v1 の自動候補枠確認・自動投入の対象外です。スタッフ確認後に折り返します。",
+    "この受付内容は自動投入の対象外です。スタッフ確認のうえ人手対応に切り替えます。",
 };
 
 function normalizeComparableText(value: string | null | undefined) {
@@ -161,6 +186,10 @@ export function getAppointmentAutomationBlockReason(args: {
   }
 
   return null;
+}
+
+function defaultHandoffState(triageLevel: TriageLevel): HandoffState {
+  return triageLevel === "same_day_phone" ? "requires_live_handoff" : "not_applicable";
 }
 
 export function normalizeServiceLine(
@@ -340,7 +369,7 @@ function summarizeManualReviewReason(memo: ReservationMemo, serviceLine: Service
     reasons.push("人確認が必要な問い合わせ");
   }
   if (serviceLine === "emergency_initial") {
-    reasons.push("急患初診のため当日電話案内優先");
+    reasons.push("急患初診のため通話中の人対応へ切替");
   }
   if (memo.manual_review_reason) {
     reasons.push(memo.manual_review_reason);
@@ -467,6 +496,12 @@ function syncPayloadFromDraft(draft: AppointmentDraft): AppointmentDraft {
         reviewedAt: draft.reviewedAt,
         selectedCandidateId: draft.selectedCandidateId,
         auditRef: draft.auditRef,
+        notificationChannel: draft.notificationChannel,
+        notificationState: draft.notificationState,
+        notificationError: draft.notificationError,
+        notifiedAt: draft.notifiedAt,
+        handoffState: draft.handoffState,
+        outcome: draft.conversationOutcome,
       },
     },
   };
@@ -526,6 +561,12 @@ function buildAppointmentToolPayload(args: {
       reviewedAt: null,
       selectedCandidateId: null,
       auditRef: null,
+      notificationChannel: null,
+      notificationState: "not_sent",
+      notificationError: null,
+      notifiedAt: null,
+      handoffState: defaultHandoffState(args.triageLevel),
+      outcome: "pending",
     },
   };
 }
@@ -547,6 +588,12 @@ function mergeStoredState(base: AppointmentDraft, stored: AppointmentDraft | nul
     confirmedAt: stored.confirmedAt,
     lastUpdatedAt: stored.lastUpdatedAt,
     auditRef: stored.auditRef,
+    notificationChannel: stored.notificationChannel,
+    notificationState: stored.notificationState,
+    notificationError: stored.notificationError,
+    notifiedAt: stored.notifiedAt,
+    handoffState: stored.handoffState,
+    conversationOutcome: stored.conversationOutcome,
   });
 }
 
@@ -652,6 +699,12 @@ export function buildAppointmentDraft(args: {
     reviewedAt: null,
     selectedCandidateId: null,
     auditRef: null,
+    notificationChannel: null,
+    notificationState: "not_sent",
+    notificationError: null,
+    notifiedAt: null,
+    handoffState: defaultHandoffState(triageLevel),
+    conversationOutcome: "pending",
     confirmedAt: null,
     lastUpdatedAt: now,
     appointmentToolPayload: buildAppointmentToolPayload({
@@ -689,6 +742,36 @@ export function confirmAppointmentDraft(
       lastAction: "review",
       updatedAt: now,
     }),
+  });
+}
+
+export function updateAppointmentDraft(
+  draft: AppointmentDraft,
+  updates: Partial<
+    Pick<
+      AppointmentDraft,
+      | "submissionState"
+      | "executionState"
+      | "executionError"
+      | "selectedCandidateId"
+      | "auditRef"
+      | "reviewedBy"
+      | "reviewedAt"
+      | "confirmedAt"
+      | "manualReviewReason"
+      | "notificationChannel"
+      | "notificationState"
+      | "notificationError"
+      | "notifiedAt"
+      | "handoffState"
+      | "conversationOutcome"
+    >
+  >
+) {
+  return syncPayloadFromDraft({
+    ...draft,
+    ...updates,
+    lastUpdatedAt: new Date().toISOString(),
   });
 }
 
@@ -789,6 +872,77 @@ export function createAvailabilityCandidate(args: {
     label: `${args.date} ${args.tcStartTime}`,
     notes: args.notes ?? [],
   };
+}
+
+function parseCandidateTime(value: string) {
+  const [hours, minutes] = value.split(":").map((item) => Number.parseInt(item, 10));
+  return hours * 60 + minutes;
+}
+
+function timeRangePenalty(timeRange: string | null, candidateMinutes: number) {
+  if (!timeRange) {
+    return candidateMinutes;
+  }
+
+  const exactTime = timeRange.match(/(\d{1,2}):(\d{2})/);
+  if (exactTime) {
+    const targetMinutes = Number.parseInt(exactTime[1], 10) * 60 + Number.parseInt(exactTime[2], 10);
+    return Math.abs(candidateMinutes - targetMinutes);
+  }
+
+  if (timeRange.includes("午前")) {
+    return candidateMinutes < 12 * 60 ? candidateMinutes : 10000 + candidateMinutes;
+  }
+
+  if (timeRange.includes("午後")) {
+    return candidateMinutes >= 12 * 60 && candidateMinutes < 17 * 60
+      ? candidateMinutes - 12 * 60
+      : 10000 + candidateMinutes;
+  }
+
+  if (timeRange.includes("夕方") || timeRange.includes("夜")) {
+    return candidateMinutes >= 17 * 60 ? candidateMinutes - 17 * 60 : 10000 + candidateMinutes;
+  }
+
+  return candidateMinutes;
+}
+
+export function selectBestAvailabilityCandidate(
+  draft: Pick<AppointmentDraft, "preferredSlots" | "availabilityCandidates">
+) : AppointmentAvailabilityCandidate | null {
+  let best: AppointmentAvailabilityCandidate | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const candidate of draft.availabilityCandidates) {
+    const candidateMinutes = parseCandidateTime(candidate.tcStartTime);
+    const matchedPreferredIndex = draft.preferredSlots.findIndex(
+      (slot) => slot.date && slot.date === candidate.date
+    );
+    const slotIndex =
+      matchedPreferredIndex >= 0 ? matchedPreferredIndex : draft.preferredSlots.length + 1;
+    const preferredSlot =
+      matchedPreferredIndex >= 0 ? draft.preferredSlots[matchedPreferredIndex] : null;
+    const score =
+      slotIndex * 100000 +
+      timeRangePenalty(preferredSlot?.timeRange ?? null, candidateMinutes);
+
+    if (!best || score < bestScore) {
+      best = candidate;
+      bestScore = score;
+      continue;
+    }
+
+    if (score === bestScore) {
+      const currentKey = `${candidate.date} ${candidate.tcStartTime}`;
+      const bestKey = `${best.date} ${best.tcStartTime}`;
+      if (currentKey < bestKey) {
+        best = candidate;
+        bestScore = score;
+      }
+    }
+  }
+
+  return best;
 }
 
 export function findBookingRule(serviceLine: ServiceLine) {

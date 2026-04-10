@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { runDirectAutoAppointmentFlow } from "@/lib/appointment-automation";
 import { ElevenLabsApiError, importLatestPhoneCall } from "@/lib/elevenlabs/api";
 import {
   appendImportedTranscriptMirrorEvents,
@@ -58,9 +59,12 @@ export async function POST(request: Request) {
     });
 
     const run = await importLatestPhoneCall(body?.conversationId);
+    const automation = await runDirectAutoAppointmentFlow(run.conversationId);
+    const nextRun =
+      automation.detail.conversationId === run.conversationId ? automation.detail : run;
     const tailCoverage = assessTranscriptTailCoverage({
-      durationSecs: run.callMeta.durationSecs,
-      transcript: run.transcript,
+      durationSecs: nextRun.callMeta.durationSecs,
+      transcript: nextRun.transcript,
     });
     const lastTranscriptRole = tailCoverage.lastTranscriptEntry?.role ?? null;
     const lastTranscriptPreview =
@@ -70,30 +74,33 @@ export async function POST(request: Request) {
       kind: "collection",
       channel: "phone",
       level: "success",
-      conversationId: run.conversationId,
+      conversationId: nextRun.conversationId,
       message: "phone analysis imported",
       details: {
-        durationSecs: run.callMeta.durationSecs,
-        source: run.channel,
-        status: run.status,
-        success: run.analysis.callSuccessful,
-        transcriptCount: run.transcript.length,
-        analysisMs: run.latency?.analysisMs ?? null,
-        analysisRequestMs: run.analysisResolution?.analysisRequestMs ?? null,
-        pollingAttempts: run.analysisResolution?.pollingAttempts ?? null,
-        pollingWaitMs: run.analysisResolution?.pollingWaitMs ?? null,
-        detailFetchCount: run.analysisResolution?.detailFetchCount ?? null,
-        detailFetchMs: run.analysisResolution?.detailFetchMs ?? null,
-        serviceLine: run.memo.service_line,
-        triageLevel: run.memo.triage_level,
-        patientName: run.memo.patient_name,
-        patientNameYomi: run.memo.patient_name_yomi,
+        durationSecs: nextRun.callMeta.durationSecs,
+        source: nextRun.channel,
+        status: nextRun.status,
+        success: nextRun.analysis.callSuccessful,
+        transcriptCount: nextRun.transcript.length,
+        analysisMs: nextRun.latency?.analysisMs ?? null,
+        analysisRequestMs: nextRun.analysisResolution?.analysisRequestMs ?? null,
+        pollingAttempts: nextRun.analysisResolution?.pollingAttempts ?? null,
+        pollingWaitMs: nextRun.analysisResolution?.pollingWaitMs ?? null,
+        detailFetchCount: nextRun.analysisResolution?.detailFetchCount ?? null,
+        detailFetchMs: nextRun.analysisResolution?.detailFetchMs ?? null,
+        serviceLine: nextRun.memo.service_line,
+        triageLevel: nextRun.memo.triage_level,
+        patientName: nextRun.memo.patient_name,
+        patientNameYomi: nextRun.memo.patient_name_yomi,
         lastTranscriptTimeInCallSecs: tailCoverage.lastTranscriptTimeInCallSecs,
         transcriptTailGapSecs: tailCoverage.transcriptTailGapSecs,
         lastTranscriptRole,
         lastTranscriptPreview,
         tailCoverageRequired: tailCoverage.tailCoverageRequired,
         tailCoverageReasons: tailCoverage.reasons,
+        conversationOutcome: nextRun.appointmentDraft?.conversationOutcome ?? null,
+        notificationState: nextRun.appointmentDraft?.notificationState ?? null,
+        automationReason: automation.reason,
       },
     });
 
@@ -102,10 +109,10 @@ export async function POST(request: Request) {
         kind: "error",
         channel: "phone",
         level: "error",
-        conversationId: run.conversationId,
+        conversationId: nextRun.conversationId,
         message: "tail coverage required",
         details: {
-          durationSecs: run.callMeta.durationSecs,
+          durationSecs: nextRun.callMeta.durationSecs,
           lastTranscriptTimeInCallSecs: tailCoverage.lastTranscriptTimeInCallSecs,
           transcriptTailGapSecs: tailCoverage.transcriptTailGapSecs,
           lastTranscriptRole,
@@ -115,9 +122,9 @@ export async function POST(request: Request) {
       });
     }
 
-    queueTranscriptMirror(run);
+    queueTranscriptMirror(nextRun);
 
-    return NextResponse.json(run);
+    return NextResponse.json(nextRun);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

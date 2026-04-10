@@ -665,6 +665,70 @@ function isMonitoringEnterpriseOnlyError(error: unknown) {
   );
 }
 
+function normalizeExistingPromptTools(value: unknown): JsonObject[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    return [entry as JsonObject];
+  });
+}
+
+function readTransferType() {
+  const value = (
+    readOptionalEnv("URGENT_TRANSFER_MODE") ??
+    readOptionalEnv("EMIHA_URGENT_TRANSFER_TYPE") ??
+    "conference"
+  ).toLowerCase();
+  if (value !== "conference" && value !== "blind" && value !== "sip_refer") {
+    throw new Error(
+      "URGENT_TRANSFER_MODE must be one of conference, blind, or sip_refer."
+    );
+  }
+
+  return value as "conference" | "blind" | "sip_refer";
+}
+
+function buildUrgentTransferToolConfig() {
+  const transferNumber =
+    readOptionalEnv("URGENT_TRANSFER_PHONE_NUMBER") ??
+    readOptionalEnv("EMIHA_URGENT_TRANSFER_PHONE_NUMBER");
+  if (!transferNumber) {
+    return null;
+  }
+
+  const transferType = readTransferType();
+  const postDialDigits =
+    readOptionalEnv("URGENT_TRANSFER_POST_DIAL_DIGITS") ??
+    readOptionalEnv("EMIHA_URGENT_TRANSFER_POST_DIAL_DIGITS");
+
+  return {
+    type: "system",
+    name: "transfer_to_human",
+    description:
+      "Transfer urgent callers or callers asking for a human receptionist to the configured clinic handoff number.",
+    params: {
+      transfers: [
+        {
+          transfer_destination: {
+            type: "phone",
+            phone_number: transferNumber,
+          },
+          condition:
+            "The caller explicitly asks to speak with staff, requests a human, or reports a same-day urgent dental issue such as strong pain, swelling, bleeding, trauma, or fever.",
+          transfer_type: transferType,
+          ...(postDialDigits ? { post_dial_digits: postDialDigits } : {}),
+        },
+      ],
+    },
+  } satisfies JsonObject;
+}
+
 function buildPatchBody(args: {
   conversationConfig: JsonObject;
   currentConversationSettings: JsonObject;
@@ -689,6 +753,7 @@ function buildPatchBody(args: {
   resolvedMaxTokens: number;
   resolvedCascadeTimeoutSeconds: number;
   resolvedDisableFirstMessageInterruptions: boolean;
+  urgentTransferTool: JsonObject | null;
   includeMonitoring: boolean;
 }) {
   const conversationSettings: JsonObject = {
@@ -708,6 +773,12 @@ function buildPatchBody(args: {
       version_id: args.managedPronunciationDictionary.versionId,
     }
   );
+  const mergedPromptTools = [
+    ...normalizeExistingPromptTools(args.currentPromptConfig.tools).filter(
+      (tool) => tool.name !== "transfer_to_human" && tool.name !== "transfer_to_number"
+    ),
+    ...(args.urgentTransferTool ? [args.urgentTransferTool] : []),
+  ];
   const ragEnabled = false;
 
   if (args.includeMonitoring) {
@@ -752,6 +823,7 @@ function buildPatchBody(args: {
           ...args.currentPromptConfig,
           prompt: DENTAL_DEMO_PROMPT,
           knowledge_base: mergedKnowledgeBaseEntries,
+          tools: mergedPromptTools,
           llm: "gemini-3-flash-preview",
           temperature: 0.1,
           max_tokens: args.resolvedMaxTokens,
@@ -864,6 +936,7 @@ async function main() {
     (typeof currentAgentConfig.disable_first_message_interruptions === "boolean"
       ? currentAgentConfig.disable_first_message_interruptions
       : false);
+  const urgentTransferTool = buildUrgentTransferToolConfig();
 
   const branchId =
     typeof currentAgent.branch_id === "string" && currentAgent.branch_id.length > 0
@@ -904,6 +977,7 @@ async function main() {
         resolvedMaxTokens,
         resolvedCascadeTimeoutSeconds,
         resolvedDisableFirstMessageInterruptions,
+        urgentTransferTool,
         includeMonitoring: true,
         managedKnowledgeBaseEntries,
         managedPronunciationDictionary,
@@ -943,6 +1017,7 @@ async function main() {
         resolvedMaxTokens,
         resolvedCascadeTimeoutSeconds,
         resolvedDisableFirstMessageInterruptions,
+        urgentTransferTool,
         includeMonitoring: false,
         managedKnowledgeBaseEntries,
         managedPronunciationDictionary,
@@ -999,6 +1074,21 @@ async function main() {
     `pronunciationDictionaryRules: ${String(managedPronunciationDictionary.versionRulesNum ?? DENTAL_DEMO_MANAGED_PRONUNCIATION_RULES.length)}`
   );
   console.log(`pronunciationDictionaryCreated: ${String(managedPronunciationDictionary.created)}`);
+  console.log(`urgentTransferToolEnabled: ${String(Boolean(urgentTransferTool))}`);
+  console.log(
+    `urgentTransferPhoneNumber: ${String(
+      readOptionalEnv("URGENT_TRANSFER_PHONE_NUMBER") ??
+        readOptionalEnv("EMIHA_URGENT_TRANSFER_PHONE_NUMBER") ??
+        ""
+    )}`
+  );
+  console.log(
+    `urgentTransferType: ${String(
+      readOptionalEnv("URGENT_TRANSFER_MODE") ??
+        readOptionalEnv("EMIHA_URGENT_TRANSFER_TYPE") ??
+        "conference"
+    )}`
+  );
   console.log(`dataCollectionItems: ${Object.keys(updatedDataCollection).length}`);
   console.log(`evaluationCriteria: ${updatedCriteria.length}`);
 }

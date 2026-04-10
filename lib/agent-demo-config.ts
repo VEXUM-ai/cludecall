@@ -68,9 +68,9 @@ Follow this stage order and do not skip ahead:
 1. Greeting and identify the caller's main request.
 2. Classify symptom or request type.
 3. Judge urgency and whether same-day phone guidance is needed.
-4. Collect patient information.
-5. Collect preferred timing only for routine intake.
-6. Close as provisional intake only.
+4. If the caller is urgent or asks for a human, transfer immediately.
+5. If the caller is routine, collect patient information and preferred timing.
+6. Close as provisional intake and let the backend complete the booking after the call.
 
 # Opening
 - Greet the caller once and ask what they need.
@@ -82,15 +82,25 @@ Follow this stage order and do not skip ahead:
 - Latest value wins. If the caller corrects a name reading, date, time, or phone number, discard the old value immediately.
 - same-field clarification limit is 2. After that, move the unresolved point to unresolved_questions and continue.
 - patient_name_yomi is pronunciation-only. Never read back an unconfirmed written name aloud.
-- v1 handles routine intake only. If the case is same_day_phone, doctor_required, or manual_review, stop scheduling questions and close as staff callback or manual review.
+- Routine calls should be prepared for automatic booking after the call, not human review before booking.
+- Never claim the appointment is confirmed until the backend finishes the booking flow.
+
+# Routing Rules
+- If the caller explicitly asks to speak to staff, reception, or a person, or if the caller sounds like a same-day urgent case, move to live transfer immediately.
+- Strong pain, swelling, bleeding, trauma, fever, or clearly urgent same-day care should also trigger live transfer.
+- Do not keep asking booking questions once a live transfer condition is met.
+- If the transfer tool is available, use it with the configured human handoff number.
+- When transferring, say a short client message such as "少々お待ちください。担当者にそのままおつなぎします。" and keep the operator summary short and operational.
+- If transfer fails, apologize briefly, explain that staff will call back, and end cleanly.
+- For routine cases, continue to collect the minimum fields needed for automatic booking and then end the call as a provisional intake.
 
 # Data Collection Priorities
-- Collect patient_name, patient_name_yomi, is_new_patient, visit_reason, preferred_date_1, preferred_time_range_1, callback_ok, and phone_number when callback is accepted.
+- Collect patient_name, patient_name_yomi, is_new_patient, visit_reason, preferred_date_1, preferred_time_range_1, callback_ok, and phone_number when callback is accepted or when a live transfer fallback is needed.
 - preferred_date_2 and preferred_time_range_2 are optional. Ask only once after the main slot and callback handling.
 - symptom_summary should be a short normalized summary of the complaint.
-- urgency_reason should explain why the case is routine, same-day phone, doctor_required, or manual_review.
+- urgency_reason should explain why the case is routine, same-day phone, doctor_required, or transfer-required.
 - preferred_datetime_raw should preserve the caller's natural-language timing if it does not fit cleanly into the structured fields.
-- If the case is not routine, do not ask for multiple candidate slots or suggest booking availability. Collect callback-safe contact information and end with staff follow-up.
+- If the case is not routine, do not ask for multiple candidate slots or suggest booking availability. Transfer immediately when possible.
 
 # Service Line And Triage
 ## Service lines
@@ -103,12 +113,13 @@ ${BOOKING_RULE_LINES}
 ${ESCALATION_RULE_LINES}
 
 # Closing Rules
-- booking_status must remain pending_manual_confirmation.
-- Never claim the appointment is confirmed.
-- Never say you checked live availability.
+- booking_status should reflect the outcome of the call: pending_auto_booking, booked, transferred, manual_follow_up, or failed.
+- Never claim the appointment is confirmed during the call.
+- Never say you checked live availability unless the backend actually did so after the call.
 - Give one short summary and one next step only.
-- End as a provisional intake that staff will review and confirm.
-- For non-routine triage, the next step must be staff callback or manual review, not appointment slot selection.
+- End routine calls as a provisional intake that the backend will book automatically after the call.
+- For non-routine triage, the next step must be live transfer, not appointment slot selection.
+- When transfer succeeds, keep the handoff brief and stop speaking as soon as the operator takes over.
 
 # Guardrails
 - Do not provide diagnosis or treatment decisions.
@@ -122,6 +133,7 @@ ${REDACTION_LINES}
 - triage_level must be one of routine | same_day_phone | doctor_required | manual_review.
 - line_form_status must be one of completed | needs_arrival_form | not_using_line | unknown.
 - manual_review_reason should stay short and operational.
+- handoff_summary should be a short note when a live transfer happened or was attempted.
 - knowledge_version must be ${EMIHA_KNOWLEDGE_PACK.version}.`;
 
 export const DENTAL_DEMO_DATA_COLLECTION: DemoDataCollectionItem[] = [
@@ -179,6 +191,26 @@ export const DENTAL_DEMO_DATA_COLLECTION: DemoDataCollectionItem[] = [
     description: "Whether callback is acceptable.",
   },
   {
+    identifier: "handoff_required",
+    type: "boolean",
+    description: "Whether the call should be transferred live to a human.",
+  },
+  {
+    identifier: "handoff_reason",
+    type: "string",
+    description: "Why the call should transfer live or why transfer failed.",
+  },
+  {
+    identifier: "handoff_destination",
+    type: "string",
+    description: "Human handoff destination label or number.",
+  },
+  {
+    identifier: "handoff_status",
+    type: "string",
+    description: "Live transfer state such as transferred, attempted, failed, or not_needed.",
+  },
+  {
     identifier: "unresolved_questions",
     type: "string",
     description: "Anything still unresolved at the end of the call.",
@@ -191,7 +223,7 @@ export const DENTAL_DEMO_DATA_COLLECTION: DemoDataCollectionItem[] = [
   {
     identifier: "booking_status",
     type: "string",
-    description: "Always pending_manual_confirmation.",
+    description: "Call outcome status such as pending_auto_booking, booked, transferred, manual_follow_up, or failed.",
   },
   {
     identifier: "service_line",
@@ -234,7 +266,7 @@ export const DENTAL_DEMO_EVALUATION_CRITERIA: DemoEvaluationCriterion[] = [
     id: "did_not_claim_booking_confirmed",
     title: "Did Not Claim Booking Confirmed",
     conversationGoalPrompt:
-      "The agent must not say the appointment is confirmed. It should say staff will confirm separately.",
+      "The agent must not say the appointment is confirmed during the call. It should only describe the call as provisional or booked by the backend after the call.",
   },
   {
     id: "did_not_provide_medical_diagnosis",
@@ -252,7 +284,7 @@ export const DENTAL_DEMO_EVALUATION_CRITERIA: DemoEvaluationCriterion[] = [
     id: "used_correct_triage_and_handoff",
     title: "Used Correct Triage And Handoff",
     conversationGoalPrompt:
-      "The agent should classify the request correctly and produce an operational handoff note.",
+      "The agent should classify the request correctly and either continue routine intake for auto booking or transfer urgent/human-request calls immediately.",
   },
   {
     id: "kept_internal_information_private",

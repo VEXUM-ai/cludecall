@@ -38,6 +38,18 @@ export type AppointmentSubmissionState =
 export type AppointmentToolProviderId = "apotool_rpa";
 
 export type AppointmentExecutionPolicy = "test_only" | "live";
+export type NotificationChannel = "slack";
+export type NotificationState = "not_sent" | "sent" | "skipped" | "failed";
+export type HandoffState =
+  | "not_applicable"
+  | "requires_live_handoff"
+  | "handoff_unknown";
+export type ConversationOutcome =
+  | "pending"
+  | "auto_booked"
+  | "requires_manual_followup"
+  | "live_handoff"
+  | "failed";
 
 export type AppointmentExecutionState =
   | "not_started"
@@ -366,6 +378,12 @@ export type AppointmentToolPayload = {
     reviewedAt: string | null;
     selectedCandidateId: string | null;
     auditRef: AppointmentAuditRef | null;
+    notificationChannel: NotificationChannel | null;
+    notificationState: NotificationState;
+    notificationError: string | null;
+    notifiedAt: string | null;
+    handoffState: HandoffState;
+    outcome: ConversationOutcome;
   };
 };
 
@@ -405,9 +423,42 @@ export type AppointmentDraft = {
   reviewedAt: string | null;
   selectedCandidateId: string | null;
   auditRef: AppointmentAuditRef | null;
+  notificationChannel: NotificationChannel | null;
+  notificationState: NotificationState;
+  notificationError: string | null;
+  notifiedAt: string | null;
+  handoffState: HandoffState;
+  conversationOutcome: ConversationOutcome;
   confirmedAt: string | null;
   lastUpdatedAt: string;
   appointmentToolPayload: AppointmentToolPayload;
+};
+
+export type AppointmentNotificationEventKind =
+  | "booking_submitted"
+  | "booking_failed"
+  | "manual_followup_required"
+  | "urgent_handoff_required";
+
+export type AppointmentNotificationEvent = {
+  kind: AppointmentNotificationEventKind;
+  conversationId: string;
+  clinicName: string;
+  patientName: string | null;
+  phoneNumber: string | null;
+  serviceLine: ServiceLine;
+  triageLevel: TriageLevel;
+  message: string;
+  selectedCandidateLabel: string | null;
+  auditRef: AppointmentAuditRef | null;
+};
+
+export type AppointmentNotificationResult = {
+  channel: NotificationChannel;
+  state: NotificationState;
+  sentAt: string | null;
+  error: string | null;
+  skippedReason: string | null;
 };
 
 export type AnalyzeConversationResponse = {

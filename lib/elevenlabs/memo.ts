@@ -271,7 +271,7 @@ export function normalizeReservationMemo(dataCollectionResults: unknown): Reserv
     unresolved_questions: unresolvedQuestions,
     notes_for_staff: notesForStaff,
     booking_status:
-      toNullableString(source.booking_status) ?? "pending_manual_confirmation",
+      toNullableString(source.booking_status) ?? "pending_auto_booking",
     service_line: serviceLine,
     triage_level: triageLevel,
     line_form_status: lineFormStatus,

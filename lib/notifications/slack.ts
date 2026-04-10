@@ -1,208 +1,150 @@
+import { request as httpsRequest } from "node:https";
+
+import {
+  buildExecutionCandidatePreview,
+  SERVICE_LINE_LABELS,
+  TRIAGE_LEVEL_LABELS,
+} from "@/lib/appointments";
 import { getServerConfig } from "@/lib/env";
 import type {
-  SlackNotificationDelivery,
-  SlackNotificationPayload,
-  SlackAppointmentFailureNotification,
-  SlackAppointmentSuccessNotification,
-  SlackUrgentTransferNotification,
+  AppointmentDraft,
+  AppointmentNotificationEvent,
+  AppointmentNotificationEventKind,
+  AppointmentNotificationResult,
 } from "@/lib/types";
 
-type SlackWebhookBody = {
-  text: string;
-};
-
-function compact(value: string | null | undefined) {
-  const trimmed = value?.trim() ?? "";
-  return trimmed.length > 0 ? trimmed : "未取得";
-}
-
-function formatFieldLines(fields: SlackNotificationPayload["fields"]) {
-  return fields
-    .map((field) => `- ${field.label}: ${compact(field.value)}`)
-    .join("\n");
-}
-
-function buildHeadline(notification: SlackNotificationPayload) {
-  switch (notification.kind) {
-    case "appointment_success":
-      return "予約投入完了";
-    case "appointment_failure":
-      return "予約投入失敗";
-    case "urgent_transfer":
-      return "急患を人へ転送";
+function buildNotificationTitle(kind: AppointmentNotificationEventKind) {
+  switch (kind) {
+    case "booking_submitted":
+      return "予約自動投入完了";
+    case "booking_failed":
+      return "予約自動投入失敗";
+    case "manual_followup_required":
+      return "要確認";
+    case "urgent_handoff_required":
+      return "急患 live 転送対象";
+    default:
+      return "受付通知";
   }
 }
 
-function buildCoreLines(notification: SlackNotificationPayload) {
+function buildSlackText(event: AppointmentNotificationEvent) {
+  const config = getServerConfig();
   const lines = [
-    `*${buildHeadline(notification)}*`,
-    `- conversation: ${notification.conversationId}`,
-    `- 患者名: ${compact(notification.patientName)}`,
-    `- 電話番号: ${compact(notification.phoneNumber)}`,
-    `- 受付区分: ${notification.serviceLine}`,
-    `- 優先度: ${notification.triageLevel}`,
-    `- audit: ${compact(notification.auditId)}`,
-    `- 通知先: ${compact(notification.channelLabel)}`,
-  ];
+    `*${buildNotificationTitle(event.kind)}*`,
+    config.slackChannelLabel ? `通知先: ${config.slackChannelLabel}` : null,
+    `患者名: ${event.patientName ?? "未取得"}`,
+    `電話番号: ${event.phoneNumber ?? "未取得"}`,
+    `受付区分: ${SERVICE_LINE_LABELS[event.serviceLine]}`,
+    `優先度: ${TRIAGE_LEVEL_LABELS[event.triageLevel]}`,
+    event.selectedCandidateLabel ? `予約枠: ${event.selectedCandidateLabel}` : null,
+    `内容: ${event.message}`,
+    `conversation_id: ${event.conversationId}`,
+    event.auditRef?.logPath ? `audit_log: ${event.auditRef.logPath}` : null,
+  ].filter((line): line is string => Boolean(line));
 
-  if (notification.kind === "appointment_success") {
-    lines.push(`- 予約枠: ${compact(notification.candidateLabel)}`);
-    lines.push(`- 受付状態: ${compact(notification.bookingStatus)}`);
-  }
-
-  if (notification.kind === "appointment_failure") {
-    lines.push(`- 予約枠: ${compact(notification.candidateLabel)}`);
-    lines.push(`- 受付状態: ${compact(notification.bookingStatus)}`);
-    lines.push(`- エラー: ${compact(notification.error)}`);
-  }
-
-  if (notification.kind === "urgent_transfer") {
-    lines.push(`- 転送先: ${notification.transferTargetLabel}`);
-    lines.push(`- 転送番号: ${notification.transferTargetPhone}`);
-    lines.push(`- 引き継ぎ: ${compact(notification.handoffSummary)}`);
-  }
-
-  lines.push(notification.occurredAt ? `- 発生時刻: ${notification.occurredAt}` : "");
-  lines.push(formatFieldLines(notification.fields));
-
-  return lines.filter((line) => line.length > 0).join("\n");
+  return lines.join("\n");
 }
 
-export function buildSlackWebhookBody(
-  notification: SlackNotificationPayload
-): SlackWebhookBody {
+function postJson(url: URL, body: Record<string, unknown>) {
+  return new Promise<void>((resolve, reject) => {
+    const request = httpsRequest(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+      (response) => {
+        let rawBody = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          rawBody += chunk;
+        });
+        response.on("end", () => {
+          if ((response.statusCode ?? 500) >= 400) {
+            reject(
+              new Error(
+                rawBody || `Slack webhook request failed with ${response.statusCode ?? 500}.`
+              )
+            );
+            return;
+          }
+
+          resolve();
+        });
+      }
+    );
+
+    request.on("error", (error) => {
+      reject(error);
+    });
+    request.write(JSON.stringify(body));
+    request.end();
+  });
+}
+
+export function createAppointmentNotificationEventFromDraft(args: {
+  draft: AppointmentDraft;
+  kind: AppointmentNotificationEventKind;
+  message: string;
+}): AppointmentNotificationEvent {
+  const selectedCandidate =
+    args.draft.availabilityCandidates.find(
+      (candidate) => candidate.id === args.draft.selectedCandidateId
+    ) ?? null;
+
   return {
-    text: buildCoreLines(notification),
+    kind: args.kind,
+    conversationId: args.draft.conversationId,
+    clinicName: args.draft.clinicName,
+    patientName: args.draft.patientName,
+    phoneNumber: args.draft.phoneNumber,
+    serviceLine: args.draft.serviceLine,
+    triageLevel: args.draft.triageLevel,
+    message: args.message,
+    selectedCandidateLabel: selectedCandidate
+      ? buildExecutionCandidatePreview(selectedCandidate)
+      : null,
+    auditRef: args.draft.auditRef,
   };
 }
 
-export function buildAppointmentSuccessSlackNotification(args: {
-  conversationId: string;
-  patientName: string | null;
-  phoneNumber: string | null;
-  serviceLine: SlackAppointmentSuccessNotification["serviceLine"];
-  triageLevel: SlackAppointmentSuccessNotification["triageLevel"];
-  channelLabel: string | null;
-  auditId: string | null;
-  candidateLabel: string | null;
-  bookingStatus: string;
-  occurredAt?: string;
-  fields?: SlackAppointmentSuccessNotification["fields"];
-}): SlackAppointmentSuccessNotification {
-  return {
-    kind: "appointment_success",
-    conversationId: args.conversationId,
-    patientName: args.patientName,
-    phoneNumber: args.phoneNumber,
-    serviceLine: args.serviceLine,
-    triageLevel: args.triageLevel,
-    channelLabel: args.channelLabel,
-    auditId: args.auditId,
-    occurredAt: args.occurredAt ?? new Date().toISOString(),
-    fields: args.fields ?? [],
-    candidateLabel: args.candidateLabel,
-    bookingStatus: args.bookingStatus,
-  };
-}
-
-export function buildAppointmentFailureSlackNotification(args: {
-  conversationId: string;
-  patientName: string | null;
-  phoneNumber: string | null;
-  serviceLine: SlackAppointmentFailureNotification["serviceLine"];
-  triageLevel: SlackAppointmentFailureNotification["triageLevel"];
-  channelLabel: string | null;
-  auditId: string | null;
-  candidateLabel: string | null;
-  bookingStatus: string;
-  error: string;
-  occurredAt?: string;
-  fields?: SlackAppointmentFailureNotification["fields"];
-}): SlackAppointmentFailureNotification {
-  return {
-    kind: "appointment_failure",
-    conversationId: args.conversationId,
-    patientName: args.patientName,
-    phoneNumber: args.phoneNumber,
-    serviceLine: args.serviceLine,
-    triageLevel: args.triageLevel,
-    channelLabel: args.channelLabel,
-    auditId: args.auditId,
-    occurredAt: args.occurredAt ?? new Date().toISOString(),
-    fields: args.fields ?? [],
-    candidateLabel: args.candidateLabel,
-    bookingStatus: args.bookingStatus,
-    error: args.error,
-  };
-}
-
-export function buildUrgentTransferSlackNotification(args: {
-  conversationId: string;
-  patientName: string | null;
-  phoneNumber: string | null;
-  serviceLine: SlackUrgentTransferNotification["serviceLine"];
-  triageLevel: SlackUrgentTransferNotification["triageLevel"];
-  channelLabel: string | null;
-  auditId: string | null;
-  transferTargetLabel: string;
-  transferTargetPhone: string;
-  handoffSummary: string;
-  occurredAt?: string;
-  fields?: SlackUrgentTransferNotification["fields"];
-}): SlackUrgentTransferNotification {
-  return {
-    kind: "urgent_transfer",
-    conversationId: args.conversationId,
-    patientName: args.patientName,
-    phoneNumber: args.phoneNumber,
-    serviceLine: args.serviceLine,
-    triageLevel: args.triageLevel,
-    channelLabel: args.channelLabel,
-    auditId: args.auditId,
-    occurredAt: args.occurredAt ?? new Date().toISOString(),
-    fields: args.fields ?? [],
-    transferTargetLabel: args.transferTargetLabel,
-    transferTargetPhone: args.transferTargetPhone,
-    handoffSummary: args.handoffSummary,
-  };
-}
-
-export async function sendSlackNotification(
-  notification: SlackNotificationPayload
-): Promise<SlackNotificationDelivery> {
+export async function sendSlackAppointmentNotification(
+  event: AppointmentNotificationEvent
+): Promise<AppointmentNotificationResult> {
   const config = getServerConfig();
   if (!config.slackWebhookUrl) {
     return {
-      status: "skipped",
-      reason: "SLACK_WEBHOOK_URL is not configured.",
+      channel: "slack",
+      state: "skipped",
+      sentAt: null,
+      error: null,
+      skippedReason: "SLACK_WEBHOOK_URL is not configured.",
     };
   }
 
-  const body = buildSlackWebhookBody(notification);
   try {
-    const response = await fetch(config.slackWebhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-      },
-      body: JSON.stringify(body),
+    await postJson(new URL(config.slackWebhookUrl), {
+      text: buildSlackText(event),
+      unfurl_links: false,
+      unfurl_media: false,
     });
-
-    if (!response.ok) {
-      return {
-        status: "failed",
-        reason: `Slack webhook returned ${response.status}.`,
-      };
-    }
+    return {
+      channel: "slack",
+      state: "sent",
+      sentAt: new Date().toISOString(),
+      error: null,
+      skippedReason: null,
+    };
   } catch (error) {
     return {
-      status: "failed",
-      reason: error instanceof Error ? error.message : "Slack webhook request failed.",
+      channel: "slack",
+      state: "failed",
+      sentAt: null,
+      error: error instanceof Error ? error.message : "Slack notification failed.",
+      skippedReason: null,
     };
   }
-
-  return {
-    status: "sent",
-    reason: null,
-  };
 }

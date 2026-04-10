@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { runDirectAutoAppointmentFlow } from "@/lib/appointment-automation";
 import { analyzeConversation, ElevenLabsApiError } from "@/lib/elevenlabs/api";
 import { appendLiveMonitorEvent } from "@/lib/live-monitor";
 
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
     });
 
     const result = await analyzeConversation(body.conversationId);
+    const automation = await runDirectAutoAppointmentFlow(body.conversationId);
+    const nextResult =
+      automation.detail.conversationId === body.conversationId ? automation.detail : result;
 
     await appendLiveMonitorEvent({
       kind: "analysis",
@@ -31,25 +35,28 @@ export async function POST(request: Request) {
       conversationId: body.conversationId,
       message: "analysis completed",
       details: {
-        status: result.status,
-        success: result.analysis.callSuccessful,
-        transcriptSummary: result.analysis.transcriptSummary,
-        serviceLine: result.memo.service_line,
-        triageLevel: result.memo.triage_level,
-        patientName: result.memo.patient_name,
-        patientNameYomi: result.memo.patient_name_yomi,
-        bookingStatus: result.memo.booking_status,
-        appointmentState: result.appointmentDraft?.submissionState ?? null,
+        status: nextResult.status,
+        success: nextResult.analysis.callSuccessful,
+        transcriptSummary: nextResult.analysis.transcriptSummary,
+        serviceLine: nextResult.memo.service_line,
+        triageLevel: nextResult.memo.triage_level,
+        patientName: nextResult.memo.patient_name,
+        patientNameYomi: nextResult.memo.patient_name_yomi,
+        bookingStatus: nextResult.memo.booking_status,
+        appointmentState: nextResult.appointmentDraft?.submissionState ?? null,
+        conversationOutcome: nextResult.appointmentDraft?.conversationOutcome ?? null,
+        notificationState: nextResult.appointmentDraft?.notificationState ?? null,
         analysisRequestMs: result.analysisResolution?.analysisRequestMs ?? null,
         pollingAttempts: result.analysisResolution?.pollingAttempts ?? null,
         pollingWaitMs: result.analysisResolution?.pollingWaitMs ?? null,
         detailFetchCount: result.analysisResolution?.detailFetchCount ?? null,
         detailFetchMs: result.analysisResolution?.detailFetchMs ?? null,
         analysisTotalMs: result.analysisResolution?.totalMs ?? null,
+        automationReason: automation.reason,
       },
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json(nextResult);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

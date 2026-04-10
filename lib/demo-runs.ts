@@ -104,10 +104,14 @@ ${
 - line_form_status: ${LINE_FORM_STATUS_LABELS[run.appointmentDraft.lineFormStatus]}
 - submission_state: ${SUBMISSION_STATE_LABELS[run.appointmentDraft.submissionState]}
 - execution_state: ${run.appointmentDraft.executionState}
+- outcome: ${run.appointmentDraft.conversationOutcome ?? "pending"}
+- notification_state: ${run.appointmentDraft.notificationState ?? "not_sent"}
+- handoff_state: ${run.appointmentDraft.handoffState ?? "not_applicable"}
 - provider: ${run.appointmentDraft.provider ?? "none"}
 - knowledge_version: ${run.appointmentDraft.knowledgeVersion}
 - reviewed_by: ${run.appointmentDraft.reviewedBy ?? "未設定"}
 - reviewed_at: ${run.appointmentDraft.reviewedAt ?? "未設定"}
+- notified_at: ${run.appointmentDraft.notifiedAt ?? "未設定"}
 - manual_review_reason: ${run.appointmentDraft.manualReviewReason ?? "なし"}
 - execution_error: ${run.appointmentDraft.executionError ?? "なし"}
 - handoff_summary: ${run.appointmentDraft.handoffSummary}`

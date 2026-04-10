@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { notifyAppointmentDraft } from "@/lib/appointment-notifications";
 import { submitBookingWithProvider } from "@/lib/appointment-tool/provider";
 import { writeStoredAppointmentDraft } from "@/lib/appointment-store";
 import { syncStoredAppointmentDraft } from "@/lib/demo-runs";
@@ -9,11 +10,6 @@ import {
   ElevenLabsApiError,
   getConversationHistoryDetail,
 } from "@/lib/elevenlabs/api";
-import {
-  buildAppointmentFailureSlackNotification,
-  buildAppointmentSuccessSlackNotification,
-  sendSlackNotification,
-} from "@/lib/notifications/slack";
 import { appendLiveMonitorEvent } from "@/lib/live-monitor";
 
 export const runtime = "nodejs";
@@ -26,7 +22,6 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   try {
     const body = requestSchema.parse(await request.json());
-    const config = getServerConfig();
     await appendLiveMonitorEvent({
       kind: "appointment",
       channel: "system",
@@ -51,61 +46,13 @@ export async function POST(request: Request) {
       selectedCandidateId: body.candidateId,
     });
     await writeStoredAppointmentDraft(result.draft);
-    await syncStoredAppointmentDraft(result.draft, config.demoTimezone);
-
-    const selectedCandidate =
-      result.draft.availabilityCandidates.find((candidate) => candidate.id === body.candidateId) ??
-      null;
-    const slackNotification = result.success
-      ? buildAppointmentSuccessSlackNotification({
-          conversationId: body.conversationId,
-          patientName: result.draft.patientName,
-          phoneNumber: result.draft.phoneNumber,
-          serviceLine: result.draft.serviceLine,
-          triageLevel: result.draft.triageLevel,
-          channelLabel: config.slackChannelLabel,
-          auditId: result.auditRef?.auditId ?? null,
-          candidateLabel: selectedCandidate?.label ?? null,
-          bookingStatus: result.draft.bookingStatus,
-          fields: [
-            {
-              label: "予約状態",
-              value: result.draft.submissionState,
-            },
-            {
-              label: "実行状態",
-              value: result.draft.executionState,
-            },
-          ],
-        })
-      : buildAppointmentFailureSlackNotification({
-          conversationId: body.conversationId,
-          patientName: result.draft.patientName,
-          phoneNumber: result.draft.phoneNumber,
-          serviceLine: result.draft.serviceLine,
-          triageLevel: result.draft.triageLevel,
-          channelLabel: config.slackChannelLabel,
-          auditId: result.auditRef?.auditId ?? null,
-          candidateLabel: selectedCandidate?.label ?? null,
-          bookingStatus: result.draft.bookingStatus,
-          error: result.draft.executionError ?? result.message,
-          fields: [
-            {
-              label: "予約状態",
-              value: result.draft.submissionState,
-            },
-            {
-              label: "実行状態",
-              value: result.draft.executionState,
-            },
-            {
-              label: "orphanRisk",
-              value: result.orphanRisk ? "true" : "false",
-            },
-          ],
-        });
-
-    const slackDelivery = await sendSlackNotification(slackNotification);
+    await syncStoredAppointmentDraft(result.draft, getServerConfig().demoTimezone);
+    const notification = await notifyAppointmentDraft({
+      draft: result.draft,
+      kind: result.success ? "booking_submitted" : "booking_failed",
+      message: result.message,
+    });
+    const nextDraft = notification.draft;
 
     await appendLiveMonitorEvent({
       kind: "appointment",
@@ -118,16 +65,22 @@ export async function POST(request: Request) {
       details: {
         candidateId: body.candidateId,
         orphanRisk: result.orphanRisk,
-        executionState: result.draft.executionState,
-        submissionState: result.draft.submissionState,
-        executionError: result.draft.executionError,
-        auditId: result.auditRef?.auditId ?? null,
-        slackStatus: slackDelivery.status,
-        slackReason: slackDelivery.reason,
+        executionState: nextDraft.executionState,
+        submissionState: nextDraft.submissionState,
+        executionError: nextDraft.executionError,
+        auditId: nextDraft.auditRef?.auditId ?? null,
+        notificationState: nextDraft.notificationState,
+        notificationError: nextDraft.notificationError,
       },
     });
 
-    return NextResponse.json(result, { status: result.success ? 200 : 409 });
+    return NextResponse.json(
+      {
+        ...result,
+        draft: nextDraft,
+      },
+      { status: result.success ? 200 : 409 }
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

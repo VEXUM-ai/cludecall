@@ -436,7 +436,7 @@ export const EMIHA_SERVICE_MENU_MAPPINGS: ServiceMenuMapping[] = [
     apotoolMenuSecondary: "治療前TC",
     bookingPattern: "tc30_and_treatment60",
     automationPolicy: "manual_review_only",
-    notes: ["急患初診は v1 の自動候補枠確認・自動投入の対象外です。スタッフ折り返しで当日案内可否を確認します。"],
+    notes: ["急患初診は Apotool 自動投入の対象外です。通話中にスタッフへ電話転送する前提です。"],
   },
   {
     serviceLine: "implant_consult",
@@ -498,7 +498,7 @@ export const EMIHA_ESCALATION_RULES: EscalationRule[] = [
   {
     id: "severe-emergency",
     when: "強い痛み、急患、当日処置要求が強いとき",
-    action: "急患枠の待ち時間と応急処置中心になる可能性を案内する",
+    action: "急患枠の待ち時間と応急処置中心になる可能性を案内し、通話中にスタッフへつなぐ",
     reason: "急患初診ルールに沿うため",
   },
   {

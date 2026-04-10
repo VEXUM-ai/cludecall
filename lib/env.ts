@@ -27,6 +27,8 @@ type ServerConfig = {
   apotoolClinicName: string;
   apotoolHeadless: boolean;
   appointmentDefaultReviewer: string | null;
+  urgentTransferPhoneNumber: string | null;
+  urgentTransferMode: string;
   geminiApiKey: string | null;
   voiceBenchmarkEnabled: boolean;
   voiceBenchmarkDefaultProvider: string;
@@ -86,7 +88,7 @@ function readIntegerEnv(name: string, fallback: number): number {
 function readAppointmentToolMode(): AppointmentSubmissionMode {
   const appointmentToolMode =
     (readEnv("APPOINTMENT_TOOL_MODE") as AppointmentSubmissionMode | null) ??
-    "manual_review";
+    "direct_auto";
 
   if (
     appointmentToolMode !== "manual_review" &&
@@ -153,6 +155,8 @@ export function getServerConfig(): ServerConfig {
       readEnv("APOTOOL_CLINIC_NAME") ?? "えみは総合歯科 大阪梅田院",
     apotoolHeadless: readBooleanEnv("APOTOOL_HEADLESS", true),
     appointmentDefaultReviewer: readEnv("APPOINTMENT_DEFAULT_REVIEWER"),
+    urgentTransferPhoneNumber: readEnv("URGENT_TRANSFER_PHONE_NUMBER"),
+    urgentTransferMode: readEnv("URGENT_TRANSFER_MODE") ?? "blind",
     geminiApiKey: readEnv("GEMINI_API_KEY"),
     voiceBenchmarkEnabled: readBooleanEnv("VOICE_BENCHMARK_ENABLED", true),
     voiceBenchmarkDefaultProvider:
