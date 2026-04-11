@@ -91,6 +91,8 @@ export function renderDemoRunMarkdown(run: DemoRun, timeZone: string): string {
 - unresolved_questions: ${stringifyValue(run.memo.unresolved_questions)}
 - notes_for_staff: ${stringifyValue(run.memo.notes_for_staff)}
 - booking_status: ${stringifyValue(run.memo.booking_status)}
+- scheduled_datetime: ${stringifyValue(run.memo.scheduled_datetime)}
+- appointment_completed: ${stringifyValue(run.memo.appointment_completed)}
 - service_line: ${stringifyValue(run.memo.service_line)}
 - triage_level: ${stringifyValue(run.memo.triage_level)}
 - line_form_status: ${stringifyValue(run.memo.line_form_status)}
@@ -113,8 +115,12 @@ ${
 - reviewed_at: ${run.appointmentDraft.reviewedAt ?? "未設定"}
 - notified_at: ${run.appointmentDraft.notifiedAt ?? "未設定"}
 - manual_review_reason: ${run.appointmentDraft.manualReviewReason ?? "なし"}
+- scheduled_datetime: ${run.appointmentDraft.scheduledDatetime ?? "なし"}
+- appointment_completed: ${stringifyValue(run.appointmentDraft.appointmentCompleted)}
 - execution_error: ${run.appointmentDraft.executionError ?? "なし"}
-- handoff_summary: ${run.appointmentDraft.handoffSummary}`
+- handoff_summary: ${run.appointmentDraft.handoffSummary}
+- follow_up_checklist:
+${run.appointmentDraft.followUpChecklist.length > 0 ? run.appointmentDraft.followUpChecklist.map((item) => `  - ${item}`).join("\n") : "  - なし"}`
     : "- ドラフトなし"
 }
 
@@ -160,7 +166,17 @@ function toRunTimestamp(run: DemoRun): number {
 }
 
 function compareStoredRuns(left: StoredDemoRunArtifact, right: StoredDemoRunArtifact) {
-  return toRunTimestamp(right.run) - toRunTimestamp(left.run);
+  const runTimestampDelta = toRunTimestamp(right.run) - toRunTimestamp(left.run);
+  if (runTimestampDelta !== 0) {
+    return runTimestampDelta;
+  }
+
+  const modifiedAtDelta = Date.parse(right.modifiedAt) - Date.parse(left.modifiedAt);
+  if (Number.isFinite(modifiedAtDelta) && modifiedAtDelta !== 0) {
+    return modifiedAtDelta;
+  }
+
+  return right.jsonPath.localeCompare(left.jsonPath);
 }
 
 function isDemoRun(value: unknown): value is DemoRun {
@@ -168,7 +184,14 @@ function isDemoRun(value: unknown): value is DemoRun {
     typeof value === "object" &&
     value !== null &&
     "conversationId" in value &&
-    typeof (value as { conversationId?: unknown }).conversationId === "string"
+    typeof (value as { conversationId?: unknown }).conversationId === "string" &&
+    "callMeta" in value &&
+    typeof (value as { callMeta?: unknown }).callMeta === "object" &&
+    (value as { callMeta?: { startedAt?: unknown } }).callMeta !== null &&
+    "transcript" in value &&
+    Array.isArray((value as { transcript?: unknown }).transcript) &&
+    "analysis" in value &&
+    typeof (value as { analysis?: unknown }).analysis === "object"
   );
 }
 
@@ -199,7 +222,12 @@ export async function listStoredDemoRunArtifacts(): Promise<StoredDemoRunArtifac
     const entries = await fs.readdir(DEMO_RUNS_ARTIFACTS_DIR, { withFileTypes: true });
     const records = await Promise.all(
       entries
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .filter(
+          (entry) =>
+            entry.isFile() &&
+            entry.name.endsWith(".json") &&
+            entry.name !== "last-known-phone-conversation.json"
+        )
         .map(async (entry) => {
           const jsonPath = path.join(DEMO_RUNS_ARTIFACTS_DIR, entry.name);
           const [raw, stat] = await Promise.all([

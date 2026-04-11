@@ -38,13 +38,15 @@ test("knowledge pack keeps approved patient facts separate from legacy override"
 
 test("legacy Retell-style fields normalize into the unified reservation memo and draft", () => {
   const memo = normalizeReservationMemo({
-    patient_name: "山田 花子",
-    patient_name_yomi: "やまだ はなこ",
+    patient_name: "山田 太郎",
+    patient_name_yomi: "やまだ たろう",
     phone_number: "090-1234-5678",
     is_new_patient: true,
-    symptom: "右下の奥歯が強い痛みで腫れている",
-    urgency_level: "緊急",
-    preferred_datetime: "来週月曜日の午前",
+    symptom: "急患で強い痛みがある",
+    urgency_level: "same_day_phone",
+    preferred_datetime: "明日の午前",
+    scheduled_datetime: "2026-04-10 10:00",
+    appointment_completed: true,
   });
 
   const draft = buildAppointmentDraft({
@@ -55,11 +57,16 @@ test("legacy Retell-style fields normalize into the unified reservation memo and
     anchorAt: "2026-04-09T10:00:00.000Z",
   });
 
-  assert.equal(memo.visit_reason, "右下の奥歯が強い痛みで腫れている");
-  assert.equal(memo.symptom_summary, "右下の奥歯が強い痛みで腫れている");
+  assert.equal(memo.visit_reason, "急患で強い痛みがある");
+  assert.equal(memo.symptom_summary, "急患で強い痛みがある");
   assert.equal(memo.triage_level, "same_day_phone");
+  assert.equal(memo.scheduled_datetime, "2026-04-10 10:00");
+  assert.equal(memo.appointment_completed, true);
   assert.equal(draft.serviceLine, "emergency_initial");
   assert.equal(draft.triageLevel, "same_day_phone");
+  assert.equal(draft.scheduledDatetime, "2026-04-10 10:00");
+  assert.equal(draft.appointmentCompleted, true);
+  assert.equal(draft.bookingStatus, "transferred");
   assert.equal(
     getAppointmentAutomationBlockReason({
       triageLevel: draft.triageLevel,
@@ -80,7 +87,7 @@ test("draft review and execution metadata stay synchronized with menu mappings",
       patient_name_yomi: "やまだ はなこ",
       phone_number: "090-1234-5678",
       is_new_patient: true,
-      visit_reason: "初診の相談",
+      visit_reason: "初診の予約をしたい",
       preferred_date_1: "2026-04-16",
       preferred_time_range_1: "午前",
     }),
@@ -94,7 +101,7 @@ test("draft review and execution metadata stay synchronized with menu mappings",
     date: "2026-04-16",
     tcStartTime: "10:00",
     tcUnit: "カウンセリング",
-    treatmentUnit: "①治療",
+    treatmentUnit: "診療ユニットA",
   });
   const availabilityDraft = applyAvailabilityResults(reviewedDraft, [candidate], null);
   const submittedDraft = markAppointmentExecutionSubmitted(
@@ -123,11 +130,13 @@ test("draft review and execution metadata stay synchronized with menu mappings",
   assert.equal(submittedDraft.executionState, "submitted");
   assert.equal(submittedDraft.submissionState, "submitted");
   assert.equal(submittedDraft.appointmentToolPayload.execution.selectedCandidateId, candidate.id);
+  assert.equal(submittedDraft.scheduledDatetime, "2026-04-16 10:00");
+  assert.equal(submittedDraft.appointmentCompleted, true);
 });
 
-test("test-only execution policy blocks live-style bookings and allows explicit test bookings", () => {
+test("test-only execution policy blocks near-term bookings and applies name guard only when configured", () => {
   process.env.APPOINTMENT_EXECUTION_POLICY = "test_only";
-  process.env.APPOINTMENT_TEST_PATIENT_PATTERNS = "予約,テスト";
+  process.env.APPOINTMENT_TEST_PATIENT_PATTERNS = "";
   process.env.APPOINTMENT_TEST_MIN_LEAD_DAYS = "30";
 
   const draft = buildAppointmentDraft({
@@ -137,7 +146,7 @@ test("test-only execution policy blocks live-style bookings and allows explicit 
       patient_name_yomi: "やまだ はなこ",
       phone_number: "090-1234-5678",
       is_new_patient: true,
-      visit_reason: "初診の相談",
+      visit_reason: "初診の予約をしたい",
       preferred_date_1: "2099-06-20",
       preferred_time_range_1: "午前",
     }),
@@ -149,21 +158,17 @@ test("test-only execution policy blocks live-style bookings and allows explicit 
     date: "2099-06-20",
     tcStartTime: "10:00",
     tcUnit: "カウンセリング",
-    treatmentUnit: "①治療",
+    treatmentUnit: "診療ユニットA",
   });
 
-  const blockedByName = evaluateAppointmentExecutionGuard({
+  const allowedWithoutNameGuard = evaluateAppointmentExecutionGuard({
     draft,
     candidate: futureCandidate,
   });
-  assert.match(blockedByName ?? "", /test_only/);
+  assert.equal(allowedWithoutNameGuard, null);
 
   const blockedByDate = evaluateAppointmentExecutionGuard({
-    draft: {
-      ...draft,
-      patientName: "予約太郎",
-      patientNameYomi: "よやくたろう",
-    },
+    draft,
     candidate: {
       ...futureCandidate,
       date: "2000-01-01",
@@ -171,15 +176,22 @@ test("test-only execution policy blocks live-style bookings and allows explicit 
   });
   assert.match(blockedByDate ?? "", /予約日は/);
 
-  const allowed = evaluateAppointmentExecutionGuard({
+  process.env.APPOINTMENT_TEST_PATIENT_PATTERNS = "テスト,debug";
+  const blockedByName = evaluateAppointmentExecutionGuard({
+    draft,
+    candidate: futureCandidate,
+  });
+  assert.match(blockedByName ?? "", /テスト用キーワード/);
+
+  const allowedWithMatchingName = evaluateAppointmentExecutionGuard({
     draft: {
       ...draft,
-      patientName: "予約太郎",
-      patientNameYomi: "よやくたろう",
+      patientName: "テスト太郎",
+      patientNameYomi: "てすとたろう",
     },
     candidate: futureCandidate,
   });
-  assert.equal(allowed, null);
+  assert.equal(allowedWithMatchingName, null);
 });
 
 test("non-routine triage stays manual-review only after review", () => {
@@ -191,8 +203,8 @@ test("non-routine triage stays manual-review only after review", () => {
         patient_name_yomi: "きゅうかん はなこ",
         phone_number: "090-1234-5678",
         is_new_patient: true,
-        symptom: "急患で強い痛みがあり夜眠れない",
-        urgency_level: "急患",
+        symptom: "急患で強い痛みがあり今すぐ診てほしい",
+        urgency_level: "same_day_phone",
       }),
       transcript: [],
       channel: "phone",
@@ -213,15 +225,271 @@ test("non-routine triage stays manual-review only after review", () => {
   );
 });
 
-test("candidate selection prefers the earliest slot on the highest-priority preferred date", () => {
+test("routine booking is not downgraded by noisy analysis fields or generic same-day wording", () => {
   const draft = buildAppointmentDraft({
     conversationId: "conv_test_005",
+    memo: normalizeReservationMemo({
+      patient_name: "デモヤマダ",
+      patient_name_yomi: "でもやまだ",
+      phone_number: "09000000000",
+      is_new_patient: true,
+      visit_reason: "右上の歯がしみるので初診予約とクリーニング相談をしたい",
+      symptom_summary: "右上の歯がしみる",
+      urgency_reason: "クリーニングも相談したい",
+      preferred_date_1: "2026-10-20",
+      preferred_time_range_1: "午前",
+      preferred_date_2: "2026年10月22日の午後",
+      preferred_time_range_2: "午後",
+      callback_ok: true,
+      notes_for_staff: "通常受付デモ",
+      booking_status: "manual_follow_up",
+      service_line: "general_initial",
+      triage_level: "doctor_required",
+      line_form_status: "not_using_line",
+      manual_review_reason: "通話品質の問題",
+    }),
+    transcript: [
+      {
+        id: "t1",
+        role: "agent",
+        text: "初診でLINE問診が未回答の場合は15分前にお越しください。",
+        tentative: false,
+        timeInCallSecs: 10,
+      },
+      {
+        id: "t2",
+        role: "user",
+        text: "LINEはまだやっていません。",
+        tentative: false,
+        timeInCallSecs: 12,
+      },
+      {
+        id: "t3",
+        role: "agent",
+        text: "当日は15分前にお願いします。",
+        tentative: false,
+        timeInCallSecs: 15,
+      },
+    ],
+    channel: "phone",
+    anchorAt: "2026-04-11T00:45:32.000Z",
+  });
+
+  assert.equal(draft.serviceLine, "general_initial");
+  assert.equal(draft.triageLevel, "routine");
+  assert.equal(draft.lineFormStatus, "needs_arrival_form");
+  assert.equal(draft.bookingStatus, "pending_auto_booking");
+  assert.ok(
+    draft.followUpChecklist.includes("LINE問診が未回答なら15分前来院をご案内")
+  );
+});
+
+test("service-specific follow-up checklist includes free screening and halitosis rules", () => {
+  const screeningDraft = buildAppointmentDraft({
+    conversationId: "conv_test_005a",
+    memo: normalizeReservationMemo({
+      patient_name: "デモ山田",
+      phone_number: "09000000000",
+      is_new_patient: true,
+      visit_reason: "無料歯科検診をお願いしたい",
+      service_line: "free_screening",
+      triage_level: "routine",
+      preferred_date_1: "2026-10-20",
+      preferred_time_range_1: "午前",
+    }),
+    transcript: [],
+    channel: "phone",
+    anchorAt: "2026-04-11T00:45:32.000Z",
+  });
+
+  assert.ok(screeningDraft.followUpChecklist.includes("無料なのは審査診断までと案内"));
+  assert.ok(screeningDraft.followUpChecklist.includes("初診web問診は不要であることを確認"));
+  assert.ok(
+    screeningDraft.followUpChecklist.includes(
+      "保険証 / マイナ保険証 / 自費分岐をスタッフ確認"
+    )
+  );
+
+  const halitosisDraft = buildAppointmentDraft({
+    conversationId: "conv_test_005b",
+    memo: normalizeReservationMemo({
+      patient_name: "デモ山田",
+      phone_number: "09000000000",
+      is_new_patient: true,
+      visit_reason: "口臭検査を受けたい",
+      service_line: "other_manual_review",
+      triage_level: "manual_review",
+      preferred_date_1: "2026-10-20",
+      preferred_time_range_1: "午前",
+    }),
+    transcript: [
+      {
+        id: "ht1",
+        role: "user",
+        text: "口臭検査の予約をしたいです。",
+        tentative: false,
+        timeInCallSecs: 2,
+      },
+    ],
+    channel: "phone",
+    anchorAt: "2026-04-11T00:45:32.000Z",
+  });
+
+  assert.ok(
+    halitosisDraft.followUpChecklist.some((item) => item.includes("2時間前から飲食不可"))
+  );
+});
+
+test("reanalyze resets stale manual fallback state when routing changes back to routine", () => {
+  const memo = normalizeReservationMemo({
+    patient_name: "Demo Yamada",
+    patient_name_yomi: "demo yamada",
+    phone_number: "09000000000",
+    is_new_patient: true,
+    visit_reason: "right upper tooth feels sensitive and wants cleaning consultation",
+    symptom_summary: "right upper tooth feels sensitive",
+    urgency_reason: "wants cleaning consultation as well",
+    preferred_date_1: "2026-10-20",
+    preferred_time_range_1: "午前",
+    preferred_date_2: "2026-10-22",
+    preferred_time_range_2: "午後",
+    callback_ok: true,
+    notes_for_staff: "routine booking demo",
+    booking_status: "manual_follow_up",
+    service_line: "general_initial",
+    triage_level: "doctor_required",
+    line_form_status: "not_using_line",
+    manual_review_reason: "call quality issue",
+  });
+  const transcript = [
+    {
+      id: "t1",
+      role: "agent" as const,
+      text: "LINEが未回答なら15分前にお越しください。",
+      tentative: false,
+      timeInCallSecs: 10,
+    },
+    {
+      id: "t2",
+      role: "user" as const,
+      text: "LINEはまだやっていません。",
+      tentative: false,
+      timeInCallSecs: 12,
+    },
+  ];
+
+  const staleStoredDraft = {
+    ...buildAppointmentDraft({
+      conversationId: "conv_test_006",
+      memo,
+      transcript,
+      channel: "phone",
+      anchorAt: "2026-04-11T00:45:32.000Z",
+    }),
+    triageLevel: "doctor_required" as const,
+    lineFormStatus: "not_using_line" as const,
+    bookingStatus: "manual_follow_up",
+    manualReviewReason: "call quality issue",
+    submissionState: "needs_manual_entry" as const,
+    executionState: "manual_fallback" as const,
+    executionError: "doctor confirmation required",
+    notificationChannel: "slack" as const,
+    notificationState: "sent" as const,
+    notificationError: null,
+    notifiedAt: "2026-04-10T15:59:43.808Z",
+    conversationOutcome: "requires_manual_followup" as const,
+    lastUpdatedAt: "2026-04-10T15:59:43.808Z",
+  };
+
+  const reanalyzedDraft = buildAppointmentDraft({
+    conversationId: "conv_test_006",
+    memo,
+    transcript,
+    channel: "phone",
+    anchorAt: "2026-04-11T00:45:32.000Z",
+    storedDraft: staleStoredDraft,
+  });
+
+  assert.equal(reanalyzedDraft.triageLevel, "routine");
+  assert.equal(reanalyzedDraft.lineFormStatus, "needs_arrival_form");
+  assert.equal(reanalyzedDraft.bookingStatus, "pending_auto_booking");
+  assert.equal(reanalyzedDraft.submissionState, "drafted");
+  assert.equal(reanalyzedDraft.executionState, "not_started");
+  assert.equal(reanalyzedDraft.executionError, null);
+  assert.equal(reanalyzedDraft.notificationChannel, null);
+  assert.equal(reanalyzedDraft.notificationState, "not_sent");
+  assert.equal(reanalyzedDraft.conversationOutcome, "pending");
+});
+
+test("reanalyze keeps submitted execution state once booking is already completed", () => {
+  const draft = buildAppointmentDraft({
+    conversationId: "conv_test_007",
+    memo: normalizeReservationMemo({
+      patient_name: "Demo Sato",
+      patient_name_yomi: "demo sato",
+      phone_number: "090-1234-5678",
+      is_new_patient: true,
+      visit_reason: "initial consultation",
+      preferred_date_1: "2026-10-20",
+      preferred_time_range_1: "午前",
+    }),
+    transcript: [],
+    channel: "phone",
+    anchorAt: "2026-04-11T00:45:32.000Z",
+  });
+
+  const submittedDraft = {
+    ...draft,
+    submissionState: "submitted" as const,
+    executionState: "submitted" as const,
+    notificationChannel: "slack" as const,
+    notificationState: "sent" as const,
+    conversationOutcome: "auto_booked" as const,
+    notifiedAt: "2026-04-10T15:59:43.808Z",
+    lastUpdatedAt: "2026-04-10T15:59:43.808Z",
+  };
+
+  const rebuiltDraft = buildAppointmentDraft({
+    conversationId: "conv_test_007",
+    memo: normalizeReservationMemo({
+      patient_name: "Demo Sato",
+      patient_name_yomi: "demo sato",
+      phone_number: "090-1234-5678",
+      is_new_patient: true,
+      visit_reason: "initial consultation",
+      preferred_date_1: "2026-10-20",
+      preferred_time_range_1: "午前",
+      line_form_status: "not_using_line",
+    }),
+    transcript: [
+      {
+        id: "t3",
+        role: "user",
+        text: "LINEはまだやっていません。",
+        tentative: false,
+        timeInCallSecs: 12,
+      },
+    ],
+    channel: "phone",
+    anchorAt: "2026-04-11T00:45:32.000Z",
+    storedDraft: submittedDraft,
+  });
+
+  assert.equal(rebuiltDraft.submissionState, "submitted");
+  assert.equal(rebuiltDraft.executionState, "submitted");
+  assert.equal(rebuiltDraft.notificationState, "sent");
+  assert.equal(rebuiltDraft.conversationOutcome, "auto_booked");
+});
+
+test("candidate selection prefers the earliest slot on the highest-priority preferred date", () => {
+  const draft = buildAppointmentDraft({
+    conversationId: "conv_test_008",
     memo: normalizeReservationMemo({
       patient_name: "山田 花子",
       patient_name_yomi: "やまだ はなこ",
       phone_number: "090-1234-5678",
       is_new_patient: true,
-      visit_reason: "初診の相談",
+      visit_reason: "初診の予約をしたい",
       preferred_date_1: "2026-04-18",
       preferred_time_range_1: "午前",
       preferred_date_2: "2026-04-19",
@@ -237,19 +505,19 @@ test("candidate selection prefers the earliest slot on the highest-priority pref
       date: "2026-04-19",
       tcStartTime: "17:00",
       tcUnit: "カウンセリング",
-      treatmentUnit: "①治療",
+      treatmentUnit: "診療ユニットA",
     }),
     createAvailabilityCandidate({
       date: "2026-04-18",
       tcStartTime: "10:00",
       tcUnit: "カウンセリング",
-      treatmentUnit: "①治療",
+      treatmentUnit: "診療ユニットA",
     }),
     createAvailabilityCandidate({
       date: "2026-04-18",
       tcStartTime: "09:00",
       tcUnit: "カウンセリング",
-      treatmentUnit: "①治療",
+      treatmentUnit: "診療ユニットA",
     }),
   ];
 

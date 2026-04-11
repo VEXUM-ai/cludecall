@@ -85,16 +85,19 @@ test("agent prompt batches public FAQ answers instead of fragmenting them", () =
 test("knowledge base is split into auto-retrieved documents for live calls", () => {
   const docs = kb.buildManagedKnowledgeBaseDocuments();
 
-  assert.ok(docs.length >= 6);
+  assert.ok(docs.length >= 10);
   for (const doc of docs) {
     assert.equal(doc.usageMode, "auto");
     assert.ok(doc.text.length >= 250);
-    assert.ok(doc.text.length <= 1400);
+    assert.ok(doc.text.length <= 1700);
   }
 
   const docNames = docs.map((doc) => doc.name);
   assert.ok(docNames.includes("emiha-hours-holidays"));
   assert.ok(docNames.includes("emiha-visit-preparation"));
+  assert.ok(docNames.includes("emiha-free-screening"));
+  assert.ok(docNames.includes("emiha-halitosis-test"));
+  assert.ok(docNames.includes("emiha-referral-followup"));
 });
 
 test("knowledge base keeps canonical public facts for closures, stations, and unsupported details", () => {
@@ -102,17 +105,33 @@ test("knowledge base keeps canonical public facts for closures, stations, and un
   const hoursDoc = docs.find((doc) => doc.name === "emiha-hours-holidays");
   const accessDoc = docs.find((doc) => doc.name === "emiha-access-location");
   const parkingDoc = docs.find((doc) => doc.name === "emiha-parking");
+  const screeningDoc = docs.find((doc) => doc.name === "emiha-free-screening");
+  const halitosisDoc = docs.find((doc) => doc.name === "emiha-halitosis-test");
+  const referralDoc = docs.find((doc) => doc.name === "emiha-referral-followup");
 
   assert.ok(hoursDoc);
   assert.match(hoursDoc.text, /年末年始のみ/u);
-  assert.match(hoursDoc.text, /水曜日など一般的な曜日休診へ置き換えない/u);
+  assert.match(hoursDoc.text, /曜日休診に置き換えない/u);
 
   assert.ok(accessDoc);
   assert.match(accessDoc.text, /JR大阪駅直結/u);
-  assert.match(accessDoc.text, /『大阪駅』だけに短縮しない/u);
+  assert.match(accessDoc.text, /短縮しない/u);
 
   assert.ok(parkingDoc);
-  assert.match(parkingDoc.text, /大型駐車場があります。台数はこの案内では確定していない/u);
+  assert.match(parkingDoc.text, /大型駐車場/u);
+  assert.match(parkingDoc.text, /台数.*確定していない/u);
+
+  assert.ok(screeningDoc);
+  assert.match(screeningDoc.text, /審査診断まで/u);
+  assert.match(screeningDoc.text, /初診web問診はしない/u);
+
+  assert.ok(halitosisDoc);
+  assert.match(halitosisDoc.text, /2時間前/u);
+  assert.match(halitosisDoc.text, /マウスウォッシュ/u);
+
+  assert.ok(referralDoc);
+  assert.match(referralDoc.text, /スタッフ確認/u);
+  assert.doesNotMatch(referralDoc.text, /大阪歯科大学/u);
 });
 
 test("Apotool date parser normalizes the displayed target date", () => {

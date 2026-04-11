@@ -119,6 +119,8 @@ export type ServiceMenuMapping = {
   serviceLine: ServiceLine;
   apotoolMenuPrimary: string | null;
   apotoolMenuSecondary: string | null;
+  apotoolTcMenu?: string | null;
+  apotoolTreatmentMenu?: string | null;
   bookingPattern: "tc30_and_treatment60" | "manual_only";
   automationPolicy: "rpa_supported" | "manual_review_only";
   notes: string[];
@@ -231,6 +233,8 @@ export type ReservationMemo = {
   unresolved_questions: string | null;
   notes_for_staff: string | null;
   booking_status: string;
+  scheduled_datetime: string | null;
+  appointment_completed: boolean | null;
   service_line: ServiceLine | null;
   triage_level: TriageLevel | null;
   line_form_status: LineFormStatus | null;
@@ -358,10 +362,13 @@ export type AppointmentToolPayload = {
   };
   internal: {
     bookingStatus: string;
+    scheduledDatetime: string | null;
+    appointmentCompleted: boolean | null;
     notesForStaff: string | null;
     unresolvedQuestions: string | null;
     manualReviewReason: string | null;
     handoffSummary: string;
+    followUpChecklist: string[];
   };
   integration: {
     provider: AppointmentToolProviderId | null;
@@ -409,8 +416,11 @@ export type AppointmentDraft = {
   notesForStaff: string | null;
   unresolvedQuestions: string | null;
   bookingStatus: string;
+  scheduledDatetime: string | null;
+  appointmentCompleted: boolean | null;
   manualReviewReason: string | null;
   handoffSummary: string;
+  followUpChecklist: string[];
   submissionMode: AppointmentSubmissionMode;
   submissionState: AppointmentSubmissionState;
   provider: AppointmentToolProviderId | null;

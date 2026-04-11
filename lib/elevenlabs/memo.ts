@@ -16,7 +16,6 @@ type UnknownRecord = Record<string, unknown>;
 
 const MEMO_KEYS = [
   "patient_name",
-  "patient_name_yomi",
   "phone_number",
   "is_new_patient",
   "visit_reason",
@@ -255,7 +254,7 @@ export function normalizeReservationMemo(dataCollectionResults: unknown): Reserv
 
   return {
     patient_name: toNullableString(source.patient_name),
-    patient_name_yomi: toNullableString(source.patient_name_yomi),
+    patient_name_yomi: null,
     phone_number: toNullableString(source.phone_number),
     is_new_patient: isNewPatient,
     visit_reason: visitReason,
@@ -272,6 +271,8 @@ export function normalizeReservationMemo(dataCollectionResults: unknown): Reserv
     notes_for_staff: notesForStaff,
     booking_status:
       toNullableString(source.booking_status) ?? "pending_auto_booking",
+    scheduled_datetime: toNullableString(source.scheduled_datetime),
+    appointment_completed: toNullableBoolean(source.appointment_completed),
     service_line: serviceLine,
     triage_level: triageLevel,
     line_form_status: lineFormStatus,

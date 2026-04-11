@@ -28,8 +28,13 @@
   - `emiha-access-location`
   - `emiha-parking`
   - `emiha-visit-preparation`
+  - `emiha-arrival-location-support`
   - `emiha-free-screening`
   - `emiha-thp-pretest`
+  - `emiha-halitosis-test`
+  - `emiha-implant-consult`
+  - `emiha-referral-followup`
+  - `emiha-service-faq`
 
 ## Evaluation architecture
 - Command: `npm run eval:rag`
@@ -42,6 +47,7 @@
 ## Result
 - Run `2026-04-11T09-39-02-479Z`: `11/11` passed, `7/7` critical passed
 - Run `2026-04-11T09-40-41-371Z`: `11/11` passed, `7/7` critical passed
+- Run `2026-04-11T10-31-07-547Z`: `13/13` passed, `7/7` critical passed
 
 ## Important note
 - `simulate-conversation` is currently not surfacing `rag_retrieval_info` in these runs, even when answer quality indicates KB-backed behavior.

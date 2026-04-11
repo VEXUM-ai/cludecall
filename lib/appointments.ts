@@ -51,7 +51,7 @@ const SERVICE_LINE_KEYWORDS: Array<{
   },
   {
     serviceLine: "emergency_initial",
-    keywords: ["急患", "激痛", "強い痛み", "腫れ", "当日"],
+    keywords: ["急患", "激痛", "強い痛み", "腫れ", "出血", "今日診て", "本日診て", "今日このあと", "今すぐ"],
   },
 ];
 
@@ -62,6 +62,11 @@ const MANUAL_REVIEW_KEYWORDS = [
   "レーザー",
   "口臭検査",
 ];
+
+const HALITOSIS_KEYWORDS = ["口臭検査", "口臭", "におい", "臭い"];
+const REFERRAL_KEYWORDS = ["紹介", "紹介状", "大学病院", "メディグル", "大阪歯科大学"];
+const AESTHETIC_KEYWORDS = ["リップアート", "糸リフト", "美容"];
+const LASER_KEYWORDS = ["レーザー", "粘液嚢胞", "口内炎"];
 
 export const SERVICE_LINE_LABELS: Record<ServiceLine, string> = {
   general_initial: "通常初診",
@@ -142,6 +147,10 @@ function normalizeComparableText(value: string | null | undefined) {
 
 function normalizeKeywordHit(text: string, keyword: string) {
   return text.includes(keyword.toLowerCase());
+}
+
+function includesAny(text: string, keywords: string[]) {
+  return keywords.some((keyword) => normalizeKeywordHit(text, keyword));
 }
 
 function joinConversationText(memo: ReservationMemo, transcript: TranscriptEntry[]) {
@@ -240,44 +249,48 @@ export function normalizeTriageLevel(
   ...extraText: Array<string | null | undefined>
 ): TriageLevel | null {
   const normalized = normalizeComparableText(rawValue);
-  const validValues: TriageLevel[] = [
-    "routine",
-    "same_day_phone",
-    "doctor_required",
-    "manual_review",
-  ];
-
-  if (validValues.includes(normalized as TriageLevel)) {
-    return normalized as TriageLevel;
-  }
-
   const combinedText = [rawValue, ...extraText]
     .filter((value): value is string => Boolean(value))
     .join("\n")
     .toLowerCase();
 
-  if (serviceLine === "emergency_initial") {
+  const isUrgent =
+    serviceLine === "emergency_initial" ||
+    includesAny(combinedText, [
+      "急患",
+      "激痛",
+      "強い痛み",
+      "腫れ",
+      "出血",
+      "今日診て",
+      "本日診て",
+      "今日このあと",
+      "今すぐ",
+      "夜眠れない",
+    ]);
+  if (isUrgent || normalized === "same_day_phone") {
     return "same_day_phone";
   }
 
-  if (
+  const requiresDoctor =
     serviceLine === "implant_consult" ||
     serviceLine === "invisalign" ||
-    normalizeKeywordHit(combinedText, "担当dr") ||
-    normalizeKeywordHit(combinedText, "担当医")
-  ) {
+    includesAny(combinedText, ["担当dr", "担当医", "ドクター確認", "担当ドクター"]);
+  if (requiresDoctor || (normalized === "doctor_required" && serviceLine !== "general_initial")) {
     return "doctor_required";
   }
 
+  const requiresManualReview =
+    serviceLine === "other_manual_review" || includesAny(combinedText, MANUAL_REVIEW_KEYWORDS);
   if (
-    serviceLine === "other_manual_review" ||
-    MANUAL_REVIEW_KEYWORDS.some((keyword) => normalizeKeywordHit(combinedText, keyword))
+    requiresManualReview ||
+    (normalized === "manual_review" &&
+      serviceLine !== "general_initial" &&
+      serviceLine !== "free_screening" &&
+      serviceLine !== "whitening" &&
+      serviceLine !== "thp_pretest")
   ) {
     return "manual_review";
-  }
-
-  if (combinedText.includes("急患") || combinedText.includes("激痛")) {
-    return "same_day_phone";
   }
 
   if (combinedText.length === 0) {
@@ -293,6 +306,25 @@ export function normalizeLineFormStatus(
   ...extraText: Array<string | null | undefined>
 ): LineFormStatus | null {
   const normalized = normalizeComparableText(rawValue);
+  const combinedText = [rawValue, ...extraText]
+    .filter((value): value is string => Boolean(value))
+    .join("\n")
+    .toLowerCase();
+
+  if (
+    includesAny(combinedText, ["問診票回答済", "回答済み", "line問診済", "line回答済"]) &&
+    !includesAny(combinedText, ["未回答", "まだ", "やってない", "していない"])
+  ) {
+    return "completed";
+  }
+
+  if (
+    includesAny(combinedText, ["line", "ライン", "問診"]) &&
+    includesAny(combinedText, ["未回答", "まだ", "やってない", "していない", "未実施"])
+  ) {
+    return "needs_arrival_form";
+  }
+
   const validValues: LineFormStatus[] = [
     "completed",
     "needs_arrival_form",
@@ -304,24 +336,37 @@ export function normalizeLineFormStatus(
     return normalized as LineFormStatus;
   }
 
-  const combinedText = [rawValue, ...extraText]
-    .filter((value): value is string => Boolean(value))
-    .join("\n")
-    .toLowerCase();
-
-  if (combinedText.includes("問診票回答済")) {
-    return "completed";
-  }
-
-  if (combinedText.includes("line") && combinedText.includes("未回答")) {
-    return "needs_arrival_form";
-  }
-
   if (combinedText.includes("line") === false && combinedText.includes("問診") === false) {
     return isNewPatient ? "needs_arrival_form" : "unknown";
   }
 
   return "unknown";
+}
+
+function deriveBookingStatus(args: {
+  rawBookingStatus: string | null | undefined;
+  appointmentCompleted: boolean | null | undefined;
+  triageLevel: TriageLevel;
+  menuMapping: ServiceMenuMapping | null;
+}) {
+  const normalized = normalizeComparableText(args.rawBookingStatus);
+  if (args.triageLevel === "same_day_phone") {
+    return "transferred";
+  }
+
+  if (getAppointmentAutomationBlockReason(args) !== null) {
+    return "manual_follow_up";
+  }
+
+  if (normalized === "booked" || normalized === "failed") {
+    return normalized;
+  }
+
+  if (args.appointmentCompleted === true) {
+    return "booked";
+  }
+
+  return "pending_auto_booking";
 }
 
 function buildNormalizedPreferredSlots(
@@ -347,14 +392,105 @@ function buildNormalizedPreferredSlots(
     .filter((slot): slot is ResolvedPreferredSlotEntry => Boolean(slot));
 }
 
+function dedupeChecklist(items: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const item of items) {
+    const normalized = item?.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+  }
+
+  return result;
+}
+
+function buildFollowUpChecklist(args: {
+  memo: ReservationMemo;
+  serviceLine: ServiceLine;
+  triageLevel: TriageLevel;
+  lineFormStatus: LineFormStatus;
+  combinedText: string;
+}) {
+  const normalizedText = args.combinedText.toLowerCase();
+  const hasHalitosisTopic = includesAny(normalizedText, HALITOSIS_KEYWORDS);
+  const hasReferralTopic = includesAny(normalizedText, REFERRAL_KEYWORDS);
+  const hasAestheticTopic = includesAny(normalizedText, AESTHETIC_KEYWORDS);
+  const hasLaserTopic = includesAny(normalizedText, LASER_KEYWORDS);
+
+  const commonItems = [
+    args.lineFormStatus === "needs_arrival_form"
+      ? "LINE問診が未回答なら15分前来院をご案内"
+      : null,
+    args.memo.appointment_completed === true && args.memo.scheduled_datetime
+      ? `既存分析上の予約完了時刻を確認: ${args.memo.scheduled_datetime}`
+      : null,
+  ];
+
+  const byServiceLine: Record<ServiceLine, Array<string | null>> = {
+    general_initial: [
+      "初診はTC30分 + 治療枠60分の前提で確認",
+      "初診当日の親知らず抜歯は案内しない",
+      "前日確認電話の要否を確認",
+      hasHalitosisTopic
+        ? "口臭検査の注意事項を確認: 2時間前から飲食不可 / 前日・当日の強いにおいの食事不可 / マウスウォッシュ不可"
+        : null,
+    ],
+    emergency_initial: [
+      "待ち時間が30分以上になる可能性を案内",
+      "応急処置のみになる可能性を案内",
+      "場所が不安なら20分前来院をご案内",
+    ],
+    implant_consult: [
+      "インプラント詳細フローはスタッフ確認に切り替える",
+      "鎮静の有無を確認",
+      "帰宅手段を確認",
+      "支払い方法を確認",
+      "同意書未回収なら回収要否を確認",
+    ],
+    thp_pretest: [
+      "THPは90分 / 9,500円の案内を確認",
+      "検体到着後2〜3週間後のTC調整運用を確認",
+    ],
+    free_screening: [
+      "無料なのは審査診断までと案内",
+      "初診web問診は不要であることを確認",
+      "保険証 / マイナ保険証 / 自費分岐をスタッフ確認",
+      "当日治療希望の有無に応じて所要時間を確認",
+      "検診票またはメール案内の持参を確認",
+    ],
+    whitening: [
+      "ホワイトニングは機材1台のため重複不可で確認",
+    ],
+    invisalign: [
+      "インビザラインは担当ドクター日程で調整",
+      "必要ならテンプレート持参案内を確認",
+    ],
+    other_manual_review: [
+      hasReferralTopic ? "紹介先と予約方法はスタッフ確認で案内" : null,
+      hasAestheticTopic ? "美容系は見市担当前提で人確認へ" : null,
+      hasLaserTopic ? "レーザー可否は口腔内所見次第のため人確認へ" : null,
+      hasHalitosisTopic
+        ? "口臭検査の注意事項を確認: 2時間前から飲食不可 / 前日・当日の強いにおいの食事不可 / マウスウォッシュ不可"
+        : null,
+    ],
+  };
+
+  return dedupeChecklist([
+    ...commonItems,
+    ...byServiceLine[args.serviceLine],
+    args.triageLevel === "same_day_phone" ? "急患のため live 転送を優先" : null,
+  ]);
+}
+
 function summarizeManualReviewReason(memo: ReservationMemo, serviceLine: ServiceLine) {
   const reasons: string[] = [];
 
   if (!memo.patient_name) {
     reasons.push("患者名未取得");
-  }
-  if (!memo.patient_name_yomi) {
-    reasons.push("患者名の読み未取得");
   }
   if (!memo.phone_number) {
     reasons.push("電話番号未取得");
@@ -385,7 +521,8 @@ function buildManualReviewReasonWithDateNotes(
   menuMapping: ServiceMenuMapping | null,
   preferredSlotNotes: string[]
 ) {
-  const baseReason = summarizeManualReviewReason(memo, serviceLine);
+  const baseReason =
+    triageLevel === "routine" ? summarizeManualReviewReason({ ...memo, manual_review_reason: null }, serviceLine) : summarizeManualReviewReason(memo, serviceLine);
   const automationReason = getAppointmentAutomationBlockReason({
     triageLevel,
     menuMapping,
@@ -413,9 +550,6 @@ function buildHandoffSummary(
   }
   if (memo.urgency_reason) {
     summaryParts.push(`緊急度理由: ${memo.urgency_reason}`);
-  }
-  if (memo.patient_name_yomi) {
-    summaryParts.push(`氏名読み: ${memo.patient_name_yomi}`);
   }
   if (memo.notes_for_staff) {
     summaryParts.push(`メモ: ${memo.notes_for_staff}`);
@@ -476,10 +610,13 @@ function syncPayloadFromDraft(draft: AppointmentDraft): AppointmentDraft {
       internal: {
         ...draft.appointmentToolPayload.internal,
         bookingStatus: draft.bookingStatus,
+        scheduledDatetime: draft.scheduledDatetime,
+        appointmentCompleted: draft.appointmentCompleted,
         notesForStaff: draft.notesForStaff,
         unresolvedQuestions: draft.unresolvedQuestions,
         manualReviewReason: draft.manualReviewReason,
         handoffSummary: draft.handoffSummary,
+        followUpChecklist: draft.followUpChecklist,
       },
       integration: {
         ...draft.appointmentToolPayload.integration,
@@ -525,7 +662,7 @@ function buildAppointmentToolPayload(args: {
     },
     patient: {
       name: args.memo.patient_name,
-      nameYomi: args.memo.patient_name_yomi,
+      nameYomi: null,
       phoneNumber: args.memo.phone_number,
       isNewPatient: args.memo.is_new_patient,
     },
@@ -541,10 +678,13 @@ function buildAppointmentToolPayload(args: {
     },
     internal: {
       bookingStatus: args.memo.booking_status,
+      scheduledDatetime: args.memo.scheduled_datetime,
+      appointmentCompleted: args.memo.appointment_completed,
       notesForStaff: args.memo.notes_for_staff,
       unresolvedQuestions: args.memo.unresolved_questions,
       manualReviewReason: args.normalizedManualReviewReason,
       handoffSummary: args.handoffSummary,
+      followUpChecklist: [],
     },
     integration: {
       provider: resolveProvider(),
@@ -571,13 +711,66 @@ function buildAppointmentToolPayload(args: {
   };
 }
 
+function samePreferredSlots(
+  left: AppointmentDraft["preferredSlots"],
+  right: AppointmentDraft["preferredSlots"]
+) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((slot, index) => {
+    const other = right[index];
+    return (
+      other?.label === slot.label &&
+      other?.date === slot.date &&
+      other?.timeRange === slot.timeRange
+    );
+  });
+}
+
+function shouldPreserveStoredExecutionState(
+  base: AppointmentDraft,
+  stored: AppointmentDraft
+) {
+  const alreadySubmitted =
+    stored.submissionState === "submitted" ||
+    stored.executionState === "submitted" ||
+    stored.conversationOutcome === "auto_booked";
+  if (alreadySubmitted) {
+    return true;
+  }
+
+  return (
+    base.submissionMode === stored.submissionMode &&
+    base.provider === stored.provider &&
+    base.knowledgeVersion === stored.knowledgeVersion &&
+    base.serviceLine === stored.serviceLine &&
+    base.triageLevel === stored.triageLevel &&
+    base.lineFormStatus === stored.lineFormStatus &&
+    base.bookingStatus === stored.bookingStatus &&
+    base.scheduledDatetime === stored.scheduledDatetime &&
+    base.appointmentCompleted === stored.appointmentCompleted &&
+    base.menuMapping?.serviceLine === stored.menuMapping?.serviceLine &&
+    base.menuMapping?.automationPolicy === stored.menuMapping?.automationPolicy &&
+    samePreferredSlots(base.preferredSlots, stored.preferredSlots)
+  );
+}
+
 function mergeStoredState(base: AppointmentDraft, stored: AppointmentDraft | null) {
   if (!stored) {
     return syncPayloadFromDraft(base);
   }
 
+  if (!shouldPreserveStoredExecutionState(base, stored)) {
+    return syncPayloadFromDraft(base);
+  }
+
   return syncPayloadFromDraft({
     ...base,
+    scheduledDatetime: stored.scheduledDatetime,
+    appointmentCompleted: stored.appointmentCompleted,
+    followUpChecklist: stored.followUpChecklist,
     submissionState: stored.submissionState,
     executionState: stored.executionState,
     executionError: stored.executionError,
@@ -651,6 +844,12 @@ export function buildAppointmentDraft(args: {
     .map((entry) => entry.reviewNote ?? entry.handoffNote)
     .filter((note): note is string => Boolean(note));
   const menuMapping = findServiceMenuMapping(serviceLine);
+  const bookingStatus = deriveBookingStatus({
+    rawBookingStatus: args.memo.booking_status,
+    appointmentCompleted: args.memo.appointment_completed,
+    triageLevel,
+    menuMapping,
+  });
   const normalizedManualReviewReason = buildManualReviewReasonWithDateNotes(
     args.memo,
     serviceLine,
@@ -665,13 +864,20 @@ export function buildAppointmentDraft(args: {
     lineFormStatus,
     preferredSlotNotes
   );
+  const followUpChecklist = buildFollowUpChecklist({
+    memo: args.memo,
+    serviceLine,
+    triageLevel,
+    lineFormStatus,
+    combinedText,
+  });
   const now = new Date().toISOString();
 
   const draft: AppointmentDraft = {
     conversationId: args.conversationId,
     clinicName: EMIHA_KNOWLEDGE_PACK.publicProfile.clinicName,
     patientName: args.memo.patient_name,
-    patientNameYomi: args.memo.patient_name_yomi,
+    patientNameYomi: null,
     phoneNumber: args.memo.phone_number,
     isNewPatient: args.memo.is_new_patient,
     serviceLine,
@@ -684,9 +890,12 @@ export function buildAppointmentDraft(args: {
     callbackOk: args.memo.callback_ok,
     notesForStaff: args.memo.notes_for_staff,
     unresolvedQuestions: args.memo.unresolved_questions,
-    bookingStatus: args.memo.booking_status,
+    bookingStatus,
+    scheduledDatetime: args.memo.scheduled_datetime,
+    appointmentCompleted: args.memo.appointment_completed,
     manualReviewReason: normalizedManualReviewReason,
     handoffSummary,
+    followUpChecklist,
     submissionMode: resolveSubmissionMode(),
     submissionState: "drafted",
     provider: resolveProvider(),
@@ -814,12 +1023,19 @@ export function markAppointmentExecutionSubmitted(
   auditRef: AppointmentAuditRef | null
 ): AppointmentDraft {
   const now = new Date().toISOString();
+  const selectedCandidate =
+    draft.availabilityCandidates.find((candidate) => candidate.id === selectedCandidateId) ?? null;
   return syncPayloadFromDraft({
     ...draft,
     submissionState: "submitted",
     executionState: "submitted",
     executionError: null,
     selectedCandidateId,
+    bookingStatus: "booked",
+    scheduledDatetime: selectedCandidate
+      ? `${selectedCandidate.date} ${selectedCandidate.tcStartTime}`
+      : draft.scheduledDatetime,
+    appointmentCompleted: true,
     lastUpdatedAt: now,
     auditRef: auditRef
       ? createAuditRef(draft.auditRef, { ...auditRef, lastAction: "execute", updatedAt: now })
@@ -839,6 +1055,7 @@ export function markAppointmentExecutionFailed(
     submissionState: fallbackToManual ? "needs_manual_entry" : "submission_failed",
     executionState: fallbackToManual ? "manual_fallback" : "failed",
     executionError: error,
+    appointmentCompleted: false,
     lastUpdatedAt: now,
     auditRef: auditRef
       ? createAuditRef(draft.auditRef, { ...auditRef, lastAction: "execute", updatedAt: now })
