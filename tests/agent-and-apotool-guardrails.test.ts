@@ -72,6 +72,14 @@ test("agent prompt batches public FAQ answers instead of fragmenting them", () =
     DENTAL_DEMO_PROMPT,
     /Prefer complete factual sentences over partial restarts or half-finished fragments/u
   );
+  assert.match(
+    DENTAL_DEMO_PROMPT,
+    /never invent a weekday closure if the retrieved answer says the closure is year-end and New Year only/u
+  );
+  assert.match(
+    DENTAL_DEMO_PROMPT,
+    /Do not shorten a retrieved station fact if the knowledge base already gives a specific patient-facing phrase such as "JR大阪駅直結"/u
+  );
 });
 
 test("knowledge base is split into auto-retrieved documents for live calls", () => {
@@ -86,7 +94,25 @@ test("knowledge base is split into auto-retrieved documents for live calls", () 
 
   const docNames = docs.map((doc) => doc.name);
   assert.ok(docNames.includes("emiha-hours-holidays"));
-  assert.ok(docNames.includes("emiha-line-questionnaire"));
+  assert.ok(docNames.includes("emiha-visit-preparation"));
+});
+
+test("knowledge base keeps canonical public facts for closures, stations, and unsupported details", () => {
+  const docs = kb.buildManagedKnowledgeBaseDocuments();
+  const hoursDoc = docs.find((doc) => doc.name === "emiha-hours-holidays");
+  const accessDoc = docs.find((doc) => doc.name === "emiha-access-location");
+  const parkingDoc = docs.find((doc) => doc.name === "emiha-parking");
+
+  assert.ok(hoursDoc);
+  assert.match(hoursDoc.text, /年末年始のみ/u);
+  assert.match(hoursDoc.text, /水曜日など一般的な曜日休診へ置き換えない/u);
+
+  assert.ok(accessDoc);
+  assert.match(accessDoc.text, /JR大阪駅直結/u);
+  assert.match(accessDoc.text, /『大阪駅』だけに短縮しない/u);
+
+  assert.ok(parkingDoc);
+  assert.match(parkingDoc.text, /大型駐車場があります。台数はこの案内では確定していない/u);
 });
 
 test("Apotool date parser normalizes the displayed target date", () => {

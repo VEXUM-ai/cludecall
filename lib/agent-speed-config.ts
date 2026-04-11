@@ -1,6 +1,6 @@
 import { DENTAL_DEMO_CLINIC_PROFILE } from "./agent-demo-config";
 
-export const DENTAL_DEMO_FAST_PRIMARY_LLM = "gemini-2.0-flash";
+export const DENTAL_DEMO_FAST_PRIMARY_LLM = "gpt-4o-mini";
 export const DENTAL_DEMO_FAST_TURN_TIMEOUT_SECONDS = 5;
 export const DENTAL_DEMO_FAST_TURN_EAGERNESS = "patient" as const;
 export const DENTAL_DEMO_FAST_SOFT_TIMEOUT_SECONDS = -1;

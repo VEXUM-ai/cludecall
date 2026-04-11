@@ -548,6 +548,39 @@ async function computeKnowledgeBaseDocumentRagIndex(args: {
   });
 }
 
+async function waitForKnowledgeBaseDocumentRagIndex(args: {
+  apiKey: string;
+  documentId: string;
+  model: string;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+}) {
+  const timeoutMs = args.timeoutMs ?? 120000;
+  const pollIntervalMs = args.pollIntervalMs ?? 3000;
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const indexes = await getKnowledgeBaseDocumentRagIndexes(args.apiKey, args.documentId);
+    const currentIndex = indexes.find((index) => index.model === args.model);
+
+    if (currentIndex?.status && ["created", "succeeded"].includes(currentIndex.status)) {
+      return;
+    }
+
+    if (currentIndex?.status === "failed") {
+      throw new Error(
+        `RAG index failed for knowledge base document ${args.documentId} (${args.model}).`
+      );
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  throw new Error(
+    `Timed out waiting for RAG index for knowledge base document ${args.documentId} (${args.model}).`
+  );
+}
+
 async function ensureManagedKnowledgeBaseRagIndexes(apiKey: string, documents: ManagedKnowledgeBaseEntry[]) {
   const ragModel = "e5_mistral_7b_instruct";
 
@@ -561,6 +594,12 @@ async function ensureManagedKnowledgeBaseRagIndexes(apiKey: string, documents: M
         model: ragModel,
       });
     }
+
+    await waitForKnowledgeBaseDocumentRagIndex({
+      apiKey,
+      documentId: document.id,
+      model: ragModel,
+    });
   }
 }
 
@@ -902,6 +941,10 @@ function buildPatchBody(args: {
   resolvedMaxTokens: number;
   resolvedLlm: string;
   resolvedCascadeTimeoutSeconds: number;
+  resolvedRagEmbeddingModel: string;
+  resolvedRagMaxDocumentsLength: number;
+  resolvedRagMaxRetrievedChunksCount: number;
+  resolvedRagMaxVectorDistance: number;
   resolvedDisableFirstMessageInterruptions: boolean;
   urgentTransferTool: JsonObject | null;
   includeMonitoring: boolean;
@@ -996,30 +1039,17 @@ function buildPatchBody(args: {
           tool_ids: currentToolIds,
           built_in_tools: mergedBuiltInTools,
           llm: args.resolvedLlm,
-          temperature: 0.1,
+          temperature: 0,
           max_tokens: args.resolvedMaxTokens,
           cascade_timeout_seconds: args.resolvedCascadeTimeoutSeconds,
           timezone: DENTAL_DEMO_TIMEZONE,
           rag: {
             ...currentRagConfig,
             enabled: ragEnabled,
-            embedding_model:
-              typeof currentRagConfig.embedding_model === "string" &&
-              currentRagConfig.embedding_model.length > 0
-                ? currentRagConfig.embedding_model
-                : "e5_mistral_7b_instruct",
-            max_documents_length:
-              typeof currentRagConfig.max_documents_length === "number"
-                ? Math.min(currentRagConfig.max_documents_length, 3000)
-                : 3000,
-            max_retrieved_rag_chunks_count:
-              typeof currentRagConfig.max_retrieved_rag_chunks_count === "number"
-                ? Math.min(currentRagConfig.max_retrieved_rag_chunks_count, 2)
-                : 2,
-            max_vector_distance:
-              typeof currentRagConfig.max_vector_distance === "number"
-                ? Math.min(currentRagConfig.max_vector_distance, 0.22)
-                : 0.22,
+            embedding_model: args.resolvedRagEmbeddingModel,
+            max_documents_length: args.resolvedRagMaxDocumentsLength,
+            max_retrieved_rag_chunks_count: args.resolvedRagMaxRetrievedChunksCount,
+            max_vector_distance: args.resolvedRagMaxVectorDistance,
           },
         },
       },
@@ -1111,6 +1141,29 @@ async function main() {
   const resolvedCascadeTimeoutSeconds =
     readOptionalNumberEnv("ELEVENLABS_CASCADE_TIMEOUT_SECONDS") ??
     DENTAL_DEMO_FAST_CASCADE_TIMEOUT_SECONDS;
+  const resolvedRagEmbeddingModel =
+    readOptionalEnv("ELEVENLABS_RAG_EMBEDDING_MODEL") ?? "e5_mistral_7b_instruct";
+  const resolvedRagMaxDocumentsLength = Math.max(
+    500,
+    Math.min(
+      readOptionalNumberEnv("ELEVENLABS_RAG_MAX_DOCUMENTS_LENGTH") ?? 2200,
+      4000
+    )
+  );
+  const resolvedRagMaxRetrievedChunksCount = Math.max(
+    1,
+    Math.min(
+      readOptionalNumberEnv("ELEVENLABS_RAG_MAX_RETRIEVED_CHUNKS") ?? 2,
+      3
+    )
+  );
+  const resolvedRagMaxVectorDistance = Math.max(
+    0.05,
+    Math.min(
+      readOptionalNumberEnv("ELEVENLABS_RAG_MAX_VECTOR_DISTANCE") ?? 0.18,
+      0.3
+    )
+  );
   const resolvedDisableFirstMessageInterruptions =
     readOptionalBooleanEnv("ELEVENLABS_DISABLE_FIRST_MESSAGE_INTERRUPTIONS") ??
     (typeof currentAgentConfig.disable_first_message_interruptions === "boolean"
@@ -1157,6 +1210,10 @@ async function main() {
         resolvedMaxTokens,
         resolvedLlm,
         resolvedCascadeTimeoutSeconds,
+        resolvedRagEmbeddingModel,
+        resolvedRagMaxDocumentsLength,
+        resolvedRagMaxRetrievedChunksCount,
+        resolvedRagMaxVectorDistance,
         resolvedDisableFirstMessageInterruptions,
         urgentTransferTool,
         includeMonitoring: true,
@@ -1198,6 +1255,10 @@ async function main() {
         resolvedMaxTokens,
         resolvedLlm,
         resolvedCascadeTimeoutSeconds,
+        resolvedRagEmbeddingModel,
+        resolvedRagMaxDocumentsLength,
+        resolvedRagMaxRetrievedChunksCount,
+        resolvedRagMaxVectorDistance,
         resolvedDisableFirstMessageInterruptions,
         urgentTransferTool,
         includeMonitoring: false,
@@ -1273,6 +1334,9 @@ async function main() {
   );
   console.log(`dataCollectionItems: ${Object.keys(updatedDataCollection).length}`);
   console.log(`evaluationCriteria: ${updatedCriteria.length}`);
+  console.log(
+    `rag: ${JSON.stringify((updatedPromptConfig.rag ?? {}) as JsonObject)}`
+  );
 }
 
 main().catch((error) => {
