@@ -14,11 +14,14 @@ import {
 } from "../lib/agent-demo-config";
 import {
   buildManagedKnowledgeBaseDocuments,
+  DENTAL_DEMO_MANAGED_KB_PREFIX,
+  MANAGED_KNOWLEDGE_BASE_ID_PREFIXES,
 } from "../lib/agent-knowledge-base";
 import {
   DENTAL_DEMO_FAST_CASCADE_TIMEOUT_SECONDS,
   DENTAL_DEMO_FAST_FIRST_MESSAGE,
   DENTAL_DEMO_FAST_MAX_TOKENS,
+  DENTAL_DEMO_FAST_PRIMARY_LLM,
   DENTAL_DEMO_FAST_SOFT_TIMEOUT_MESSAGE,
   DENTAL_DEMO_FAST_SOFT_TIMEOUT_SECONDS,
   DENTAL_DEMO_FAST_TTS_SPEED,
@@ -47,12 +50,44 @@ const DENTAL_DEMO_MANAGED_PRONUNCIATION_RULES = [
     alias: "\u3048\u307f\u306f\u305d\u3046\u3054\u3046\u3057\u304b",
   },
   {
+    string_to_replace: "\u3048\u307f\u306f",
+    alias: "\u3048\u307f\u306f",
+  },
+  {
+    string_to_replace: "\u3048\u307f\u306f\u7dcf\u5408\u6b6f\u79d1 \u6885\u7530\u9662",
+    alias: "\u3048\u307f\u306f\u305d\u3046\u3054\u3046\u3057\u304b \u3046\u3081\u3060\u3044\u3093",
+  },
+  {
+    string_to_replace: "\u5927\u962a\u6885\u7530\u9662",
+    alias: "\u304a\u304a\u3055\u304b\u3046\u3081\u3060\u3044\u3093",
+  },
+  {
+    string_to_replace: "\u6885\u7530\u9662",
+    alias: "\u3046\u3081\u3060\u3044\u3093",
+  },
+  {
     string_to_replace: "\u89aa\u77e5\u3089\u305a\u629c\u6b6f",
     alias: "\u304a\u3084\u3057\u3089\u305a\u3070\u3063\u3057",
   },
   {
     string_to_replace: "\u629c\u6b6f",
     alias: "\u3070\u3063\u3057",
+  },
+  {
+    string_to_replace: "\u554f\u8a3a\u7968",
+    alias: "\u3082\u3093\u3057\u3093\u3072\u3087\u3046",
+  },
+  {
+    string_to_replace: "LINE",
+    alias: "\u3089\u3044\u3093",
+  },
+  {
+    string_to_replace: "\u627f\u308a\u307e\u3059",
+    alias: "\u3046\u3051\u305f\u307e\u308f\u308a\u307e\u3059",
+  },
+  {
+    string_to_replace: "\u65e5\u6642",
+    alias: "\u306b\u3061\u3058",
   },
 ] as const;
 type RequestJsonErrorDetail =
@@ -270,6 +305,13 @@ type KnowledgeBaseDocumentRecord = {
   type?: string;
 };
 
+type KnowledgeBaseRagIndexRecord = {
+  id?: string;
+  model?: string;
+  status?: string;
+  progress_percentage?: number;
+};
+
 type PronunciationRulePayload = {
   string_to_replace: string;
   type: "alias";
@@ -357,8 +399,10 @@ function mergeKnowledgeBaseEntries(
   currentEntries: ExistingKnowledgeBaseEntry[],
   managedEntries: ManagedKnowledgeBaseEntry[]
 ) {
-  const managedNames = new Set(DENTAL_DEMO_MANAGED_KB_DOCUMENTS.map((entry) => entry.name));
-  const retainedEntries = currentEntries.filter((entry) => !managedNames.has(entry.name ?? ""));
+  const retainedEntries = currentEntries.filter((entry) => {
+    const name = entry.name ?? "";
+    return !MANAGED_KNOWLEDGE_BASE_ID_PREFIXES.some((prefix) => name.startsWith(`${prefix}-`));
+  });
   return [...retainedEntries, ...managedEntries];
 }
 
@@ -456,8 +500,93 @@ async function deleteKnowledgeBaseDocument(apiKey: string, documentId: string) {
   });
 }
 
+function isKnowledgeBaseStillInUseError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /Document is still in use/i.test(error.message);
+}
+
+async function getKnowledgeBaseDocumentRagIndexes(apiKey: string, documentId: string) {
+  const url = new URL(`https://api.elevenlabs.io/v1/convai/knowledge-base/${documentId}/rag-index`);
+  const payload = await requestJson(url, {
+    method: "GET",
+    apiKey,
+  });
+
+  const indexes = Array.isArray(payload.indexes) ? payload.indexes : [];
+  return indexes.flatMap((entry): KnowledgeBaseRagIndexRecord[] => {
+    if (!isRecord(entry)) {
+      return [];
+    }
+
+    return [
+      {
+        id: typeof entry.id === "string" ? entry.id : undefined,
+        model: typeof entry.model === "string" ? entry.model : undefined,
+        status: typeof entry.status === "string" ? entry.status : undefined,
+        progress_percentage:
+          typeof entry.progress_percentage === "number" ? entry.progress_percentage : undefined,
+      },
+    ];
+  });
+}
+
+async function computeKnowledgeBaseDocumentRagIndex(args: {
+  apiKey: string;
+  documentId: string;
+  model: string;
+}) {
+  const url = new URL(`https://api.elevenlabs.io/v1/convai/knowledge-base/${args.documentId}/rag-index`);
+  await requestJson(url, {
+    method: "POST",
+    apiKey: args.apiKey,
+    body: {
+      model: args.model,
+    },
+  });
+}
+
+async function ensureManagedKnowledgeBaseRagIndexes(apiKey: string, documents: ManagedKnowledgeBaseEntry[]) {
+  const ragModel = "e5_mistral_7b_instruct";
+
+  for (const document of documents) {
+    const indexes = await getKnowledgeBaseDocumentRagIndexes(apiKey, document.id);
+    const currentIndex = indexes.find((index) => index.model === ragModel);
+    if (!currentIndex || !["created", "succeeded"].includes(currentIndex.status ?? "")) {
+      await computeKnowledgeBaseDocumentRagIndex({
+        apiKey,
+        documentId: document.id,
+        model: ragModel,
+      });
+    }
+  }
+}
+
 async function ensureManagedKnowledgeBaseDocuments(apiKey: string): Promise<ManagedKnowledgeBaseEntry[]> {
   const resolvedDocuments: ManagedKnowledgeBaseEntry[] = [];
+  const desiredNames = new Set(DENTAL_DEMO_MANAGED_KB_DOCUMENTS.map((entry) => entry.name));
+  const existingManagedDocuments = await listKnowledgeBaseDocuments(apiKey, DENTAL_DEMO_MANAGED_KB_PREFIX);
+
+  for (const existing of existingManagedDocuments) {
+    const name = existing.name ?? "";
+    if (
+      MANAGED_KNOWLEDGE_BASE_ID_PREFIXES.some((prefix) => name.startsWith(`${prefix}-`)) &&
+      !desiredNames.has(name)
+    ) {
+      try {
+        await deleteKnowledgeBaseDocument(apiKey, existing.id);
+      } catch (error) {
+        if (!isKnowledgeBaseStillInUseError(error)) {
+          throw error;
+        }
+        console.warn(
+          `Knowledge base document ${name || existing.id} is still attached to an agent. Keeping it for this run.`
+        );
+      }
+    }
+  }
 
   for (const desired of DENTAL_DEMO_MANAGED_KB_DOCUMENTS) {
     const existingDocuments = (await listKnowledgeBaseDocuments(apiKey, desired.name)).filter(
@@ -475,7 +604,16 @@ async function ensureManagedKnowledgeBaseDocuments(apiKey: string): Promise<Mana
 
     if (!resolvedId) {
       for (const existing of existingDocuments) {
-        await deleteKnowledgeBaseDocument(apiKey, existing.id);
+        try {
+          await deleteKnowledgeBaseDocument(apiKey, existing.id);
+        } catch (error) {
+          if (!isKnowledgeBaseStillInUseError(error)) {
+            throw error;
+          }
+          console.warn(
+            `Knowledge base document ${desired.name} is still attached to an agent. Creating a replacement document instead of deleting it first.`
+          );
+        }
       }
 
       const created = await createKnowledgeBaseDocumentFromText({
@@ -493,6 +631,8 @@ async function ensureManagedKnowledgeBaseDocuments(apiKey: string): Promise<Mana
       usage_mode: desired.usageMode,
     });
   }
+
+  await ensureManagedKnowledgeBaseRagIndexes(apiKey, resolvedDocuments);
 
   return resolvedDocuments;
 }
@@ -709,10 +849,19 @@ function buildUrgentTransferToolConfig() {
 
   return {
     type: "system",
-    name: "transfer_to_human",
+    name: "transfer_to_number",
     description:
-      "Transfer urgent callers or callers asking for a human receptionist to the configured clinic handoff number.",
+      "Transfer urgent callers or callers asking for a human receptionist to the configured clinic handoff number. Use it immediately on the first eligible turn, without any free-form acknowledgement first. The spoken transfer sentence should start directly with a transfer phrase such as '担当者におつなぎします。' and should not start with filler such as '承知いたしました' or 'ただ'.",
+    response_timeout_secs: 20,
+    disable_interruptions: false,
+    force_pre_tool_speech: false,
+    assignments: [],
+    tool_call_sound: null,
+    tool_call_sound_behavior: "auto",
+    tool_error_handling_mode: "auto",
     params: {
+      system_tool_type: "transfer_to_number",
+      enable_client_message: true,
       transfers: [
         {
           transfer_destination: {
@@ -751,6 +900,7 @@ function buildPatchBody(args: {
   resolvedSoftTimeoutMessage: string;
   resolvedTtsSpeed: number;
   resolvedMaxTokens: number;
+  resolvedLlm: string;
   resolvedCascadeTimeoutSeconds: number;
   resolvedDisableFirstMessageInterruptions: boolean;
   urgentTransferTool: JsonObject | null;
@@ -773,13 +923,22 @@ function buildPatchBody(args: {
       version_id: args.managedPronunciationDictionary.versionId,
     }
   );
-  const mergedPromptTools = [
-    ...normalizeExistingPromptTools(args.currentPromptConfig.tools).filter(
-      (tool) => tool.name !== "transfer_to_human" && tool.name !== "transfer_to_number"
-    ),
-    ...(args.urgentTransferTool ? [args.urgentTransferTool] : []),
-  ];
-  const ragEnabled = false;
+  const {
+    tools: _legacyTools,
+    built_in_tools: currentBuiltInToolsRaw,
+    tool_ids: currentToolIdsRaw,
+    ...currentPromptConfigWithoutTooling
+  } = args.currentPromptConfig;
+  const mergedBuiltInTools = {
+    ...(isRecord(currentBuiltInToolsRaw) ? currentBuiltInToolsRaw : {}),
+    transfer_to_number: args.urgentTransferTool,
+  } satisfies JsonObject;
+  const currentToolIds = Array.isArray(currentToolIdsRaw)
+    ? currentToolIdsRaw.filter(
+        (item): item is string => typeof item === "string" && item.length > 0
+      )
+    : [];
+  const ragEnabled = true;
 
   if (args.includeMonitoring) {
     conversationSettings.monitoring_enabled = true;
@@ -790,6 +949,22 @@ function buildPatchBody(args: {
       : ["user_transcript", "agent_response", "agent_response_correction"];
   }
 
+  const softTimeoutConfig: JsonObject = {
+    ...((args.currentTurnConfig.soft_timeout_config ?? {}) as JsonObject),
+    timeout_seconds: args.resolvedSoftTimeoutSeconds,
+    use_llm_generated_message: false,
+  };
+
+  if (
+    args.resolvedSoftTimeoutSeconds >= 0 &&
+    typeof args.resolvedSoftTimeoutMessage === "string" &&
+    args.resolvedSoftTimeoutMessage.length > 0
+  ) {
+    softTimeoutConfig.message = args.resolvedSoftTimeoutMessage;
+  } else {
+    delete softTimeoutConfig.message;
+  }
+
   return {
     conversation_config: {
       ...args.conversationConfig,
@@ -798,12 +973,7 @@ function buildPatchBody(args: {
         ...args.currentTurnConfig,
         turn_timeout: args.resolvedTurnTimeoutSeconds,
         turn_eagerness: args.resolvedTurnEagerness,
-        soft_timeout_config: {
-          ...((args.currentTurnConfig.soft_timeout_config ?? {}) as JsonObject),
-          timeout_seconds: args.resolvedSoftTimeoutSeconds,
-          message: args.resolvedSoftTimeoutMessage,
-          use_llm_generated_message: false,
-        },
+        soft_timeout_config: softTimeoutConfig,
       },
       tts: {
         ...args.currentTtsConfig,
@@ -820,11 +990,12 @@ function buildPatchBody(args: {
         language: DENTAL_DEMO_LANGUAGE,
         disable_first_message_interruptions: args.resolvedDisableFirstMessageInterruptions,
         prompt: {
-          ...args.currentPromptConfig,
+          ...currentPromptConfigWithoutTooling,
           prompt: DENTAL_DEMO_PROMPT,
           knowledge_base: mergedKnowledgeBaseEntries,
-          tools: mergedPromptTools,
-          llm: "gemini-3-flash-preview",
+          tool_ids: currentToolIds,
+          built_in_tools: mergedBuiltInTools,
+          llm: args.resolvedLlm,
           temperature: 0.1,
           max_tokens: args.resolvedMaxTokens,
           cascade_timeout_seconds: args.resolvedCascadeTimeoutSeconds,
@@ -839,8 +1010,16 @@ function buildPatchBody(args: {
                 : "e5_mistral_7b_instruct",
             max_documents_length:
               typeof currentRagConfig.max_documents_length === "number"
-                ? currentRagConfig.max_documents_length
-                : 10000,
+                ? Math.min(currentRagConfig.max_documents_length, 3000)
+                : 3000,
+            max_retrieved_rag_chunks_count:
+              typeof currentRagConfig.max_retrieved_rag_chunks_count === "number"
+                ? Math.min(currentRagConfig.max_retrieved_rag_chunks_count, 2)
+                : 2,
+            max_vector_distance:
+              typeof currentRagConfig.max_vector_distance === "number"
+                ? Math.min(currentRagConfig.max_vector_distance, 0.22)
+                : 0.22,
           },
         },
       },
@@ -928,6 +1107,7 @@ async function main() {
   const resolvedMaxTokens =
     readOptionalNumberEnv("ELEVENLABS_MAX_TOKENS") ??
     DENTAL_DEMO_FAST_MAX_TOKENS;
+  const resolvedLlm = readOptionalEnv("ELEVENLABS_LLM") ?? DENTAL_DEMO_FAST_PRIMARY_LLM;
   const resolvedCascadeTimeoutSeconds =
     readOptionalNumberEnv("ELEVENLABS_CASCADE_TIMEOUT_SECONDS") ??
     DENTAL_DEMO_FAST_CASCADE_TIMEOUT_SECONDS;
@@ -975,6 +1155,7 @@ async function main() {
         resolvedSoftTimeoutMessage,
         resolvedTtsSpeed,
         resolvedMaxTokens,
+        resolvedLlm,
         resolvedCascadeTimeoutSeconds,
         resolvedDisableFirstMessageInterruptions,
         urgentTransferTool,
@@ -1015,6 +1196,7 @@ async function main() {
         resolvedSoftTimeoutMessage,
         resolvedTtsSpeed,
         resolvedMaxTokens,
+        resolvedLlm,
         resolvedCascadeTimeoutSeconds,
         resolvedDisableFirstMessageInterruptions,
         urgentTransferTool,
