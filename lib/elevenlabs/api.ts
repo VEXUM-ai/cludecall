@@ -2,7 +2,10 @@ import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
 
 import { z } from "zod";
 
-import { readStoredAppointmentDraft } from "@/lib/appointment-store";
+import {
+  readStoredAppointmentDraft,
+  writeStoredAppointmentDraft,
+} from "@/lib/appointment-store";
 import { buildAppointmentDraft } from "@/lib/appointments";
 import { getServerConfig } from "@/lib/env";
 import {
@@ -518,9 +521,9 @@ function buildConversationSummaryFromStoredRun(
     source,
     status: run.status,
     analysisState: "ready",
-    durationSecs: run.callMeta.durationSecs,
+    durationSecs: run.callMeta?.durationSecs ?? null,
     success: run.analysis.callSuccessful,
-    startedAt: run.callMeta.startedAt,
+    startedAt: run.callMeta?.startedAt ?? null,
     analysisTitle: deriveAnalysisTitle(run.analysis.transcriptSummary),
     transcriptSummary: run.analysis.transcriptSummary,
     memo: run.memo,
@@ -547,6 +550,9 @@ async function persistDemoRunFromDetails(
   analysisResolution: AnalysisResolutionMetrics | null = null
 ) {
   const run = await normalizeDemoRun(details, analysisResolution);
+  if (run.appointmentDraft) {
+    await writeStoredAppointmentDraft(run.appointmentDraft);
+  }
   await writeDemoRunArtifacts(run, getServerConfig().demoTimezone);
   if (run.channel === "phone") {
     await writeLastKnownPhoneConversationId(run.conversationId);

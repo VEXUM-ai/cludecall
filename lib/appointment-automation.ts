@@ -62,7 +62,8 @@ export async function runDirectAutoAppointmentFlow(conversationId: string) {
     await notifyAppointmentDraft({
       draft,
       kind: "booking_submitted",
-      message: "Apotool への自動投入が完了しました。",
+      message:
+        "Apotool \u3078\u306e\u81ea\u52d5\u6295\u5165\u304c\u5b8c\u4e86\u3057\u307e\u3057\u305f\u3002",
     });
     return {
       detail: await refreshDetail(conversationId),
@@ -78,7 +79,10 @@ export async function runDirectAutoAppointmentFlow(conversationId: string) {
     await notifyAppointmentDraft({
       draft,
       kind: "urgent_handoff_required",
-      message: draft.executionError ?? draft.manualReviewReason ?? "急患のため人対応へ切り替えました。",
+      message:
+        draft.executionError ??
+        draft.manualReviewReason ??
+        "\u6025\u60a3\u306e\u305f\u3081\u4eba\u5bfe\u5fdc\u3078\u5207\u308a\u66ff\u3048\u307e\u3057\u305f\u3002",
     });
     return {
       detail: await refreshDetail(conversationId),
@@ -95,7 +99,9 @@ export async function runDirectAutoAppointmentFlow(conversationId: string) {
       draft,
       kind: "manual_followup_required",
       message:
-        draft.executionError ?? draft.manualReviewReason ?? "人手確認が必要な受付です。",
+        draft.executionError ??
+        draft.manualReviewReason ??
+        "\u4eba\u624b\u78ba\u8a8d\u304c\u5fc5\u8981\u306a\u306e\u3067\u624b\u52d5\u5bfe\u5fdc\u306b\u5207\u308a\u66ff\u3048\u307e\u3059\u3002",
     });
     return {
       detail: await refreshDetail(conversationId),
@@ -108,7 +114,9 @@ export async function runDirectAutoAppointmentFlow(conversationId: string) {
     await notifyAppointmentDraft({
       draft,
       kind: "booking_failed",
-      message: draft.executionError ?? "自動予約処理が失敗しました。",
+      message:
+        draft.executionError ??
+        "\u81ea\u52d5\u4e88\u7d04\u306e\u51e6\u7406\u304c\u5931\u6557\u3057\u307e\u3057\u305f\u3002",
     });
     return {
       detail: await refreshDetail(conversationId),
@@ -176,7 +184,7 @@ export async function runDirectAutoAppointmentFlow(conversationId: string) {
   if (!selectedCandidate) {
     const noCandidateReason =
       availability.draft.executionError ??
-      "希望条件に合う候補枠を自動選定できなかったため、人手確認が必要です。";
+      "\u5e0c\u671b\u6761\u4ef6\u306b\u5408\u3046\u5019\u88dc\u67a0\u3092\u81ea\u52d5\u3067\u78ba\u5b9a\u3067\u304d\u306a\u304b\u3063\u305f\u305f\u3081\u3001\u4eba\u624b\u78ba\u8a8d\u306b\u5207\u308a\u66ff\u3048\u307e\u3059\u3002";
     const noCandidateDraft = updateAppointmentDraft(availability.draft, {
       submissionState: "needs_manual_entry",
       executionState: "manual_fallback",

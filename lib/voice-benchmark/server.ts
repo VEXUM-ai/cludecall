@@ -165,7 +165,14 @@ export async function createGeminiEphemeralToken() {
 
   const ai = createGeminiClient("v1alpha");
   const tokenClient = ai as unknown as {
-    tokens: {
+    authTokens?: {
+      create: (params: { config: Record<string, unknown> }) => Promise<{
+        name?: string;
+        expireTime?: string;
+        newSessionExpireTime?: string;
+      }>;
+    };
+    tokens?: {
       create: (params: { config: Record<string, unknown> }) => Promise<{
         name?: string;
         expireTime?: string;
@@ -176,7 +183,15 @@ export async function createGeminiEphemeralToken() {
   const now = Date.now();
   const expireTime = new Date(now + 30 * 60 * 1000).toISOString();
   const newSessionExpireTime = new Date(now + 60 * 1000).toISOString();
-  const token = await tokenClient.tokens.create({
+  const tokenModule = tokenClient.authTokens ?? tokenClient.tokens;
+
+  if (!tokenModule?.create) {
+    throw new Error(
+      "Installed @google/genai client does not expose authTokens.create()."
+    );
+  }
+
+  const token = await tokenModule.create({
     config: {
       uses: 1,
       expireTime,
@@ -189,6 +204,9 @@ export async function createGeminiEphemeralToken() {
             thinkingLevel: ThinkingLevel.MINIMAL,
           },
         },
+      },
+      httpOptions: {
+        apiVersion: "v1alpha",
       },
       lockAdditionalFields: [],
     },

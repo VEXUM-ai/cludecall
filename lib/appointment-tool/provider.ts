@@ -42,7 +42,7 @@ function getDraftCandidateDates(draft: AppointmentDraft) {
 }
 
 function buildManualOnlyError(draft: AppointmentDraft) {
-  const menuMapping = draft.menuMapping ?? findServiceMenuMapping(draft.serviceLine);
+  const menuMapping = findServiceMenuMapping(draft.serviceLine) ?? draft.menuMapping;
   return (
     getAppointmentAutomationBlockReason({
       triageLevel: draft.triageLevel,
@@ -84,19 +84,22 @@ export function evaluateAppointmentExecutionGuard(args: {
     return null;
   }
 
-  const combinedPatientName = [args.draft.patientName, args.draft.patientNameYomi]
+  const hasConfiguredPatientPatterns = config.appointmentTestPatientPatterns.length > 0;
+  const combinedPatientName = [args.draft.patientName]
     .filter((value): value is string => Boolean(value))
     .join(" ");
-  const patientMatchesPattern = config.appointmentTestPatientPatterns.some((pattern) =>
-    normalizeComparableText(combinedPatientName).includes(normalizeComparableText(pattern))
-  );
+  const patientMatchesPattern =
+    !hasConfiguredPatientPatterns ||
+    config.appointmentTestPatientPatterns.some((pattern) =>
+      normalizeComparableText(combinedPatientName).includes(normalizeComparableText(pattern))
+    );
   const minAllowedDate = addDaysToIsoDate(
     getTodayIsoInTimeZone(config.demoTimezone),
     config.appointmentTestMinLeadDays
   );
 
   const violations: string[] = [];
-  if (!patientMatchesPattern) {
+  if (hasConfiguredPatientPatterns && !patientMatchesPattern) {
     violations.push(
       `患者名にテスト用キーワード（${config.appointmentTestPatientPatterns.join(" / ")}）が含まれていません`
     );
@@ -166,7 +169,7 @@ export async function checkAvailabilityWithProvider(
     };
   }
 
-  const menuMapping = draft.menuMapping ?? findServiceMenuMapping(draft.serviceLine);
+  const menuMapping = findServiceMenuMapping(draft.serviceLine) ?? draft.menuMapping;
   if (
     getAppointmentAutomationBlockReason({
       triageLevel: draft.triageLevel,
@@ -213,21 +216,44 @@ export async function checkAvailabilityWithProvider(
 
   const page = await ensureLoggedIn();
   const candidates: AppointmentAvailabilityCandidate[] = [];
-  for (const date of candidateDates) {
-    await navigateToDate(page, date);
-    const calendarGrid = await readCalendarGrid(page);
-    const slots = findAvailableSlots(calendarGrid);
-    candidates.push(
-      ...slots.map((slot) =>
-        createAvailabilityCandidate({
-          date,
-          tcStartTime: slot.start_time,
-          tcUnit: slot.tc_unit,
-          treatmentUnit: slot.treatment_unit,
-          notes: [`derived from ${date}`],
-        })
-      )
-    );
+  try {
+    for (const date of candidateDates) {
+      await navigateToDate(page, date);
+      const calendarGrid = await readCalendarGrid(page);
+      const slots = findAvailableSlots(calendarGrid);
+      candidates.push(
+        ...slots.map((slot) =>
+          createAvailabilityCandidate({
+            date,
+            tcStartTime: slot.start_time,
+            tcUnit: slot.tc_unit,
+            treatmentUnit: slot.treatment_unit,
+            notes: [`derived from ${date}`],
+          })
+        )
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const screenshotPath = await takeErrorScreenshot("availability-failed");
+    const auditRef = await writeAppointmentAudit({
+      action: "availability",
+      conversationId: draft.conversationId,
+      provider: draft.provider,
+      request: {
+        conversationId: draft.conversationId,
+        requestedDates: candidateDates,
+        preferredSlots: draft.preferredSlots,
+        serviceLine: draft.serviceLine,
+      },
+      error: message,
+      screenshotPaths: screenshotPath ? [screenshotPath] : [],
+    });
+    return {
+      draft: applyAvailabilityResults(draft, [], auditRef, message),
+      candidates: [],
+      auditRef,
+    };
   }
 
   const auditRef = await writeAppointmentAudit({
@@ -286,7 +312,7 @@ export async function submitBookingWithProvider(args: {
     };
   }
 
-  const menuMapping = draft.menuMapping ?? findServiceMenuMapping(draft.serviceLine);
+  const menuMapping = findServiceMenuMapping(draft.serviceLine) ?? draft.menuMapping;
   if (
     getAppointmentAutomationBlockReason({
       triageLevel: draft.triageLevel,
@@ -336,9 +362,9 @@ export async function submitBookingWithProvider(args: {
     };
   }
 
-  const patientNameKana = draft.patientNameYomi ?? draft.patientName;
-  if (!patientNameKana) {
-    const error = "患者名の読みが未取得のため、自動投入できません。";
+  const patientName = draft.patientName;
+  if (!patientName) {
+    const error = "患者名が未取得のため、自動投入できません。";
     const auditRef = await writeAppointmentAudit({
       action: "execute",
       conversationId: draft.conversationId,
@@ -385,14 +411,40 @@ export async function submitBookingWithProvider(args: {
 
   let workingDraft = markAppointmentExecutionStarted(draft, selectedCandidateId);
   const page = await ensureLoggedIn();
-  await navigateToDate(page, selectedCandidate.date);
 
-  const result = await bookAppointment(page, {
-    patientNameKana,
-    phoneNumber: draft.phoneNumber ?? "",
-    candidate: selectedCandidate,
-    menuMapping,
-  });
+  let result;
+  try {
+    await navigateToDate(page, selectedCandidate.date);
+    result = await bookAppointment(page, {
+      patientName,
+      phoneNumber: draft.phoneNumber ?? "",
+      candidate: selectedCandidate,
+      menuMapping,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const screenshotPath = await takeErrorScreenshot("execute-failed");
+    const auditRef = await writeAppointmentAudit({
+      action: "execute",
+      conversationId: draft.conversationId,
+      provider: draft.provider,
+      request: {
+        conversationId: draft.conversationId,
+        selectedCandidateId,
+        candidate: selectedCandidate,
+      },
+      error: message,
+      screenshotPaths: screenshotPath ? [screenshotPath] : [],
+    });
+
+    return {
+      draft: markAppointmentExecutionFailed(workingDraft, message, auditRef, true),
+      success: false,
+      orphanRisk: false,
+      auditRef,
+      message,
+    };
+  }
 
   if (!result.success) {
     const screenshotPath = await takeErrorScreenshot("execute-failed");
@@ -426,12 +478,12 @@ export async function submitBookingWithProvider(args: {
     action: "execute",
     conversationId: draft.conversationId,
     provider: draft.provider,
-    request: {
-      conversationId: draft.conversationId,
-      selectedCandidateId,
-      candidate: selectedCandidate,
-      patientNameKana,
-    },
+      request: {
+        conversationId: draft.conversationId,
+        selectedCandidateId,
+        candidate: selectedCandidate,
+        patientName,
+      },
     response: {
       success: true,
       orphanRisk: false,

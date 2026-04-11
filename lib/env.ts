@@ -147,16 +147,13 @@ export function getServerConfig(): ServerConfig {
     appointmentToolMode: readAppointmentToolMode(),
     appointmentToolProvider: readAppointmentToolProvider(),
     appointmentExecutionPolicy: readAppointmentExecutionPolicy(),
-    appointmentTestPatientPatterns: readStringArrayEnv(
-      "APPOINTMENT_TEST_PATIENT_PATTERNS",
-      ["予約", "テスト"]
-    ),
+    appointmentTestPatientPatterns: readStringArrayEnv("APPOINTMENT_TEST_PATIENT_PATTERNS", []),
     appointmentTestMinLeadDays: readIntegerEnv("APPOINTMENT_TEST_MIN_LEAD_DAYS", 30),
     apotoolEmail: readEnv("APOTOOL_EMAIL"),
     apotoolPassword: readEnv("APOTOOL_PASSWORD"),
     apotoolLoginUrl: readEnv("APOTOOL_LOGIN_URL") ?? "https://user.stransa.co.jp/login",
     apotoolClinicName:
-      readEnv("APOTOOL_CLINIC_NAME") ?? "えみは総合歯科 大阪梅田院",
+      readEnv("APOTOOL_CLINIC_NAME") ?? "\u3048\u307f\u306f\u7dcf\u5408\u6b6f\u79d1 \u5927\u962a\u6885\u7530\u9662",
     apotoolHeadless: readBooleanEnv("APOTOOL_HEADLESS", true),
     appointmentDefaultReviewer: readEnv("APPOINTMENT_DEFAULT_REVIEWER"),
     urgentTransferPhoneNumber: readEnv("URGENT_TRANSFER_PHONE_NUMBER"),
