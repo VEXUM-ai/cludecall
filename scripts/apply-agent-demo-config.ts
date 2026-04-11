@@ -853,11 +853,11 @@ function buildUrgentTransferToolConfig() {
     description:
       "Transfer urgent callers or callers asking for a human receptionist to the configured clinic handoff number. Use it immediately on the first eligible turn, without any free-form acknowledgement first. The spoken transfer sentence should start directly with a transfer phrase such as '担当者におつなぎします。' and should not start with filler such as '承知いたしました' or 'ただ'.",
     response_timeout_secs: 20,
-    disable_interruptions: false,
+    disable_interruptions: true,
     force_pre_tool_speech: false,
     assignments: [],
-    tool_call_sound: null,
-    tool_call_sound_behavior: "auto",
+    tool_call_sound: "elevator3",
+    tool_call_sound_behavior: "always",
     tool_error_handling_mode: "auto",
     params: {
       system_tool_type: "transfer_to_number",

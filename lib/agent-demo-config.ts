@@ -73,8 +73,7 @@ Respond in Japanese, keep the tone warm and concise, and stay within intake scop
 # Routine Intake
 - For routine cases, collect patient_name, is_new_patient, visit_reason, preferred_date_1, preferred_time_range_1, callback_ok, and phone_number.
 - preferred_date_2 and preferred_time_range_2 are optional. Ask only once after the main slot and callback handling.
-- symptom_summary should be a short normalized summary of the complaint.
-- urgency_reason should explain why the case is routine, same-day phone, doctor_required, or transfer-required.
+- Keep live data collection minimal. Do not spend call time on internal labels or staff-only metadata.
 - preferred_datetime_raw should preserve the caller's natural-language timing if it does not fit cleanly into the structured fields.
 - If the case is not routine, do not ask for multiple candidate slots or suggest booking availability. Transfer immediately when possible.
 
@@ -142,43 +141,6 @@ export const DENTAL_DEMO_DATA_COLLECTION: DemoDataCollectionItem[] = [
     identifier: "callback_ok",
     type: "boolean",
     description: "Whether callback is acceptable.",
-  },
-  {
-    identifier: "handoff_status",
-    type: "string",
-    description: "Live transfer state such as transferred, attempted, failed, or not_needed.",
-  },
-  {
-    identifier: "unresolved_questions",
-    type: "string",
-    description: "Anything still unresolved at the end of the call.",
-  },
-  {
-    identifier: "notes_for_staff",
-    type: "string",
-    description: "Short internal note for staff.",
-  },
-  {
-    identifier: "booking_status",
-    type: "string",
-    description:
-      "Call outcome status such as pending_auto_booking, booked, transferred, manual_follow_up, or failed.",
-  },
-  {
-    identifier: "service_line",
-    type: "string",
-    description:
-      "Service line enum: general_initial | emergency_initial | implant_consult | thp_pretest | free_screening | whitening | invisalign | other_manual_review.",
-  },
-  {
-    identifier: "triage_level",
-    type: "string",
-    description: "Triage enum: routine | same_day_phone | doctor_required | manual_review.",
-  },
-  {
-    identifier: "line_form_status",
-    type: "string",
-    description: "LINE form enum: completed | needs_arrival_form | not_using_line | unknown.",
   },
 ];
 
