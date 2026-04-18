@@ -64,6 +64,8 @@
 - `observed`: ElevenLabs の `simulate-conversation` では、managed tool が `system__conversation_id` を要求している状態だと `Missing required dynamic variables in tools: {'system__conversation_id'}` で 400 になった。placeholder を追加しても解消せず、現時点では実通話/実 Web 会話でしか tool call end-to-end を回せない可能性が高い。失敗レスポンスは `artifacts/live-qa/simulate-live-availability-20260419.json` に保存した。
 - `completed`: Apotool の cold start を緩和するため、起動直後の非同期 boot prewarm を実装した。`npm run dev` / `npm run start` は [scripts/run-next-with-apotool-prewarm.ts](</C:/Dev/Work/デンタル 一次受付AI/scripts/run-next-with-apotool-prewarm.ts>) 経由で起動し、server ready 後に [app/api/appointment-tool/prewarm/route.ts](</C:/Dev/Work/デンタル 一次受付AI/app/api/appointment-tool/prewarm/route.ts>) を叩いて browser 起動と Apotool ログインを先に済ませる。初回実装で試した `instrumentation.ts` は Next dev compile で `playwright -> net` 解決エラーを起こしたため採用せず、wrapper 方式へ切り替えた。
 - `completed`: [lib/appointment-tool/apotool-rpa/session-manager.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/apotool-rpa/session-manager.ts>) に session initialization promise を追加し、boot prewarm と最初の live request が競合しても browser 初期化が 1 本だけ走るようにした。health には `sessionInitializing` と `prewarmOnBootEnabled` を追加した。
+- `completed`: 予約投入の患者名・日付 guard を撤去した。[lib/appointment-tool/provider.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/provider.ts>) から `test_only` 実行停止ロジックを外し、患者名や近い日付を理由に execute を止めないようにした。
+- `completed`: [lib/appointment-tool/provider.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/provider.ts>) の health 判定を修正し、資格情報だけで `healthy` を返さず `browserReady/contextReady/pageReady/sessionInitializing` を含めた warm 状態で返すようにした。
 
 ## テストログ
 ### 2026-04-19
@@ -74,6 +76,10 @@
 - 結果: 36 件 pass / 0 fail。managed webhook schema の ElevenLabs 422 修正後も回帰なし。
 - `npm test -- tests/apotool-prewarm.test.ts tests/live-availability.test.ts`
 - 結果: 38 件 pass / 0 fail。boot prewarm の有効条件と single-schedule 保証を追加で固定化した。
+- `npm test -- tests/integration-plan.test.ts tests/live-availability.test.ts tests/apotool-prewarm.test.ts`
+- 結果: 31 件 pass / 0 fail。患者名・日付 guard 撤去後も integration plan / live availability / prewarm が崩れていないことを確認した。
+- `npm test`
+- 結果: この作業端末では Node の OOM で失敗。デモ前確認では全件一括ではなく、変更点に近い focused command を優先する。
 - live QA 実施時刻:
   - 2026-04-19 03:15 JST `qa-cold-20260419-1` -> `pending_followup / timeout_pending`。初回 browser 起動込みでは 15 秒 budget を超えた。
   - 2026-04-19 03:15 JST `qa-warm-20260419-1` -> `resolved / snapshot_fresh`。
@@ -91,6 +97,15 @@
 - boot prewarm 実機確認:
   - 2026-04-19 03:44 JST `npm run dev` で wrapper 起動後、`artifacts/live-qa/next-live-qa-wrapper-prewarm.out.log` に `Scheduling Apotool boot prewarm` -> `Initializing Apotool browser session` -> `Apotool boot prewarm finished successfully` が出ることを確認。
   - その後の `GET /api/appointment-tool/health` で `browserReady=true`, `pageReady=true`, `prewarmOnBootEnabled=true`, `sessionInitializing=false` を確認。
+
+## 明日のデモ前確認事項
+- 起動は必ず `npm run dev` または `npm run start` を使う。`next dev` / `next start` の直叩きでは boot prewarm が走らない。
+- デモ直前に `GET /api/appointment-tool/health` を確認し、`status=healthy` かつ `browserReady=true`, `pageReady=true`, `sessionInitializing=false` を満たしていることを確認する。
+- `status=degraded` または `browserReady=false` の場合は cold start のまま live availability に入らない。wrapper 起動し直しで prewarm 完了まで持っていく。
+- ElevenLabs realtime monitor は現状 `monitoring_enabled=false`。通話中 monitor に依存せず、後段確認は post-call fallback と `artifacts/live-monitor/events.ndjson` を見る。
+- デモ本番の前に短い self-call smoke を 1 本だけ実施し、Twilio / ElevenLabs / Apotool の疎通を確認する。
+- 2026-04-19 に患者名・予約日 guard は撤去済み。コード側では実投入を止めないため、投入する予約の患者情報と日時はデモ運用で明示的に管理する。
+- live availability の初回 read は cold start だと 15 秒 budget に近づく。最初の患者質問の前に warm 状態を確認してから始める。
 
 ## コミットログ
 ### 2026-04-19

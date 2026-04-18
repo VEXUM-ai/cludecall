@@ -45,7 +45,7 @@ Verified Caller ID に自分の携帯番号を使っている場合、自分の�
 - Apotool 実行失敗:
   `failed` にして Slack に通知する
 
-既定値は `APPOINTMENT_TOOL_MODE=direct_auto` と `APPOINTMENT_EXECUTION_POLICY=test_only` です。つまり、コード上は自動投入フローが本線ですが、実運用前はテスト予約条件でガードされます。
+既定値は `APPOINTMENT_TOOL_MODE=direct_auto` です。コード上は通話中の候補提示と post-call 自動投入を含む自動予約フローが本線です。
 
 ## 実装済みの運用補助
 - `POST /api/eleven/post-call-webhook`
@@ -63,7 +63,7 @@ Verified Caller ID に自分の携帯番号を使っている場合、自分の�
 - ElevenLabs:
   `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`
 - 自動予約:
-  `APPOINTMENT_TOOL_MODE`, `APPOINTMENT_TOOL_PROVIDER`, `APPOINTMENT_EXECUTION_POLICY`
+  `APPOINTMENT_TOOL_MODE`, `APPOINTMENT_TOOL_PROVIDER`
 - Apotool:
   `APOTOOL_EMAIL`, `APOTOOL_PASSWORD`, `APOTOOL_LOGIN_URL`, `APOTOOL_CLINIC_NAME`
 - Slack 通知:
@@ -71,7 +71,7 @@ Verified Caller ID に自分の携帯番号を使っている場合、自分の�
 - 急患 live transfer:
   `URGENT_TRANSFER_PHONE_NUMBER`, `URGENT_TRANSFER_MODE`
 
-`.env.example` は現在の推奨値に合わせて更新済みです。`APPOINTMENT_TOOL_MODE=direct_auto`、`APPOINTMENT_EXECUTION_POLICY=test_only` が既定です。
+`.env.example` は現在の推奨値に合わせて更新済みです。`APPOINTMENT_TOOL_MODE=direct_auto` が既定です。
 
 ## 外部設定で必要なもの
 - ElevenLabs 側で post-call webhook をこのアプリの `/api/eleven/post-call-webhook` に向ける

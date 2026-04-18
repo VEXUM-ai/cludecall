@@ -37,7 +37,6 @@ export type AppointmentSubmissionState =
 
 export type AppointmentToolProviderId = "apotool_rpa";
 
-export type AppointmentExecutionPolicy = "test_only" | "live";
 export type NotificationChannel = "slack";
 export type NotificationState = "not_sent" | "sent" | "skipped" | "failed";
 export type HandoffState =

@@ -18,7 +18,6 @@ import {
   markAppointmentExecutionSubmitted,
   selectBestAvailabilityCandidate,
 } from "@/lib/appointments";
-import { evaluateAppointmentExecutionGuard } from "@/lib/appointment-tool/provider";
 import { normalizeReservationMemo } from "@/lib/elevenlabs/memo";
 import {
   isPhoneConversationDoneStatus,
@@ -138,66 +137,6 @@ test("draft review and execution metadata stay synchronized with menu mappings",
   assert.equal(submittedDraft.appointmentToolPayload.execution.selectedCandidateId, candidate.id);
   assert.equal(submittedDraft.scheduledDatetime, "2026-04-16 10:00");
   assert.equal(submittedDraft.appointmentCompleted, true);
-});
-
-test("test-only execution policy blocks near-term bookings and requires an explicit test name by default", () => {
-  process.env.APPOINTMENT_EXECUTION_POLICY = "test_only";
-  process.env.APPOINTMENT_TEST_PATIENT_PATTERNS = "";
-  process.env.APPOINTMENT_TEST_MIN_LEAD_DAYS = "30";
-
-  const draft = buildAppointmentDraft({
-    conversationId: "conv_test_003",
-    memo: normalizeReservationMemo({
-      patient_name: "山田 花子",
-      patient_name_yomi: "やまだ はなこ",
-      phone_number: "090-1234-5678",
-      is_new_patient: true,
-      visit_reason: "初診の予約をしたい",
-      preferred_date_1: "2099-06-20",
-      preferred_time_range_1: "午前",
-    }),
-    transcript: [],
-    channel: "web",
-    anchorAt: "2026-04-09T10:00:00.000Z",
-  });
-  const futureCandidate = createAvailabilityCandidate({
-    date: "2099-06-20",
-    tcStartTime: "10:00",
-    tcUnit: "カウンセリング",
-    treatmentUnit: "診療ユニットA",
-  });
-
-  const blockedByDefaultNameGuard = evaluateAppointmentExecutionGuard({
-    draft,
-    candidate: futureCandidate,
-  });
-  assert.match(blockedByDefaultNameGuard ?? "", /テスト用キーワード/);
-
-  const blockedByDate = evaluateAppointmentExecutionGuard({
-    draft,
-    candidate: {
-      ...futureCandidate,
-      date: "2000-01-01",
-    },
-  });
-  assert.match(blockedByDate ?? "", /予約日は/);
-
-  process.env.APPOINTMENT_TEST_PATIENT_PATTERNS = "テスト,debug";
-  const blockedByName = evaluateAppointmentExecutionGuard({
-    draft,
-    candidate: futureCandidate,
-  });
-  assert.match(blockedByName ?? "", /テスト用キーワード/);
-
-  const allowedWithMatchingName = evaluateAppointmentExecutionGuard({
-    draft: {
-      ...draft,
-      patientName: "テスト太郎",
-      patientNameYomi: "てすとたろう",
-    },
-    candidate: futureCandidate,
-  });
-  assert.equal(allowedWithMatchingName, null);
 });
 
 test("non-routine triage stays manual-review only after review", () => {

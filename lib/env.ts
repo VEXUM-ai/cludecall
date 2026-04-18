@@ -1,5 +1,4 @@
 import type {
-  AppointmentExecutionPolicy,
   AppointmentSubmissionMode,
   AppointmentToolProviderId,
 } from "@/lib/types";
@@ -20,9 +19,6 @@ type ServerConfig = {
   demoTimezone: string;
   appointmentToolMode: AppointmentSubmissionMode;
   appointmentToolProvider: AppointmentToolProviderId | null;
-  appointmentExecutionPolicy: AppointmentExecutionPolicy;
-  appointmentTestPatientPatterns: string[];
-  appointmentTestMinLeadDays: number;
   apotoolEmail: string | null;
   apotoolPassword: string | null;
   apotoolLoginUrl: string;
@@ -44,13 +40,6 @@ type ServerConfig = {
   voiceBenchmarkSaveArtifacts: boolean;
 };
 
-const DEFAULT_TEST_PATIENT_PATTERNS = [
-  "TEST",
-  "DEMO",
-  "DEBUG",
-  "\u30c6\u30b9\u30c8",
-];
-
 function readEnv(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;
@@ -71,20 +60,6 @@ function readBooleanEnv(name: string, fallback = false): boolean {
   }
 
   return value.toLowerCase() === "true";
-}
-
-function readStringArrayEnv(name: string, fallback: string[]): string[] {
-  const value = readEnv(name);
-  if (!value) {
-    return fallback;
-  }
-
-  const items = value
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
-
-  return items.length > 0 ? items : fallback;
 }
 
 function readIntegerEnv(name: string, fallback: number): number {
@@ -119,18 +94,6 @@ function readAppointmentToolMode(): AppointmentSubmissionMode {
   return appointmentToolMode;
 }
 
-function readAppointmentExecutionPolicy(): AppointmentExecutionPolicy {
-  const policy =
-    (readEnv("APPOINTMENT_EXECUTION_POLICY") as AppointmentExecutionPolicy | null) ??
-    "test_only";
-
-  if (policy !== "test_only" && policy !== "live") {
-    throw new Error("APPOINTMENT_EXECUTION_POLICY must be one of test_only, live.");
-  }
-
-  return policy;
-}
-
 function readAppointmentToolProvider(): AppointmentToolProviderId | null {
   const provider =
     (readEnv("APPOINTMENT_TOOL_PROVIDER") as AppointmentToolProviderId | null) ??
@@ -160,12 +123,6 @@ export function getServerConfig(): ServerConfig {
     demoTimezone: readEnv("DEMO_TIMEZONE") ?? "Asia/Tokyo",
     appointmentToolMode: readAppointmentToolMode(),
     appointmentToolProvider: readAppointmentToolProvider(),
-    appointmentExecutionPolicy: readAppointmentExecutionPolicy(),
-    appointmentTestPatientPatterns: readStringArrayEnv(
-      "APPOINTMENT_TEST_PATIENT_PATTERNS",
-      DEFAULT_TEST_PATIENT_PATTERNS
-    ),
-    appointmentTestMinLeadDays: readIntegerEnv("APPOINTMENT_TEST_MIN_LEAD_DAYS", 30),
     apotoolEmail: readEnv("APOTOOL_EMAIL"),
     apotoolPassword: readEnv("APOTOOL_PASSWORD"),
     apotoolLoginUrl: readEnv("APOTOOL_LOGIN_URL") ?? "https://user.stransa.co.jp/login",

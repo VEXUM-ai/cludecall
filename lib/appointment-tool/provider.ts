@@ -99,69 +99,6 @@ function buildManualOnlyError(draft: AppointmentDraft) {
   );
 }
 
-function normalizeComparableText(value: string | null | undefined) {
-  return (value ?? "").trim().toLowerCase();
-}
-
-function getTodayIsoInTimeZone(timeZone: string) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = formatter.formatToParts(new Date());
-  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${pick("year")}-${pick("month")}-${pick("day")}`;
-}
-
-function addDaysToIsoDate(isoDate: string, days: number) {
-  const [year, month, day] = isoDate.split("-").map((value) => Number.parseInt(value, 10));
-  const date = new Date(Date.UTC(year, month - 1, day));
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-export function evaluateAppointmentExecutionGuard(args: {
-  draft: AppointmentDraft;
-  candidate: AppointmentAvailabilityCandidate;
-}) {
-  const config = getServerConfig();
-  if (config.appointmentExecutionPolicy !== "test_only") {
-    return null;
-  }
-
-  const hasConfiguredPatientPatterns = config.appointmentTestPatientPatterns.length > 0;
-  const combinedPatientName = [args.draft.patientName]
-    .filter((value): value is string => Boolean(value))
-    .join(" ");
-  const patientMatchesPattern =
-    !hasConfiguredPatientPatterns ||
-    config.appointmentTestPatientPatterns.some((pattern) =>
-      normalizeComparableText(combinedPatientName).includes(normalizeComparableText(pattern))
-    );
-  const minAllowedDate = addDaysToIsoDate(
-    getTodayIsoInTimeZone(config.demoTimezone),
-    config.appointmentTestMinLeadDays
-  );
-
-  const violations: string[] = [];
-  if (hasConfiguredPatientPatterns && !patientMatchesPattern) {
-    violations.push(
-      `患者名にテスト用キーワード（${config.appointmentTestPatientPatterns.join(" / ")}）が含まれていません`
-    );
-  }
-  if (!args.candidate.date || args.candidate.date < minAllowedDate) {
-    violations.push(`予約日は ${minAllowedDate} 以降の候補だけ実行できます`);
-  }
-
-  if (violations.length === 0) {
-    return null;
-  }
-
-  return `APPOINTMENT_EXECUTION_POLICY=test_only のため実行を停止しました。${violations.join(" / ")}`;
-}
-
 export async function getAppointmentToolHealth(): Promise<AppointmentToolHealth> {
   const config = getServerConfig();
   if (!config.appointmentToolProvider) {
@@ -176,13 +113,20 @@ export async function getAppointmentToolHealth(): Promise<AppointmentToolHealth>
 
   const sessionState = getApotoolSessionState();
   const credentialsReady = Boolean(config.apotoolEmail && config.apotoolPassword);
+  const sessionReady =
+    sessionState.browserReady &&
+    sessionState.contextReady &&
+    sessionState.pageReady &&
+    !sessionState.initializing;
   return {
     provider: config.appointmentToolProvider,
-    status: credentialsReady ? "healthy" : "degraded",
+    status: credentialsReady && sessionReady ? "healthy" : "degraded",
     checkedAt: new Date().toISOString(),
-    message: credentialsReady
-      ? `Apotool RPA adapter is configured. Execution policy: ${config.appointmentExecutionPolicy}. Browser session is started lazily.`
-      : "Apotool credentials are missing. Review can continue, but execution will fall back to manual handling.",
+    message: !credentialsReady
+      ? "Apotool credentials are missing. Review can continue, but execution will fall back to manual handling."
+      : sessionReady
+        ? "Apotool RPA adapter is configured and the browser session is ready."
+        : "Apotool RPA adapter credentials are configured, but the browser session is not warm yet.",
     details: {
       credentialsReady,
       browserReady: sessionState.browserReady,
@@ -190,9 +134,6 @@ export async function getAppointmentToolHealth(): Promise<AppointmentToolHealth>
       pageReady: sessionState.pageReady,
       sessionInitializing: sessionState.initializing,
       prewarmOnBootEnabled: config.appointmentToolPrewarmOnBoot,
-      executionPolicy: config.appointmentExecutionPolicy,
-      testPatientPatterns: config.appointmentTestPatientPatterns.join(", "),
-      testMinLeadDays: String(config.appointmentTestMinLeadDays),
       loginUrl: config.apotoolLoginUrl,
       clinicName: config.apotoolClinicName,
     },
@@ -429,31 +370,6 @@ export async function submitBookingWithProvider(args: {
       orphanRisk: false,
       auditRef,
       message: error,
-    };
-  }
-
-  const executionGuardError = evaluateAppointmentExecutionGuard({
-    draft,
-    candidate: selectedCandidate,
-  });
-  if (executionGuardError) {
-    const auditRef = await writeAppointmentAudit({
-      action: "execute",
-      conversationId: draft.conversationId,
-      provider: draft.provider,
-      request: {
-        conversationId: draft.conversationId,
-        selectedCandidateId,
-        candidate: selectedCandidate,
-      },
-      error: executionGuardError,
-    });
-    return {
-      draft: markAppointmentExecutionFailed(draft, executionGuardError, auditRef, true),
-      success: false,
-      orphanRisk: false,
-      auditRef,
-      message: executionGuardError,
     };
   }
 
