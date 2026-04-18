@@ -97,7 +97,7 @@
 - `4bd1302` 親ドキュメント作成と進捗記録ルールの初期化を checkpoint commit。
 - `b6971bb` 通話中空き枠返答の live API、queue、managed webhook tool、prompt 調整、関連テストを checkpoint commit。
 - `f63c2ab` ElevenLabs tool schema 422 修正、実 agent apply、live QA 7 本、simulate-conversation ブロッカー記録を checkpoint commit。
-- `planned` Apotool boot prewarm の wrapper 導入、session init 排他、health 表示追加を checkpoint commit。
+- `6b0824d` Apotool boot prewarm の wrapper 導入、session init 排他、health 表示追加を checkpoint commit。
 
 ## 未解決事項
 - snapshot prewarm scheduler はまだ未実装。現状は on-demand read と stale snapshot fallback のみ。
