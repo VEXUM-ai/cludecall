@@ -46,6 +46,10 @@ test("agent prompt requires direct transfer tool usage without filler speech", (
   );
   assert.match(
     DENTAL_DEMO_PROMPT,
+    /Always include client_message in the transfer_to_number tool call/u
+  );
+  assert.match(
+    DENTAL_DEMO_PROMPT,
     /Do not emit a separate free-form assistant reply before the tool call/u
   );
   assert.match(
@@ -57,6 +61,17 @@ test("agent prompt requires direct transfer tool usage without filler speech", (
     /Do not start it with "承知いたしました" or "ただ"/u
   );
   assert.doesNotMatch(DENTAL_DEMO_PROMPT, /patient-facing notes/u);
+});
+
+test("agent prompt keeps mild sensitivity in routine flow unless urgency is explicit", () => {
+  assert.match(
+    DENTAL_DEMO_PROMPT,
+    /Mild sensitivity such as "しみる", "冷たいものがしみる", slight discomfort, or a routine cleaning consult alone is not an urgent transfer trigger/u
+  );
+  assert.match(
+    DENTAL_DEMO_PROMPT,
+    /Do not transfer for mild sensitivity alone unless the caller also asks for same-day help, asks for a human, or reports strong pain, swelling, bleeding, trauma, or fever/u
+  );
 });
 
 test("agent prompt batches public FAQ answers instead of fragmenting them", () => {
@@ -180,6 +195,43 @@ test("Apotool column classifiers detect treatment and counseling columns", () =>
   assert.equal(calendar.isTreatmentColumnName("第1カウンセリング"), false);
   assert.equal(calendar.isTcColumnName("第2カウンセリング"), true);
   assert.equal(calendar.isTcColumnName("急患"), false);
+});
+
+test("Apotool header resolution accepts the current numbered treatment layout", () => {
+  const headers = calendar.resolveCalendarHeaderNames([
+    [
+      "\u2460\u6cbb\u7642",
+      "\u2461\u6cbb\u7642",
+      "\u2462\u6cbb\u7642",
+      "\u2463t/s\uff08spt/ems\u7b49\uff09",
+      "\u2464t/s(WH/lip\u7b49)",
+      "\u30ab\u30a6\u30f3\u30bb\u30ea\u30f3\u30b0",
+      "\u521d\u8a3a\u30fb\u5f85\u5408",
+      "\u30e1\u30e2",
+    ],
+  ]);
+
+  assert.deepEqual(headers, [
+    "\u2460\u6cbb\u7642",
+    "\u2461\u6cbb\u7642",
+    "\u2462\u6cbb\u7642",
+    "\u2463t/s\uff08spt/ems\u7b49\uff09",
+    "\u2464t/s(WH/lip\u7b49)",
+    "\u30ab\u30a6\u30f3\u30bb\u30ea\u30f3\u30b0",
+    "\u521d\u8a3a\u30fb\u5f85\u5408",
+    "\u30e1\u30e2",
+  ]);
+  assert.equal(calendar.resolveCalendarColumnIndex(headers, "\u30ab\u30a6\u30f3\u30bb\u30ea\u30f3\u30b0"), 5);
+  assert.equal(calendar.resolveCalendarColumnIndex(headers, "\u2460\u6cbb\u7642"), 0);
+  assert.equal(calendar.resolveCalendarColumnIndex(headers, "T/S"), 3);
+});
+
+test("Apotool column classifiers detect the current clinic naming", () => {
+  assert.equal(calendar.isTreatmentColumnName("\u2460\u6cbb\u7642"), true);
+  assert.equal(calendar.isTreatmentColumnName("\u2463t/s\uff08spt/ems\u7b49\uff09"), true);
+  assert.equal(calendar.isTreatmentColumnName("\u521d\u8a3a\u30fb\u5f85\u5408"), false);
+  assert.equal(calendar.looksLikeCalendarHeader("\u521d\u8a3a\u30fb\u5f85\u5408"), true);
+  assert.equal(calendar.isTcColumnName("\u30ab\u30a6\u30f3\u30bb\u30ea\u30f3\u30b0"), true);
 });
 
 test("reservation memo discards yomi even if analysis still returns it", () => {
