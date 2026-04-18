@@ -28,6 +28,7 @@ type ServerConfig = {
   apotoolLoginUrl: string;
   apotoolClinicName: string;
   apotoolHeadless: boolean;
+  appointmentToolPrewarmOnBoot: boolean;
   appointmentToolPublicBaseUrl: string | null;
   appointmentToolWebhookSecret: string | null;
   appointmentLiveWaitTimeoutMs: number;
@@ -171,6 +172,7 @@ export function getServerConfig(): ServerConfig {
     apotoolClinicName:
       readEnv("APOTOOL_CLINIC_NAME") ?? "\u3048\u307f\u306f\u7dcf\u5408\u6b6f\u79d1 \u5927\u962a\u6885\u7530\u9662",
     apotoolHeadless: readBooleanEnv("APOTOOL_HEADLESS", true),
+    appointmentToolPrewarmOnBoot: readBooleanEnv("APPOINTMENT_TOOL_PREWARM_ON_BOOT", true),
     appointmentToolPublicBaseUrl:
       readEnv("APPOINTMENT_TOOL_PUBLIC_BASE_URL") ?? readEnv("NEXT_PUBLIC_APP_URL"),
     appointmentToolWebhookSecret: readEnv("APPOINTMENT_TOOL_WEBHOOK_SECRET"),
@@ -211,5 +213,14 @@ export function getAppointmentLiveRuntimeSettings() {
     appointmentLiveSnapshotFreshMs: readIntegerEnv("APPOINTMENT_LIVE_SNAPSHOT_FRESH_MS", 60000),
     appointmentLiveSnapshotMaxAgeMs: readIntegerEnv("APPOINTMENT_LIVE_SNAPSHOT_MAX_AGE_MS", 300000),
     appointmentLiveHoldLeaseMs: readIntegerEnv("APPOINTMENT_LIVE_HOLD_LEASE_MS", 180000),
+  };
+}
+
+export function getAppointmentToolBootRuntimeSettings() {
+  return {
+    appointmentToolProvider: readAppointmentToolProvider(),
+    apotoolEmail: readEnv("APOTOOL_EMAIL"),
+    apotoolPassword: readEnv("APOTOOL_PASSWORD"),
+    appointmentToolPrewarmOnBoot: readBooleanEnv("APPOINTMENT_TOOL_PREWARM_ON_BOOT", true),
   };
 }

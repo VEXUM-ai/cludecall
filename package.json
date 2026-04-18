@@ -5,11 +5,11 @@
   "scripts": {
     "agent:apply-demo-config": "tsx scripts/apply-agent-demo-config.ts",
     "eval:rag": "tsx scripts/evaluate-rag.ts",
-    "dev": "next dev",
+    "dev": "tsx scripts/run-next-with-apotool-prewarm.ts dev",
     "build": "next build && tsx scripts/patch-next-runtime.ts",
     "check:known-bad-calls": "tsx scripts/check-known-bad-calls.ts",
     "patch:next-runtime": "tsx scripts/patch-next-runtime.ts",
-    "start": "tsx scripts/patch-next-runtime.ts && next start",
+    "start": "tsx scripts/run-next-with-apotool-prewarm.ts start",
     "lint": "eslint .",
     "test": "node --import tsx --test tests/**/*.test.ts",
     "demo:import-last-call": "tsx scripts/import-last-call.ts",

@@ -13,6 +13,7 @@ let browser: Browser | null = null;
 let context: BrowserContext | null = null;
 let page: Page | null = null;
 let healthCheckInterval: NodeJS.Timeout | null = null;
+let sessionInitializationPromise: Promise<Page> | null = null;
 
 async function launchBrowser() {
   const config = getServerConfig();
@@ -31,12 +32,31 @@ async function launchBrowser() {
 }
 
 export async function initializeApotoolSession() {
+  if (page && !page.isClosed()) {
+    return page;
+  }
+
+  if (sessionInitializationPromise) {
+    return sessionInitializationPromise;
+  }
+
   appointmentToolLogger.info("Initializing Apotool browser session.");
-  const currentPage = await launchBrowser();
-  await loginToApotool(currentPage);
-  await selectClinic(currentPage);
-  startHealthCheck();
-  return currentPage;
+  sessionInitializationPromise = (async () => {
+    const currentPage = await launchBrowser();
+    try {
+      await loginToApotool(currentPage);
+      await selectClinic(currentPage);
+      startHealthCheck();
+      return currentPage;
+    } catch (error) {
+      await cleanupApotoolSession();
+      throw error;
+    }
+  })().finally(() => {
+    sessionInitializationPromise = null;
+  });
+
+  return sessionInitializationPromise;
 }
 
 export async function getApotoolPage() {
@@ -63,6 +83,14 @@ export async function ensureLoggedIn() {
     await cleanupApotoolSession();
     return initializeApotoolSession();
   }
+}
+
+export async function prewarmApotoolSession() {
+  const currentPage = await initializeApotoolSession();
+  appointmentToolLogger.info("Apotool boot prewarm completed.", {
+    url: currentPage.url(),
+  });
+  return currentPage;
 }
 
 function startHealthCheck() {
@@ -98,6 +126,7 @@ export async function takeErrorScreenshot(name: string) {
 }
 
 export async function cleanupApotoolSession() {
+  sessionInitializationPromise = null;
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
     healthCheckInterval = null;
@@ -123,5 +152,6 @@ export function getApotoolSessionState() {
     browserReady: Boolean(browser),
     contextReady: Boolean(context),
     pageReady: Boolean(page && !page.isClosed()),
+    initializing: Boolean(sessionInitializationPromise),
   };
 }

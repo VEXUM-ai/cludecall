@@ -188,6 +188,8 @@ export async function getAppointmentToolHealth(): Promise<AppointmentToolHealth>
       browserReady: sessionState.browserReady,
       contextReady: sessionState.contextReady,
       pageReady: sessionState.pageReady,
+      sessionInitializing: sessionState.initializing,
+      prewarmOnBootEnabled: config.appointmentToolPrewarmOnBoot,
       executionPolicy: config.appointmentExecutionPolicy,
       testPatientPatterns: config.appointmentTestPatientPatterns.join(", "),
       testMinLeadDays: String(config.appointmentTestMinLeadDays),

@@ -62,6 +62,8 @@
 - `completed`: live QA 7 本を local webhook route と live monitor で実施し、`artifacts/live-monitor/events.ndjson` に証跡を残した。結果は `warm hit=resolved snapshot_fresh`, `cold miss=resolved apotool_live`, `stale snapshot=resolved snapshot_stale`, `slot lost before hold=rejected`, `session expired=resolved apotool_live after browser kill + reinit`, `two calls overlap=both resolved with queued request queueWaitMs=2101`, `pending_finalize_post_call=202 pending_finalize_post_call`。
 - `completed`: wait budget を 1ms に落とした一時サーバーで `snapshot_stale` と `pending_finalize_post_call` を切り分け、その後 `APPOINTMENT_LIVE_WAIT_TIMEOUT_MS=15000` へ戻した。低タイムアウト時の server log は `artifacts/live-qa/next-live-qa-lowtimeout.out.log`、通常復帰後の log は `artifacts/live-qa/next-live-qa-restored.out.log` に残した。
 - `observed`: ElevenLabs の `simulate-conversation` では、managed tool が `system__conversation_id` を要求している状態だと `Missing required dynamic variables in tools: {'system__conversation_id'}` で 400 になった。placeholder を追加しても解消せず、現時点では実通話/実 Web 会話でしか tool call end-to-end を回せない可能性が高い。失敗レスポンスは `artifacts/live-qa/simulate-live-availability-20260419.json` に保存した。
+- `completed`: Apotool の cold start を緩和するため、起動直後の非同期 boot prewarm を実装した。`npm run dev` / `npm run start` は [scripts/run-next-with-apotool-prewarm.ts](</C:/Dev/Work/デンタル 一次受付AI/scripts/run-next-with-apotool-prewarm.ts>) 経由で起動し、server ready 後に [app/api/appointment-tool/prewarm/route.ts](</C:/Dev/Work/デンタル 一次受付AI/app/api/appointment-tool/prewarm/route.ts>) を叩いて browser 起動と Apotool ログインを先に済ませる。初回実装で試した `instrumentation.ts` は Next dev compile で `playwright -> net` 解決エラーを起こしたため採用せず、wrapper 方式へ切り替えた。
+- `completed`: [lib/appointment-tool/apotool-rpa/session-manager.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/apotool-rpa/session-manager.ts>) に session initialization promise を追加し、boot prewarm と最初の live request が競合しても browser 初期化が 1 本だけ走るようにした。health には `sessionInitializing` と `prewarmOnBootEnabled` を追加した。
 
 ## テストログ
 ### 2026-04-19
@@ -70,6 +72,8 @@
 - 補足: `node:sqlite` の ExperimentalWarning は出るが、live availability store と queue テストを含めて全件成功した。
 - `npm test -- tests/managed-agent-tools.test.ts tests/agent-live-booking-guardrails.test.ts`
 - 結果: 36 件 pass / 0 fail。managed webhook schema の ElevenLabs 422 修正後も回帰なし。
+- `npm test -- tests/apotool-prewarm.test.ts tests/live-availability.test.ts`
+- 結果: 38 件 pass / 0 fail。boot prewarm の有効条件と single-schedule 保証を追加で固定化した。
 - live QA 実施時刻:
   - 2026-04-19 03:15 JST `qa-cold-20260419-1` -> `pending_followup / timeout_pending`。初回 browser 起動込みでは 15 秒 budget を超えた。
   - 2026-04-19 03:15 JST `qa-warm-20260419-1` -> `resolved / snapshot_fresh`。
@@ -84,15 +88,19 @@
   - `qa-cold-20260419-2`: `source=apotool_live`, `queueWaitMs=1`, `rpaReadMs=2177`
   - `qa-overlap-20260419-a`: `queueWaitMs=2101`
   - `qa-pending-20260419-1`: `status=pending_finalize_post_call`
+- boot prewarm 実機確認:
+  - 2026-04-19 03:44 JST `npm run dev` で wrapper 起動後、`artifacts/live-qa/next-live-qa-wrapper-prewarm.out.log` に `Scheduling Apotool boot prewarm` -> `Initializing Apotool browser session` -> `Apotool boot prewarm finished successfully` が出ることを確認。
+  - その後の `GET /api/appointment-tool/health` で `browserReady=true`, `pageReady=true`, `prewarmOnBootEnabled=true`, `sessionInitializing=false` を確認。
 
 ## コミットログ
 ### 2026-04-19
 - `4bd1302` 親ドキュメント作成と進捗記録ルールの初期化を checkpoint commit。
 - `b6971bb` 通話中空き枠返答の live API、queue、managed webhook tool、prompt 調整、関連テストを checkpoint commit。
 - `f63c2ab` ElevenLabs tool schema 422 修正、実 agent apply、live QA 7 本、simulate-conversation ブロッカー記録を checkpoint commit。
+- `planned` Apotool boot prewarm の wrapper 導入、session init 排他、health 表示追加を checkpoint commit。
 
 ## 未解決事項
 - snapshot prewarm scheduler はまだ未実装。現状は on-demand read と stale snapshot fallback のみ。
 - shared secret は route 認証に使える状態にしたが、現状は header に生値を載せる前提。将来的には ElevenLabs 側の secret locator へ寄せたい。
 - ElevenLabs `simulate-conversation` は managed tool の `system__conversation_id` を満たせず 400 になった。実 agent への apply 自体は成功しているが、tool call end-to-end の無人再現は現時点で実通話または実 Web 会話に寄せる必要がある。
-- 初回 cold start は browser 起動とログインを含むため 15 秒 budget を超えることがある。`qa-cold-20260419-1` では `pending_followup / timeout_pending` になったため、prewarm か keepalive を追加しない限り first-hit latency の不安定さは残る。
+- `npm run dev` / `npm run start` では boot prewarm が入ったが、プロセスマネージャや別の起動経路から直接 `next dev` / `next start` を叩くと prewarm は走らない。その場合は wrapper と同等の起動導線へ揃える必要がある。
