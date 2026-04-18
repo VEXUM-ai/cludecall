@@ -113,6 +113,7 @@
 - `b6971bb` 通話中空き枠返答の live API、queue、managed webhook tool、prompt 調整、関連テストを checkpoint commit。
 - `f63c2ab` ElevenLabs tool schema 422 修正、実 agent apply、live QA 7 本、simulate-conversation ブロッカー記録を checkpoint commit。
 - `6b0824d` Apotool boot prewarm の wrapper 導入、session init 排他、health 表示追加を checkpoint commit。
+- `2758538` 予約投入の患者名・日付 guard を撤去し、health の warm 状態判定と明日のデモ前確認事項を整理した。
 
 ## 未解決事項
 - snapshot prewarm scheduler はまだ未実装。現状は on-demand read と stale snapshot fallback のみ。
