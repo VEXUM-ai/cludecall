@@ -74,6 +74,21 @@ test("agent prompt keeps mild sensitivity in routine flow unless urgency is expl
   );
 });
 
+test("agent prompt forbids fake live-availability claims and awkward wait-check phrasing", () => {
+  assert.match(
+    DENTAL_DEMO_PROMPT,
+    /If live_availability_lookup is not available, do not claim that you checked a specific slot and do not say that a specific slot is unavailable during the call/u
+  );
+  assert.match(
+    DENTAL_DEMO_PROMPT,
+    /While an availability lookup or hold-confirm check is in progress, do not ask "まだいらっしゃいますか？"/u
+  );
+  assert.match(
+    DENTAL_DEMO_PROMPT,
+    /予約確認中ですので、そのままで少々お待ちください。/u
+  );
+});
+
 test("agent prompt batches public FAQ answers instead of fragmenting them", () => {
   assert.match(
     DENTAL_DEMO_PROMPT,
