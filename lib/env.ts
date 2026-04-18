@@ -28,6 +28,12 @@ type ServerConfig = {
   apotoolLoginUrl: string;
   apotoolClinicName: string;
   apotoolHeadless: boolean;
+  appointmentToolPublicBaseUrl: string | null;
+  appointmentToolWebhookSecret: string | null;
+  appointmentLiveWaitTimeoutMs: number;
+  appointmentLiveSnapshotFreshMs: number;
+  appointmentLiveSnapshotMaxAgeMs: number;
+  appointmentLiveHoldLeaseMs: number;
   appointmentDefaultReviewer: string | null;
   urgentTransferPhoneNumber: string | null;
   urgentTransferMode: string;
@@ -165,6 +171,13 @@ export function getServerConfig(): ServerConfig {
     apotoolClinicName:
       readEnv("APOTOOL_CLINIC_NAME") ?? "\u3048\u307f\u306f\u7dcf\u5408\u6b6f\u79d1 \u5927\u962a\u6885\u7530\u9662",
     apotoolHeadless: readBooleanEnv("APOTOOL_HEADLESS", true),
+    appointmentToolPublicBaseUrl:
+      readEnv("APPOINTMENT_TOOL_PUBLIC_BASE_URL") ?? readEnv("NEXT_PUBLIC_APP_URL"),
+    appointmentToolWebhookSecret: readEnv("APPOINTMENT_TOOL_WEBHOOK_SECRET"),
+    appointmentLiveWaitTimeoutMs: readIntegerEnv("APPOINTMENT_LIVE_WAIT_TIMEOUT_MS", 15000),
+    appointmentLiveSnapshotFreshMs: readIntegerEnv("APPOINTMENT_LIVE_SNAPSHOT_FRESH_MS", 60000),
+    appointmentLiveSnapshotMaxAgeMs: readIntegerEnv("APPOINTMENT_LIVE_SNAPSHOT_MAX_AGE_MS", 300000),
+    appointmentLiveHoldLeaseMs: readIntegerEnv("APPOINTMENT_LIVE_HOLD_LEASE_MS", 180000),
     appointmentDefaultReviewer: readEnv("APPOINTMENT_DEFAULT_REVIEWER"),
     urgentTransferPhoneNumber: readEnv("URGENT_TRANSFER_PHONE_NUMBER"),
     urgentTransferMode: readEnv("URGENT_TRANSFER_MODE") ?? "blind",
@@ -186,5 +199,17 @@ export function getDemoRuntimeSettings() {
     demoOutboundTargetNumber: readEnv("DEMO_OUTBOUND_TARGET_NUMBER") ?? "",
     demoTimezone: getDemoTimezone(),
     defaultReviewer: readEnv("APPOINTMENT_DEFAULT_REVIEWER") ?? "",
+  };
+}
+
+export function getAppointmentLiveRuntimeSettings() {
+  return {
+    appointmentToolPublicBaseUrl:
+      readEnv("APPOINTMENT_TOOL_PUBLIC_BASE_URL") ?? readEnv("NEXT_PUBLIC_APP_URL"),
+    appointmentToolWebhookSecret: readEnv("APPOINTMENT_TOOL_WEBHOOK_SECRET"),
+    appointmentLiveWaitTimeoutMs: readIntegerEnv("APPOINTMENT_LIVE_WAIT_TIMEOUT_MS", 15000),
+    appointmentLiveSnapshotFreshMs: readIntegerEnv("APPOINTMENT_LIVE_SNAPSHOT_FRESH_MS", 60000),
+    appointmentLiveSnapshotMaxAgeMs: readIntegerEnv("APPOINTMENT_LIVE_SNAPSHOT_MAX_AGE_MS", 300000),
+    appointmentLiveHoldLeaseMs: readIntegerEnv("APPOINTMENT_LIVE_HOLD_LEASE_MS", 180000),
   };
 }

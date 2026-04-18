@@ -9,6 +9,10 @@ import {
   markAppointmentExecutionSubmitted,
 } from "@/lib/appointments";
 import { appendDemoAppointmentLog } from "@/lib/appointment-demo-log";
+import {
+  runApotoolTaskValue,
+  type ApotoolTaskPriority,
+} from "@/lib/appointment-tool/apotool-task-queue";
 import { writeAppointmentAudit } from "@/lib/appointment-tool/audit";
 import { appointmentToolLogger } from "@/lib/appointment-tool/logger";
 import { findAvailableSlots } from "@/lib/appointment-tool/apotool-rpa/availability";
@@ -40,6 +44,48 @@ function extractExactDate(value: string | null) {
 
 function getDraftCandidateDates(draft: AppointmentDraft) {
   return [...new Set(draft.preferredSlots.map((slot) => extractExactDate(slot.date)).filter(Boolean))] as string[];
+}
+
+export async function readAvailabilityCandidatesFromApotool(args: {
+  requestedDates: string[];
+  priority?: ApotoolTaskPriority;
+  taskLabel?: string;
+  details?: Record<string, unknown>;
+}) {
+  const requestedDates = [...new Set(args.requestedDates.filter(Boolean))];
+  return runApotoolTaskValue(
+    {
+      priority: args.priority ?? "snapshot_refresh",
+      label: args.taskLabel ?? `availability:${requestedDates.join(",")}`,
+      details: {
+        requestedDates,
+        ...(args.details ?? {}),
+      },
+    },
+    async () => {
+      const page = await ensureLoggedIn();
+      const candidates: AppointmentAvailabilityCandidate[] = [];
+
+      for (const date of requestedDates) {
+        await navigateToDate(page, date);
+        const calendarGrid = await readCalendarGrid(page);
+        const slots = findAvailableSlots(calendarGrid);
+        candidates.push(
+          ...slots.map((slot) =>
+            createAvailabilityCandidate({
+              date,
+              tcStartTime: slot.start_time,
+              tcUnit: slot.tc_unit,
+              treatmentUnit: slot.treatment_unit,
+              notes: [`derived from ${date}`],
+            })
+          )
+        );
+      }
+
+      return candidates;
+    }
+  );
 }
 
 function buildManualOnlyError(draft: AppointmentDraft) {
@@ -215,25 +261,41 @@ export async function checkAvailabilityWithProvider(
     };
   }
 
-  const page = await ensureLoggedIn();
-  const candidates: AppointmentAvailabilityCandidate[] = [];
   try {
-    for (const date of candidateDates) {
-      await navigateToDate(page, date);
-      const calendarGrid = await readCalendarGrid(page);
-      const slots = findAvailableSlots(calendarGrid);
-      candidates.push(
-        ...slots.map((slot) =>
-          createAvailabilityCandidate({
-            date,
-            tcStartTime: slot.start_time,
-            tcUnit: slot.tc_unit,
-            treatmentUnit: slot.treatment_unit,
-            notes: [`derived from ${date}`],
-          })
-        )
-      );
-    }
+    const candidates = await readAvailabilityCandidatesFromApotool({
+      requestedDates: candidateDates,
+      priority: "post_call_booking",
+      taskLabel: `availability:${draft.conversationId}`,
+      details: {
+        conversationId: draft.conversationId,
+        serviceLine: draft.serviceLine,
+      },
+    });
+
+    const auditRef = await writeAppointmentAudit({
+      action: "availability",
+      conversationId: draft.conversationId,
+      provider: draft.provider,
+      request: {
+        conversationId: draft.conversationId,
+        requestedDates: candidateDates,
+        preferredSlots: draft.preferredSlots,
+        serviceLine: draft.serviceLine,
+      },
+      response: {
+        candidateCount: candidates.length,
+        candidates: candidates.map((candidate) => ({
+          id: candidate.id,
+          label: buildExecutionCandidatePreview(candidate),
+        })),
+      },
+    });
+
+    return {
+      draft: applyAvailabilityResults(draft, candidates, auditRef, null),
+      candidates,
+      auditRef,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const screenshotPath = await takeErrorScreenshot("availability-failed");
@@ -257,37 +319,20 @@ export async function checkAvailabilityWithProvider(
     };
   }
 
-  const auditRef = await writeAppointmentAudit({
-    action: "availability",
-    conversationId: draft.conversationId,
-    provider: draft.provider,
-    request: {
-      conversationId: draft.conversationId,
-      requestedDates: candidateDates,
-      preferredSlots: draft.preferredSlots,
-      serviceLine: draft.serviceLine,
-    },
-    response: {
-      candidateCount: candidates.length,
-      candidates: candidates.map((candidate) => ({
-        id: candidate.id,
-        label: buildExecutionCandidatePreview(candidate),
-      })),
-    },
-  });
-
-  return {
-    draft: applyAvailabilityResults(draft, candidates, auditRef, null),
-    candidates,
-    auditRef,
-  };
 }
 
 export async function submitBookingWithProvider(args: {
   draft: AppointmentDraft;
   selectedCandidateId: string;
+  priority?: ApotoolTaskPriority;
+  taskLabel?: string;
 }): Promise<AppointmentToolExecutionResult> {
-  const { draft, selectedCandidateId } = args;
+  const {
+    draft,
+    selectedCandidateId,
+    priority = "post_call_booking",
+    taskLabel = `booking:${args.draft.conversationId}:${selectedCandidateId}`,
+  } = args;
   const selectedCandidate = draft.availabilityCandidates.find(
     (candidate) => candidate.id === selectedCandidateId
   );
@@ -411,17 +456,30 @@ export async function submitBookingWithProvider(args: {
   }
 
   let workingDraft = markAppointmentExecutionStarted(draft, selectedCandidateId);
-  const page = await ensureLoggedIn();
-
   let result;
   try {
-    await navigateToDate(page, selectedCandidate.date);
-    result = await bookAppointment(page, {
-      patientName,
-      phoneNumber: draft.phoneNumber ?? "",
-      candidate: selectedCandidate,
-      menuMapping,
-    });
+    result = await runApotoolTaskValue(
+      {
+        priority,
+        label: taskLabel,
+        details: {
+          conversationId: draft.conversationId,
+          selectedCandidateId,
+          candidateDate: selectedCandidate.date,
+          candidateTcStartTime: selectedCandidate.tcStartTime,
+        },
+      },
+      async () => {
+        const page = await ensureLoggedIn();
+        await navigateToDate(page, selectedCandidate.date);
+        return bookAppointment(page, {
+          patientName,
+          phoneNumber: draft.phoneNumber ?? "",
+          candidate: selectedCandidate,
+          menuMapping,
+        });
+      }
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const screenshotPath = await takeErrorScreenshot("execute-failed");

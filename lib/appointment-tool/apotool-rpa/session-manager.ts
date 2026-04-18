@@ -4,6 +4,7 @@ import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 
 import { getAppointmentScreenshotDir } from "@/lib/appointment-tool/audit";
+import { runApotoolTaskValue } from "@/lib/appointment-tool/apotool-task-queue";
 import { appointmentToolLogger } from "@/lib/appointment-tool/logger";
 import { getServerConfig } from "@/lib/env";
 import { loginToApotool, selectClinic } from "@/lib/appointment-tool/apotool-rpa/login";
@@ -70,7 +71,13 @@ function startHealthCheck() {
   }
 
   healthCheckInterval = setInterval(() => {
-    void ensureLoggedIn().catch((error) => {
+    void runApotoolTaskValue(
+      {
+        priority: "health_check",
+        label: "session-health-check",
+      },
+      async () => ensureLoggedIn()
+    ).catch((error) => {
       appointmentToolLogger.error("Apotool health check failed.", error);
     });
   }, 5 * 60 * 1000);

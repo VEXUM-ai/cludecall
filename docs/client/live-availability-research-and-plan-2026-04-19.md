@@ -39,31 +39,39 @@
   - health check も同じ queue へ載せる
 
 ## TODOチェックリスト
-- [ ] 1. 親ドキュメント作成と初期 TODO 投入
-- [ ] 2. live availability 用 service 境界の切り出し
-- [ ] 3. single-flight queue 導入
-- [ ] 4. snapshot store 導入
-- [ ] 5. `live-availability` API 追加
-- [ ] 6. `live-hold-confirm` API 追加
-- [ ] 7. ElevenLabs server tool 配線
-- [ ] 8. prompt / timeout / waiting behavior 調整
+- [x] 1. 親ドキュメント作成と初期 TODO 投入
+- [x] 2. live availability 用 service 境界の切り出し
+- [x] 3. single-flight queue 導入
+- [x] 4. snapshot store 導入
+- [x] 5. `live-availability` API 追加
+- [x] 6. `live-hold-confirm` API 追加
+- [x] 7. ElevenLabs server tool 配線
+- [x] 8. prompt / timeout / waiting behavior 調整
 - [ ] 9. integration test / live QA
 - [ ] 10. 運用メモと残課題整理
 
 ## 実装ログ
 ### 2026-04-19
-- `in_progress`: 1. 親ドキュメント作成と初期 TODO 投入
-- これ以降の実装ログ、テストログ、コミットログはこのファイルに集約する。
+- `completed`: 1. 親ドキュメントを新規作成し、TODO・実装ログ・テストログ・コミットログの記録先をこのファイルへ固定した。
+- `completed`: 2-6. live availability service を [lib/appointment-tool/live-availability.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/live-availability.ts>) に切り出し、single-flight queue を [lib/appointment-tool/apotool-task-queue.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/apotool-task-queue.ts>)、snapshot / lease / job store を [lib/appointment-tool/live-availability-store.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/live-availability-store.ts>) に追加した。live read / hold confirm API は [app/api/appointment-tool/live-availability/route.ts](</C:/Dev/Work/デンタル 一次受付AI/app/api/appointment-tool/live-availability/route.ts>) と [app/api/appointment-tool/live-hold-confirm/route.ts](</C:/Dev/Work/デンタル 一次受付AI/app/api/appointment-tool/live-hold-confirm/route.ts>) に追加した。
+- `completed`: 7. ElevenLabs managed webhook tool 定義を [lib/elevenlabs/managed-agent-tools.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/managed-agent-tools.ts>) に追加し、[scripts/apply-agent-demo-config.ts](</C:/Dev/Work/デンタル 一次受付AI/scripts/apply-agent-demo-config.ts>) で create/update と `tool_ids` 置換まで自動化した。managed tool 名は `live_availability_lookup`, `live_hold_confirm`。
+- `completed`: 8. prompt と waiting behavior の規約を [lib/agent-demo-config.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/agent-demo-config.ts>) に反映した。routine 初診のみ live tool を使い、候補は provisional、`live_hold_confirm` が `confirmed` のときだけ確定表現を許可する。
+- `completed`: live webhook route に optional shared secret 認証を追加した。[lib/appointment-tool/live-tool-webhook.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/live-tool-webhook.ts>) と [.env.example](</C:/Dev/Work/デンタル 一次受付AI/.env.example>) に `APPOINTMENT_TOOL_WEBHOOK_SECRET` を追加し、公開 route をそのまま無防備に叩かれないようにした。
+- `in_progress`: 9. integration test は通過したが、ElevenLabs agent への apply 実行と live QA 7 本はまだ未実施。
 
 ## テストログ
 ### 2026-04-19
-- まだ未実施。
+- `npm test -- tests/managed-agent-tools.test.ts tests/agent-live-booking-guardrails.test.ts tests/live-availability.test.ts tests/agent-and-apotool-guardrails.test.ts tests/integration-plan.test.ts`
+- 結果: 36 件 pass / 0 fail。
+- 補足: `node:sqlite` の ExperimentalWarning は出るが、live availability store と queue テストを含めて全件成功した。
 
 ## コミットログ
 ### 2026-04-19
-- 予定: 親ドキュメント作成と進捗記録ルールの初期化を checkpoint commit する。
+- `4bd1302` 親ドキュメント作成と進捗記録ルールの初期化を checkpoint commit。
+- `planned` live 空き枠 lookup / hold confirm の queue 基盤、managed webhook tool、prompt 調整、関連テストを checkpoint commit。
 
 ## 未解決事項
-- ElevenLabs server tool の自動作成・更新を `scripts/apply-agent-demo-config.ts` にどこまで組み込むか。
-- stale snapshot の caller-facing 文言をどこまで agent prompt に寄せ、どこまで tool description に寄せるか。
-- live hold confirm が 15 秒以内に終わらない場合の `pending_finalize_post_call` 通知文言。
+- snapshot prewarm scheduler はまだ未実装。現状は on-demand read と stale snapshot fallback のみ。
+- `scripts/apply-agent-demo-config.ts` に managed tool の create/update は入れたが、実 agent へ apply して ElevenLabs 側の tool 実体を更新する作業は別途必要。
+- live QA は未実施。少なくとも `warm hit`, `cold miss`, `stale snapshot`, `slot lost before hold`, `session expired`, `two calls overlap`, `pending_finalize_post_call` の 7 本を実地で回す。
+- shared secret は route 認証に使える状態にしたが、現状は header に生値を載せる前提。将来的には ElevenLabs 側の secret locator へ寄せたい。

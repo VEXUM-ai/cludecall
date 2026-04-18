@@ -29,6 +29,11 @@ import {
   DENTAL_DEMO_FAST_TURN_TIMEOUT_SECONDS,
 } from "../lib/agent-speed-config";
 import { getServerConfig } from "../lib/env";
+import {
+  buildManagedAppointmentWebhookTools,
+  type ManagedConvAiToolRecord,
+  mergeManagedToolIds,
+} from "../lib/elevenlabs/managed-agent-tools";
 import { loadDotenvFile } from "./load-dotenv";
 
 type JsonObject = Record<string, unknown>;
@@ -917,6 +922,163 @@ function buildUrgentTransferToolConfig() {
   } satisfies JsonObject;
 }
 
+function normalizeToolRecord(entry: unknown): ManagedConvAiToolRecord | null {
+  if (!isRecord(entry)) {
+    return null;
+  }
+
+  const id =
+    typeof entry.id === "string"
+      ? entry.id
+      : typeof entry.tool_id === "string"
+        ? entry.tool_id
+        : null;
+  const toolConfig = isRecord(entry.tool_config) ? entry.tool_config : null;
+  const name =
+    typeof toolConfig?.name === "string"
+      ? toolConfig.name
+      : typeof entry.name === "string"
+        ? entry.name
+        : null;
+
+  if (!id || !name) {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    description:
+      typeof toolConfig?.description === "string"
+        ? toolConfig.description
+        : typeof entry.description === "string"
+          ? entry.description
+          : null,
+  };
+}
+
+async function listTools(apiKey: string) {
+  const url = new URL("https://api.elevenlabs.io/v1/convai/tools");
+  const payload = await requestJson(url, {
+    method: "GET",
+    apiKey,
+  });
+
+  const tools = Array.isArray(payload.tools) ? payload.tools : [];
+  return tools.flatMap((entry) => {
+    const record = normalizeToolRecord(entry);
+    return record ? [record] : [];
+  });
+}
+
+async function createTool(args: { apiKey: string; toolConfig: JsonObject }) {
+  const url = new URL("https://api.elevenlabs.io/v1/convai/tools");
+  const payload = await requestJson(url, {
+    method: "POST",
+    apiKey: args.apiKey,
+    body: {
+      tool_config: args.toolConfig,
+    },
+  });
+
+  const record = normalizeToolRecord(payload);
+  if (!record) {
+    throw new Error(`Failed to create managed tool ${String(args.toolConfig.name ?? "")}.`);
+  }
+
+  return record;
+}
+
+async function updateTool(args: {
+  apiKey: string;
+  toolId: string;
+  toolConfig: JsonObject;
+}) {
+  const url = new URL(`https://api.elevenlabs.io/v1/convai/tools/${args.toolId}`);
+  const payload = await requestJson(url, {
+    method: "PATCH",
+    apiKey: args.apiKey,
+    body: {
+      tool_config: args.toolConfig,
+    },
+  });
+
+  const record = normalizeToolRecord(payload);
+  if (!record) {
+    throw new Error(`Failed to update managed tool ${args.toolId}.`);
+  }
+
+  return record;
+}
+
+async function ensureManagedAppointmentTools(args: {
+  apiKey: string;
+  baseUrl: string | null;
+  sharedSecret: string | null;
+  waitTimeoutMs: number;
+}) {
+  if (!args.baseUrl) {
+    console.warn(
+      "APPOINTMENT_TOOL_PUBLIC_BASE_URL or NEXT_PUBLIC_APP_URL is not set. Skipping managed live appointment webhook tools."
+    );
+    return {
+      toolIds: [] as string[],
+      matchedToolIds: [] as string[],
+      tools: [] as ManagedConvAiToolRecord[],
+    };
+  }
+
+  const desiredTools = buildManagedAppointmentWebhookTools({
+    baseUrl: args.baseUrl,
+    sharedSecret: args.sharedSecret,
+    waitTimeoutMs: args.waitTimeoutMs,
+  });
+  const existingTools = await listTools(args.apiKey);
+  const matchedToolIds = existingTools
+    .filter((tool) => desiredTools.some((desiredTool) => desiredTool.name === tool.name))
+    .map((tool) => tool.id);
+  const resolvedTools: ManagedConvAiToolRecord[] = [];
+
+  for (const desiredTool of desiredTools) {
+    const matchingTools = existingTools.filter((tool) => tool.name === desiredTool.name);
+    const preferredTool =
+      matchingTools.find((tool) => tool.description === desiredTool.description) ?? matchingTools[0];
+
+    if (!preferredTool) {
+      resolvedTools.push(
+        await createTool({
+          apiKey: args.apiKey,
+          toolConfig: desiredTool satisfies JsonObject,
+        })
+      );
+      continue;
+    }
+
+    if (matchingTools.length > 1) {
+      console.warn(
+        `Multiple tools matched ${desiredTool.name}; updating ${preferredTool.id} and retaining the others unattached.`
+      );
+    }
+
+    resolvedTools.push(
+      await updateTool({
+        apiKey: args.apiKey,
+        toolId: preferredTool.id,
+        toolConfig: {
+          ...desiredTool,
+          id: preferredTool.id,
+        } satisfies JsonObject,
+      })
+    );
+  }
+
+  return {
+    toolIds: resolvedTools.map((tool) => tool.id),
+    matchedToolIds,
+    tools: resolvedTools,
+  };
+}
+
 function buildPatchBody(args: {
   conversationConfig: JsonObject;
   currentConversationSettings: JsonObject;
@@ -947,6 +1109,8 @@ function buildPatchBody(args: {
   resolvedRagMaxVectorDistance: number;
   resolvedDisableFirstMessageInterruptions: boolean;
   urgentTransferTool: JsonObject | null;
+  managedToolIds: string[];
+  matchedManagedToolIds: string[];
   includeMonitoring: boolean;
 }) {
   const conversationSettings: JsonObject = {
@@ -981,6 +1145,11 @@ function buildPatchBody(args: {
         (item): item is string => typeof item === "string" && item.length > 0
       )
     : [];
+  const mergedToolIds = mergeManagedToolIds({
+    currentToolIds,
+    managedToolIds: args.managedToolIds,
+    knownManagedToolIds: args.matchedManagedToolIds,
+  });
   const ragEnabled = true;
 
   if (args.includeMonitoring) {
@@ -1036,7 +1205,7 @@ function buildPatchBody(args: {
           ...currentPromptConfigWithoutTooling,
           prompt: DENTAL_DEMO_PROMPT,
           knowledge_base: mergedKnowledgeBaseEntries,
-          tool_ids: currentToolIds,
+          tool_ids: mergedToolIds,
           built_in_tools: mergedBuiltInTools,
           llm: args.resolvedLlm,
           temperature: 0,
@@ -1074,7 +1243,13 @@ function buildPatchBody(args: {
 
 async function main() {
   loadDotenvFile();
-  const { apiKey, agentId } = getServerConfig();
+  const {
+    apiKey,
+    agentId,
+    appointmentToolPublicBaseUrl,
+    appointmentToolWebhookSecret,
+    appointmentLiveWaitTimeoutMs,
+  } = getServerConfig();
   const agentUrl = new URL(`https://api.elevenlabs.io/v1/convai/agents/${agentId}`);
 
   const currentAgent = await requestJson(agentUrl, {
@@ -1170,6 +1345,12 @@ async function main() {
       ? currentAgentConfig.disable_first_message_interruptions
       : false);
   const urgentTransferTool = buildUrgentTransferToolConfig();
+  const managedAppointmentTools = await ensureManagedAppointmentTools({
+    apiKey,
+    baseUrl: appointmentToolPublicBaseUrl,
+    sharedSecret: appointmentToolWebhookSecret,
+    waitTimeoutMs: appointmentLiveWaitTimeoutMs,
+  });
 
   const branchId =
     typeof currentAgent.branch_id === "string" && currentAgent.branch_id.length > 0
@@ -1216,6 +1397,8 @@ async function main() {
         resolvedRagMaxVectorDistance,
         resolvedDisableFirstMessageInterruptions,
         urgentTransferTool,
+        managedToolIds: managedAppointmentTools.toolIds,
+        matchedManagedToolIds: managedAppointmentTools.matchedToolIds,
         includeMonitoring: true,
         managedKnowledgeBaseEntries,
         managedPronunciationDictionary,
@@ -1261,6 +1444,8 @@ async function main() {
         resolvedRagMaxVectorDistance,
         resolvedDisableFirstMessageInterruptions,
         urgentTransferTool,
+        managedToolIds: managedAppointmentTools.toolIds,
+        matchedManagedToolIds: managedAppointmentTools.matchedToolIds,
         includeMonitoring: false,
         managedKnowledgeBaseEntries,
         managedPronunciationDictionary,
@@ -1318,6 +1503,13 @@ async function main() {
   );
   console.log(`pronunciationDictionaryCreated: ${String(managedPronunciationDictionary.created)}`);
   console.log(`urgentTransferToolEnabled: ${String(Boolean(urgentTransferTool))}`);
+  console.log(`managedWebhookTools: ${managedAppointmentTools.tools.length}`);
+  console.log(
+    `managedWebhookToolIds: ${managedAppointmentTools.tools.map((tool) => tool.id).join(",")}`
+  );
+  console.log(
+    `managedWebhookToolNames: ${managedAppointmentTools.tools.map((tool) => tool.name).join(",")}`
+  );
   console.log(
     `urgentTransferPhoneNumber: ${String(
       readOptionalEnv("URGENT_TRANSFER_PHONE_NUMBER") ??
