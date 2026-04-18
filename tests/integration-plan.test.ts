@@ -20,6 +20,10 @@ import {
 } from "@/lib/appointments";
 import { evaluateAppointmentExecutionGuard } from "@/lib/appointment-tool/provider";
 import { normalizeReservationMemo } from "@/lib/elevenlabs/memo";
+import {
+  isPhoneConversationDoneStatus,
+  shouldStartPhonePostCallFallback,
+} from "@/lib/phone-postcall-fallback";
 
 test("knowledge pack keeps approved patient facts separate from legacy override", () => {
   const businessHoursFact = EMIHA_KNOWLEDGE_PACK.approvedFacts.find(
@@ -111,7 +115,9 @@ test("draft review and execution metadata stay synchronized with menu mappings",
   );
 
   assert.equal(findServiceMenuMapping("general_initial")?.automationPolicy, "rpa_supported");
+  assert.equal(findServiceMenuMapping("general_initial")?.apotoolTcMenu, "T/S (30分)");
   assert.equal(findServiceMenuMapping("emergency_initial")?.automationPolicy, "manual_review_only");
+  assert.equal(findServiceMenuMapping("emergency_initial")?.apotoolTcMenu, "T/S (30分)");
   assert.equal(findServiceMenuMapping("implant_consult")?.automationPolicy, "manual_review_only");
   assert.equal(
     getAppointmentAutomationBlockReason({
@@ -134,7 +140,7 @@ test("draft review and execution metadata stay synchronized with menu mappings",
   assert.equal(submittedDraft.appointmentCompleted, true);
 });
 
-test("test-only execution policy blocks near-term bookings and applies name guard only when configured", () => {
+test("test-only execution policy blocks near-term bookings and requires an explicit test name by default", () => {
   process.env.APPOINTMENT_EXECUTION_POLICY = "test_only";
   process.env.APPOINTMENT_TEST_PATIENT_PATTERNS = "";
   process.env.APPOINTMENT_TEST_MIN_LEAD_DAYS = "30";
@@ -161,11 +167,11 @@ test("test-only execution policy blocks near-term bookings and applies name guar
     treatmentUnit: "診療ユニットA",
   });
 
-  const allowedWithoutNameGuard = evaluateAppointmentExecutionGuard({
+  const blockedByDefaultNameGuard = evaluateAppointmentExecutionGuard({
     draft,
     candidate: futureCandidate,
   });
-  assert.equal(allowedWithoutNameGuard, null);
+  assert.match(blockedByDefaultNameGuard ?? "", /テスト用キーワード/);
 
   const blockedByDate = evaluateAppointmentExecutionGuard({
     draft,
@@ -223,6 +229,26 @@ test("non-routine triage stays manual-review only after review", () => {
     }) ?? "",
     /自動投入の対象外/
   );
+});
+
+test("phone post-call fallback activates when realtime monitoring does not start", () => {
+  assert.equal(
+    shouldStartPhonePostCallFallback({
+      monitorStarted: true,
+      reason: null,
+    }),
+    false
+  );
+  assert.equal(
+    shouldStartPhonePostCallFallback({
+      monitorStarted: false,
+      reason: "remote_monitoring_disabled",
+    }),
+    true
+  );
+  assert.equal(isPhoneConversationDoneStatus("done"), true);
+  assert.equal(isPhoneConversationDoneStatus("in-progress"), false);
+  assert.equal(isPhoneConversationDoneStatus("initiated"), false);
 });
 
 test("routine booking is not downgraded by noisy analysis fields or generic same-day wording", () => {

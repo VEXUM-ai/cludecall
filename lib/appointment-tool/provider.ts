@@ -8,6 +8,7 @@ import {
   markAppointmentExecutionStarted,
   markAppointmentExecutionSubmitted,
 } from "@/lib/appointments";
+import { appendDemoAppointmentLog } from "@/lib/appointment-demo-log";
 import { writeAppointmentAudit } from "@/lib/appointment-tool/audit";
 import { appointmentToolLogger } from "@/lib/appointment-tool/logger";
 import { findAvailableSlots } from "@/lib/appointment-tool/apotool-rpa/availability";
@@ -497,6 +498,13 @@ export async function submitBookingWithProvider(args: {
   });
 
   workingDraft = markAppointmentExecutionSubmitted(workingDraft, selectedCandidateId, auditRef);
+  await appendDemoAppointmentLog({
+    action: "booked",
+    draft: workingDraft,
+    candidate: selectedCandidate,
+    auditRef,
+    note: "Recorded after successful Apotool submission.",
+  });
   return {
     draft: workingDraft,
     success: true,

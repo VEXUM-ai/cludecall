@@ -22,10 +22,79 @@ type BookingResult = {
 };
 
 const NEW_PATIENT_LABEL = "\u65b0\u60a3\u8ffd\u52a0";
+const NEW_RESERVATION_LABEL = "\u65b0\u898f\u4e88\u7d04";
 const RESERVATION_DETAIL_LABEL = "\u4e88\u7d04\u8a73\u7d30";
+const RESERVATION_EDIT_LABEL = "\u4e88\u7d04\u7de8\u96c6";
 const REGISTER_LABEL = "\u767b\u9332";
-const DEFAULT_TC_MENU = "TC (30\u5206)";
-const DEFAULT_TREATMENT_MENU = "\u521d\u8a3a (30\u5206)";
+const DEFAULT_TC_MENU = "T/S (30\u5206)";
+const DEFAULT_TREATMENT_MENU_CANDIDATES = ["\u521d\u8a3a (60\u5206)", "\u521d\u8a3a (30\u5206)"];
+const WEB_STAFF_LABEL_CANDIDATES = ["Web\u4e88\u7d04\u5c02\u7528", "WEB", "\u6307\u5b9a\u306a\u3057"];
+
+async function waitForApotoolSubmissionSettle(page: Page) {
+  await page.waitForLoadState("domcontentloaded", { timeout: 10000 }).catch(() => undefined);
+  await page.waitForLoadState("load", { timeout: 10000 }).catch(() => undefined);
+  await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
+}
+
+async function readVisibleDialogTitle(page: Page) {
+  return page.evaluate(() => {
+    return (
+      Array.from(document.querySelectorAll(".ui-dialog-title"))
+        .find((title) => (title as HTMLElement).offsetParent !== null)
+        ?.textContent?.trim() ?? null
+    );
+  });
+}
+
+async function closeVisibleDialog(page: Page) {
+  const closed = await page.evaluate(() => {
+    const closeButton = Array.from(
+      document.querySelectorAll(".ui-dialog-titlebar-close")
+    ).find((button) => (button as HTMLElement).offsetParent !== null);
+
+    if (!(closeButton instanceof HTMLElement)) {
+      return false;
+    }
+
+    closeButton.click();
+    return true;
+  });
+
+  if (!closed) {
+    return;
+  }
+
+  await page
+    .waitForFunction(
+      () =>
+        !Array.from(document.querySelectorAll(".ui-dialog-title")).some(
+          (title) => (title as HTMLElement).offsetParent !== null
+        ),
+      undefined,
+      { timeout: 3000 }
+    )
+    .catch(() => undefined);
+  await page.waitForTimeout(500);
+}
+
+async function waitForBookedSlot(
+  page: Page,
+  columnName: string,
+  time: string,
+  patientName: string
+) {
+  const [hour, minute] = time.split(":");
+  const targetMinutes = Number(hour) * 60 + Number(minute);
+  const columnClassName = await calendar.resolveCalendarColumnClassName(page, columnName);
+  const booking = page
+    .locator(`td.${columnClassName} a.waku[data-minutes="${targetMinutes}"]`)
+    .filter({ hasText: patientName })
+    .first();
+
+  await booking.waitFor({ state: "attached", timeout: 10000 });
+  await booking.scrollIntoViewIfNeeded().catch(() => undefined);
+  await booking.waitFor({ state: "visible", timeout: 5000 }).catch(() => undefined);
+}
 
 export async function bookAppointment(
   page: Page,
@@ -46,7 +115,7 @@ export async function bookAppointment(
     };
   }
 
-  await page.waitForLoadState("networkidle");
+  await waitForApotoolSubmissionSettle(page);
   await page.waitForTimeout(2000);
 
   const treatmentResult = await registerTreatment(page, params);
@@ -91,8 +160,15 @@ async function registerTc(page: Page, params: BookingParams) {
       await selectDropdownByName(page, "menu2_id", params.menuMapping.apotoolMenuSecondary);
     }
 
-    await selectDropdownByName(page, "staff_id", WEB_STAFF_LABEL);
+    await selectStaffDropdown(page, "staff_id");
     await clickRegisterButton(page);
+    await closeVisibleDialog(page);
+    await waitForBookedSlot(
+      page,
+      params.candidate.tcUnit,
+      params.candidate.tcStartTime,
+      params.patientName
+    );
     return { success: true };
   } catch (error) {
     appointmentToolLogger.error("TC registration failed.", error);
@@ -117,15 +193,20 @@ async function registerTreatment(page: Page, params: BookingParams) {
       params.candidate.treatmentStartTime,
       params.candidate.treatmentEndTime
     );
-    await selectDropdownByName(
-      page,
-      "menu_id",
-      params.menuMapping.apotoolTreatmentMenu ??
-        params.menuMapping.apotoolMenuPrimary ??
-        DEFAULT_TREATMENT_MENU
-    );
-    await selectDropdownByName(page, "staff_id", WEB_STAFF_LABEL);
+    await selectTreatmentMenu(page, [
+      params.menuMapping.apotoolTreatmentMenu,
+      params.menuMapping.apotoolMenuPrimary,
+      ...DEFAULT_TREATMENT_MENU_CANDIDATES,
+    ]);
+    await selectStaffDropdown(page, "staff_id");
     await clickRegisterButton(page);
+    await closeVisibleDialog(page);
+    await waitForBookedSlot(
+      page,
+      params.candidate.treatmentUnit,
+      params.candidate.treatmentStartTime,
+      params.patientName
+    );
     return { success: true };
   } catch (error) {
     appointmentToolLogger.error("Treatment registration failed.", error);
@@ -136,79 +217,84 @@ async function registerTreatment(page: Page, params: BookingParams) {
 
 const WEB_STAFF_LABEL = "Web予約専用";
 
-async function clickCalendarCell(page: Page, columnName: string, time: string) {
-  const headers = await calendar.readCalendarHeaders(page);
-  const columnIndex = calendar.resolveCalendarColumnIndex(headers, columnName);
-  if (columnIndex < 0) {
-    throw new Error(
-      `Unknown Apotool column: ${columnName}. Resolved headers: ${headers.join(", ")}`
-    );
-  }
-  const [hour, minute] = time.split(":");
-  const targetTime = `${Number(hour)}:${minute}`;
+async function selectTreatmentMenu(page: Page, optionTexts: Array<string | null | undefined>) {
+  const uniqueOptions = [...new Set(optionTexts.filter((value): value is string => Boolean(value)))];
 
-  const cellBox = await page.evaluate(
-    ({ resolvedColumnIndex, targetTimeText }) => {
-      for (const row of Array.from(document.querySelectorAll("tr"))) {
-        const th = row.querySelector("th");
-        const rowLabel = (th?.textContent ?? "").replace(/\s+/g, " ").trim();
-        if (!th || rowLabel !== targetTimeText) {
-          continue;
-        }
-
-        const tds = Array.from(row.querySelectorAll("td"));
-        const td = tds[resolvedColumnIndex] as HTMLElement | undefined;
-        if (!td) {
-          return null;
-        }
-
-        td.scrollIntoView({ block: "center", inline: "center" });
-        const rect = td.getBoundingClientRect();
-        return {
-          x: rect.x + rect.width / 2,
-          y: rect.y + rect.height / 2,
-        };
-      }
-
-      return null;
-    },
-    {
-      resolvedColumnIndex: columnIndex,
-      targetTimeText: targetTime,
+  for (const optionText of uniqueOptions) {
+    try {
+      await selectDropdownByName(page, "menu_id", optionText);
+      return;
+    } catch {
+      // Try the next supported menu before failing the booking flow.
     }
-  );
-
-  if (!cellBox) {
-    throw new Error(`Calendar cell not found: ${calendar.normalizeCalendarText(columnName)} ${time}`);
   }
 
-  await page.mouse.click(cellBox.x, cellBox.y);
+  throw new Error(`Option not found in menu_id: ${uniqueOptions.join(" / ")}`);
+}
+
+async function selectStaffDropdown(page: Page, name: string) {
+  for (const optionText of WEB_STAFF_LABEL_CANDIDATES) {
+    try {
+      await selectDropdownByName(page, name, optionText);
+      return;
+    } catch {
+      // Try the next supported label before falling back to the dialog default.
+    }
+  }
+
+  appointmentToolLogger.warn("Preferred Apotool staff option not found. Keeping default selection.", {
+    name,
+    options: WEB_STAFF_LABEL_CANDIDATES,
+  });
+}
+
+async function clickCalendarCell(page: Page, columnName: string, time: string) {
+  await closeVisibleDialog(page);
+
+  const columnClassName = await calendar.resolveCalendarColumnClassName(page, columnName);
+  const timeCell = page.locator("th.time", { hasText: time }).first();
+  await timeCell.waitFor({ state: "visible", timeout: 5000 });
+
+  const slot = timeCell
+    .locator("xpath=..")
+    .locator(`td.${columnClassName}`)
+    .first();
+  await slot.waitFor({ state: "visible", timeout: 5000 });
+  await slot.scrollIntoViewIfNeeded();
+  await slot.click({ timeout: 5000, force: true });
   await page.waitForTimeout(1000);
 
-  const visibleDialogTitle = await page.evaluate(() => {
-    return (
-      Array.from(document.querySelectorAll(".ui-dialog-title"))
-        .find((title) => (title as HTMLElement).offsetParent !== null)
-        ?.textContent?.trim() ?? null
-    );
-  });
+  await page
+    .waitForFunction(
+      () =>
+        Array.from(document.querySelectorAll(".ui-dialog-title")).some(
+          (title) => (title as HTMLElement).offsetParent !== null
+        ),
+      undefined,
+      { timeout: 3000 }
+    )
+    .catch(() => undefined);
+
+  const visibleDialogTitle = await readVisibleDialogTitle(page);
 
   if (!visibleDialogTitle) {
     throw new Error(`Apotool dialog did not open: ${columnName} ${time}`);
   }
 
-  if (visibleDialogTitle === RESERVATION_DETAIL_LABEL) {
-    await page.evaluate(() => {
-      const closeButton = Array.from(
-        document.querySelectorAll(".ui-dialog-titlebar-close")
-      ).find((button) => (button as HTMLElement).offsetParent !== null);
-      if (closeButton instanceof HTMLElement) {
-        closeButton.click();
-      }
-    });
-    await page.waitForTimeout(500);
+  if (visibleDialogTitle === NEW_RESERVATION_LABEL) {
+    return;
+  }
+
+  if (
+    visibleDialogTitle === RESERVATION_DETAIL_LABEL ||
+    visibleDialogTitle === RESERVATION_EDIT_LABEL
+  ) {
+    await closeVisibleDialog(page);
     throw new Error(`Cell ${columnName} ${time} is already occupied.`);
   }
+
+  await closeVisibleDialog(page);
+  throw new Error(`Unexpected Apotool dialog after clicking ${columnName} ${time}: ${visibleDialogTitle}`);
 }
 
 async function clickNewPatientLink(page: Page) {
@@ -342,5 +428,5 @@ async function clickRegisterButton(page: Page) {
   }
 
   await page.waitForTimeout(3000);
-  await page.waitForLoadState("networkidle");
+  await waitForApotoolSubmissionSettle(page);
 }

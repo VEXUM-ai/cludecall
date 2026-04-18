@@ -25,7 +25,7 @@ async function launchBrowser() {
     viewport: { width: 1920, height: 1080 },
   });
   page = await context.newPage();
-  page.setDefaultTimeout(15000);
+  page.setDefaultTimeout(30000);
   return page;
 }
 

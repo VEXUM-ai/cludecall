@@ -1,0 +1,62 @@
+[
+  {
+    "loggedAt": "2026-04-18T13:31:24.849Z",
+    "action": "booked",
+    "patientName": "TEST Codex Demo 202604181330",
+    "scheduledAt": "2026-10-20 11:30",
+    "conversationId": "conv_codex_live_exec_retry_1776519022157",
+    "candidateLabel": "2026-10-20 11:30",
+    "auditId": "2026-04-18T13-31-24-841Z-conv_codex_live_exec_retry_1776519022157-execute",
+    "note": "Initial live retry. Later inspection found a split result: treatment remained on 2026-10-20 12:00 and a stray T/S remained on 2026-10-22 11:30; both were cleaned up."
+  },
+  {
+    "loggedAt": "2026-04-18T13:51:06.573Z",
+    "action": "canceled",
+    "patientName": "TEST Codex Demo 202604181330",
+    "scheduledAt": "2026-10-20 12:00",
+    "conversationId": "conv_codex_live_exec_retry_1776519022157",
+    "candidateLabel": "2026-10-20 12:00",
+    "auditId": null,
+    "note": "Canceled the remaining treatment reservation from the initial live retry."
+  },
+  {
+    "loggedAt": "2026-04-18T13:52:29.507Z",
+    "action": "canceled",
+    "patientName": "TEST Codex Verify 202604181338",
+    "scheduledAt": "2026-10-22 11:30",
+    "conversationId": "conv_codex_live_exec_verify_1776519511348",
+    "candidateLabel": "2026-10-22 11:30",
+    "auditId": null,
+    "note": "Canceled in Apotool via automated cleanup after partial TC-only booking."
+  },
+  {
+    "loggedAt": "2026-04-18T13:53:56.837Z",
+    "action": "booked",
+    "patientName": "TEST Codex Final 202604181352",
+    "scheduledAt": "2026-10-20 11:30",
+    "conversationId": "conv_codex_live_exec_final_1776520369674",
+    "candidateLabel": "2026-10-20 11:30",
+    "auditId": "2026-04-18T13-53-56-830Z-conv_codex_live_exec_final_1776520369674-execute",
+    "note": "Final verified live run. Confirmed two reservations were created: 2026-10-20 11:30 T/S and 2026-10-20 12:00 initial."
+  },
+  {
+    "loggedAt": "2026-04-18T13:57:56.372Z",
+    "action": "canceled",
+    "patientName": "TEST Codex Final 202604181352",
+    "scheduledAt": "2026-10-20 11:30",
+    "conversationId": "conv_codex_live_exec_final_1776520369674",
+    "candidateLabel": "2026-10-20 11:30",
+    "auditId": null,
+    "note": "Final verified demo booking fully cleaned up after canceling both reservations."
+  },
+  {
+    "loggedAt": "2026-04-18T14:01:18.357Z",
+    "action": "canceled",
+    "patientName": "TEST Codex Demo 202604181330",
+    "scheduledAt": "2026-10-22 11:30",
+    "conversationId": "conv_codex_live_exec_retry_1776519022157",
+    "candidateLabel": "2026-10-22 11:30",
+    "auditId": null,
+    "note": "Canceled in Apotool via automated cleanup for stray TC reservation discovered on 2026-10-22."
+  }
+]

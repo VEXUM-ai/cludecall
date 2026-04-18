@@ -37,6 +37,13 @@ type ServerConfig = {
   voiceBenchmarkSaveArtifacts: boolean;
 };
 
+const DEFAULT_TEST_PATIENT_PATTERNS = [
+  "TEST",
+  "DEMO",
+  "DEBUG",
+  "\u30c6\u30b9\u30c8",
+];
+
 function readEnv(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;
@@ -147,7 +154,10 @@ export function getServerConfig(): ServerConfig {
     appointmentToolMode: readAppointmentToolMode(),
     appointmentToolProvider: readAppointmentToolProvider(),
     appointmentExecutionPolicy: readAppointmentExecutionPolicy(),
-    appointmentTestPatientPatterns: readStringArrayEnv("APPOINTMENT_TEST_PATIENT_PATTERNS", []),
+    appointmentTestPatientPatterns: readStringArrayEnv(
+      "APPOINTMENT_TEST_PATIENT_PATTERNS",
+      DEFAULT_TEST_PATIENT_PATTERNS
+    ),
     appointmentTestMinLeadDays: readIntegerEnv("APPOINTMENT_TEST_MIN_LEAD_DAYS", 30),
     apotoolEmail: readEnv("APOTOOL_EMAIL"),
     apotoolPassword: readEnv("APOTOOL_PASSWORD"),
