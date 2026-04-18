@@ -19,7 +19,7 @@ type ManagedWebhookToolConfig = {
   };
   response_timeout_secs: number;
   dynamic_variables: {
-    dynamic_variable_placeholders: Record<string, never>;
+    dynamic_variable_placeholders: Record<string, string>;
   };
   assignments: [];
   disable_interruptions: boolean;
@@ -36,6 +36,7 @@ export const LIVE_AVAILABILITY_TOOL_NAME = "live_availability_lookup";
 export const LIVE_HOLD_CONFIRM_TOOL_NAME = "live_hold_confirm";
 export const MANAGED_AGENT_TOOL_DESCRIPTION_MARKER =
   "Managed by scripts/apply-agent-demo-config.ts";
+const SIMULATED_CONVERSATION_ID_PLACEHOLDER = "simulated_conversation_id";
 
 function trimTrailingSlash(value: string) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
@@ -53,10 +54,16 @@ function buildRequestHeaders(sharedSecret: string | null) {
 }
 
 function buildStringProperty(description: string, dynamicVariable?: string) {
+  if (dynamicVariable) {
+    return {
+      type: "string",
+      dynamic_variable: dynamicVariable,
+    } satisfies JsonObject;
+  }
+
   return {
     type: "string",
     description,
-    ...(dynamicVariable ? { dynamic_variable: dynamicVariable } : {}),
   } satisfies JsonObject;
 }
 
@@ -114,7 +121,9 @@ export function buildManagedAppointmentWebhookTools(args: {
       },
       response_timeout_secs: responseTimeoutSeconds,
       dynamic_variables: {
-        dynamic_variable_placeholders: {},
+        dynamic_variable_placeholders: {
+          system__conversation_id: SIMULATED_CONVERSATION_ID_PLACEHOLDER,
+        },
       },
       assignments: [],
       disable_interruptions: true,
@@ -172,7 +181,9 @@ export function buildManagedAppointmentWebhookTools(args: {
       },
       response_timeout_secs: responseTimeoutSeconds,
       dynamic_variables: {
-        dynamic_variable_placeholders: {},
+        dynamic_variable_placeholders: {
+          system__conversation_id: SIMULATED_CONVERSATION_ID_PLACEHOLDER,
+        },
       },
       assignments: [],
       disable_interruptions: true,

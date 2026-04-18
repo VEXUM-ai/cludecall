@@ -47,7 +47,7 @@
 - [x] 6. `live-hold-confirm` API 追加
 - [x] 7. ElevenLabs server tool 配線
 - [x] 8. prompt / timeout / waiting behavior 調整
-- [ ] 9. integration test / live QA
+- [x] 9. integration test / live QA
 - [ ] 10. 運用メモと残課題整理
 
 ## 実装ログ
@@ -57,21 +57,42 @@
 - `completed`: 7. ElevenLabs managed webhook tool 定義を [lib/elevenlabs/managed-agent-tools.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/managed-agent-tools.ts>) に追加し、[scripts/apply-agent-demo-config.ts](</C:/Dev/Work/デンタル 一次受付AI/scripts/apply-agent-demo-config.ts>) で create/update と `tool_ids` 置換まで自動化した。managed tool 名は `live_availability_lookup`, `live_hold_confirm`。
 - `completed`: 8. prompt と waiting behavior の規約を [lib/agent-demo-config.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/agent-demo-config.ts>) に反映した。routine 初診のみ live tool を使い、候補は provisional、`live_hold_confirm` が `confirmed` のときだけ確定表現を許可する。
 - `completed`: live webhook route に optional shared secret 認証を追加した。[lib/appointment-tool/live-tool-webhook.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/live-tool-webhook.ts>) と [.env.example](</C:/Dev/Work/デンタル 一次受付AI/.env.example>) に `APPOINTMENT_TOOL_WEBHOOK_SECRET` を追加し、公開 route をそのまま無防備に叩かれないようにした。
-- `in_progress`: 9. integration test は通過したが、ElevenLabs agent への apply 実行と live QA 7 本はまだ未実施。
+- `completed`: ElevenLabs managed webhook tool の `conversationId` property で `description` と `dynamic_variable` を同居させると ElevenLabs API が 422 を返すことを確認したため、[lib/elevenlabs/managed-agent-tools.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/managed-agent-tools.ts>) を修正して dynamic variable 専用 property に変更した。`tests/managed-agent-tools.test.ts` に回帰テストを追加した。
+- `completed`: 実 ElevenLabs agent へ `npm run agent:apply-demo-config` を再実行し、managed webhook tool 2 本の create/update と agent への反映を確認した。反映先 agent は `agent_2301knc096q9fg5bcq3gj1gmrp4z`、tool id は `tool_6501kpgwm7hhf0cv6ah2wcj2prm7` / `tool_1701kpgwm7r3f3k87de78etay4ga`。
+- `completed`: live QA 7 本を local webhook route と live monitor で実施し、`artifacts/live-monitor/events.ndjson` に証跡を残した。結果は `warm hit=resolved snapshot_fresh`, `cold miss=resolved apotool_live`, `stale snapshot=resolved snapshot_stale`, `slot lost before hold=rejected`, `session expired=resolved apotool_live after browser kill + reinit`, `two calls overlap=both resolved with queued request queueWaitMs=2101`, `pending_finalize_post_call=202 pending_finalize_post_call`。
+- `completed`: wait budget を 1ms に落とした一時サーバーで `snapshot_stale` と `pending_finalize_post_call` を切り分け、その後 `APPOINTMENT_LIVE_WAIT_TIMEOUT_MS=15000` へ戻した。低タイムアウト時の server log は `artifacts/live-qa/next-live-qa-lowtimeout.out.log`、通常復帰後の log は `artifacts/live-qa/next-live-qa-restored.out.log` に残した。
+- `observed`: ElevenLabs の `simulate-conversation` では、managed tool が `system__conversation_id` を要求している状態だと `Missing required dynamic variables in tools: {'system__conversation_id'}` で 400 になった。placeholder を追加しても解消せず、現時点では実通話/実 Web 会話でしか tool call end-to-end を回せない可能性が高い。失敗レスポンスは `artifacts/live-qa/simulate-live-availability-20260419.json` に保存した。
 
 ## テストログ
 ### 2026-04-19
 - `npm test -- tests/managed-agent-tools.test.ts tests/agent-live-booking-guardrails.test.ts tests/live-availability.test.ts tests/agent-and-apotool-guardrails.test.ts tests/integration-plan.test.ts`
 - 結果: 36 件 pass / 0 fail。
 - 補足: `node:sqlite` の ExperimentalWarning は出るが、live availability store と queue テストを含めて全件成功した。
+- `npm test -- tests/managed-agent-tools.test.ts tests/agent-live-booking-guardrails.test.ts`
+- 結果: 36 件 pass / 0 fail。managed webhook schema の ElevenLabs 422 修正後も回帰なし。
+- live QA 実施時刻:
+  - 2026-04-19 03:15 JST `qa-cold-20260419-1` -> `pending_followup / timeout_pending`。初回 browser 起動込みでは 15 秒 budget を超えた。
+  - 2026-04-19 03:15 JST `qa-warm-20260419-1` -> `resolved / snapshot_fresh`。
+  - 2026-04-19 03:16 JST `qa-cold-20260419-2` -> `resolved / apotool_live`。
+  - 2026-04-19 03:16 JST `qa-slotlost-20260419-1` -> `rejected`。
+  - 2026-04-19 03:16 JST `qa-overlap-20260419-a` / `qa-overlap-20260419-b` -> 両方 `resolved / apotool_live`、後着 request は `queueWaitMs=2101`。
+  - 2026-04-19 03:21 JST `qa-session-expired-20260419-1` -> Playwright browser process kill 後に `resolved / apotool_live`。`artifacts/live-qa/next-live-qa.out.log` に再初期化ログあり。
+  - 2026-04-19 03:22 JST `qa-stale-20260419-1` -> `resolved / snapshot_stale`。
+  - 2026-04-19 03:22 JST `qa-pending-20260419-1` -> `pending_finalize_post_call`。
+- live monitor 抜粋:
+  - `qa-warm-20260419-1`: `source=snapshot_fresh`, `queueWaitMs=0`, `rpaReadMs=0`
+  - `qa-cold-20260419-2`: `source=apotool_live`, `queueWaitMs=1`, `rpaReadMs=2177`
+  - `qa-overlap-20260419-a`: `queueWaitMs=2101`
+  - `qa-pending-20260419-1`: `status=pending_finalize_post_call`
 
 ## コミットログ
 ### 2026-04-19
 - `4bd1302` 親ドキュメント作成と進捗記録ルールの初期化を checkpoint commit。
-- `planned` live 空き枠 lookup / hold confirm の queue 基盤、managed webhook tool、prompt 調整、関連テストを checkpoint commit。
+- `b6971bb` 通話中空き枠返答の live API、queue、managed webhook tool、prompt 調整、関連テストを checkpoint commit。
+- `planned` ElevenLabs tool schema 422 修正、実 agent apply、live QA 7 本、simulate-conversation ブロッカー記録を checkpoint commit。
 
 ## 未解決事項
 - snapshot prewarm scheduler はまだ未実装。現状は on-demand read と stale snapshot fallback のみ。
-- `scripts/apply-agent-demo-config.ts` に managed tool の create/update は入れたが、実 agent へ apply して ElevenLabs 側の tool 実体を更新する作業は別途必要。
-- live QA は未実施。少なくとも `warm hit`, `cold miss`, `stale snapshot`, `slot lost before hold`, `session expired`, `two calls overlap`, `pending_finalize_post_call` の 7 本を実地で回す。
 - shared secret は route 認証に使える状態にしたが、現状は header に生値を載せる前提。将来的には ElevenLabs 側の secret locator へ寄せたい。
+- ElevenLabs `simulate-conversation` は managed tool の `system__conversation_id` を満たせず 400 になった。実 agent への apply 自体は成功しているが、tool call end-to-end の無人再現は現時点で実通話または実 Web 会話に寄せる必要がある。
+- 初回 cold start は browser 起動とログインを含むため 15 秒 budget を超えることがある。`qa-cold-20260419-1` では `pending_followup / timeout_pending` になったため、prewarm か keepalive を追加しない限り first-hit latency の不安定さは残る。

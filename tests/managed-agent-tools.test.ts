@@ -28,6 +28,14 @@ test("buildManagedAppointmentWebhookTools creates both live booking webhook tool
     "system__conversation_id"
   );
   assert.equal(
+    tools[0]?.api_schema.request_body_schema.properties?.conversationId?.description,
+    undefined
+  );
+  assert.equal(
+    tools[0]?.dynamic_variables.dynamic_variable_placeholders.system__conversation_id,
+    "simulated_conversation_id"
+  );
+  assert.equal(
     tools[0]?.api_schema.request_headers["x-appointment-tool-secret"],
     "secret-value"
   );
