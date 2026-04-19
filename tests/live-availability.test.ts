@@ -133,7 +133,7 @@ test("confirmLiveHold rejects manual-only service lines without entering RPA flo
     selectedTcStartTime: "10:00",
     preferredTimeRange: "午前",
     patientName: "TEST Live Hold Manual",
-    phoneNumber: "09000000000",
+    phoneNumber: null,
     isNewPatient: true,
     visitReason: "相談予約",
   });

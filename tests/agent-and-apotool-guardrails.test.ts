@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { DENTAL_DEMO_PROMPT } from "@/lib/agent-demo-config";
 import kb from "@/lib/agent-knowledge-base";
 import * as calendar from "@/lib/appointment-tool/apotool-rpa/calendar";
-import { normalizeReservationMemo } from "@/lib/elevenlabs/memo";
+import { normalizePhoneNumberForMemo, normalizeReservationMemo } from "@/lib/elevenlabs/memo";
 
 test("agent prompt forbids name spelling and pronunciation confirmation flows", () => {
   assert.match(
@@ -86,6 +86,10 @@ test("agent prompt forbids fake live-availability claims and awkward wait-check 
   assert.match(
     DENTAL_DEMO_PROMPT,
     /予約確認中ですので、そのままで少々お待ちください。/u
+  );
+  assert.match(
+    DENTAL_DEMO_PROMPT,
+    /After the short waiting sentence for live_availability_lookup or live_hold_confirm, do not add presence checks, generic help offers, or filler while waiting/u
   );
 });
 
@@ -258,4 +262,10 @@ test("reservation memo discards yomi even if analysis still returns it", () => {
 
   assert.equal(memo.patient_name, "デモ山田");
   assert.equal(memo.patient_name_yomi, null);
+});
+
+test("normalizePhoneNumberForMemo converts international and formatted telephony numbers", () => {
+  assert.equal(normalizePhoneNumberForMemo("+81 90-1234-5678"), "09012345678");
+  assert.equal(normalizePhoneNumberForMemo("090-1234-5678"), "09012345678");
+  assert.equal(normalizePhoneNumberForMemo(null), null);
 });

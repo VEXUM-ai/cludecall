@@ -39,6 +39,15 @@ test("buildManagedAppointmentWebhookTools creates both live booking webhook tool
     tools[0]?.api_schema.request_headers["x-appointment-tool-secret"],
     "secret-value"
   );
+  assert.equal(tools[0]?.tool_call_sound, "elevator3");
+  assert.equal(tools[0]?.tool_call_sound_behavior, "always");
+  assert.deepEqual(tools[1]?.api_schema.request_body_schema.required, [
+    "conversationId",
+    "serviceLine",
+    "preferredDate",
+    "selectedTcStartTime",
+    "patientName",
+  ]);
 });
 
 test("mergeManagedToolIds replaces stale managed tool ids and preserves unrelated tools", () => {

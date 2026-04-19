@@ -66,6 +66,11 @@
 - `completed`: [lib/appointment-tool/apotool-rpa/session-manager.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/apotool-rpa/session-manager.ts>) に session initialization promise を追加し、boot prewarm と最初の live request が競合しても browser 初期化が 1 本だけ走るようにした。health には `sessionInitializing` と `prewarmOnBootEnabled` を追加した。
 - `completed`: 予約投入の患者名・日付 guard を撤去した。[lib/appointment-tool/provider.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/provider.ts>) から `test_only` 実行停止ロジックを外し、患者名や近い日付を理由に execute を止めないようにした。
 - `completed`: [lib/appointment-tool/provider.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/appointment-tool/provider.ts>) の health 判定を修正し、資格情報だけで `healthy` を返さず `browserReady/contextReady/pageReady/sessionInitializing` を含めた warm 状態で返すようにした。
+- `completed`: live booking の intake 順序制約を外した。[lib/agent-demo-config.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/agent-demo-config.ts>) で routine intake を fixed-order 前提から変更し、日付・時刻・理由・氏名がどの順番で来ても、その時点で必要な次項目だけを埋めるようにした。`live_availability_lookup` は `service_line + preferred_date_1 + usable time` が揃った時点で呼べるようにし、`patient_name` と `phone_number` を前提条件から外した。
+- `completed`: live hold confirm で spoken phone number を必須にしないようにした。[lib/elevenlabs/managed-agent-tools.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/managed-agent-tools.ts>) と [app/api/appointment-tool/live-hold-confirm/route.ts](</C:/Dev/Work/デンタル 一次受付AI/app/api/appointment-tool/live-hold-confirm/route.ts>) を更新し、`phoneNumber` を optional に変更した。未指定時は ElevenLabs conversation metadata の `phone_call.external_number` から補完する。
+- `completed`: ElevenLabs analyze/import 系でも電話番号メタデータを memo に補完するようにした。[lib/elevenlabs/memo.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/memo.ts>) に `normalizePhoneNumberForMemo()` を追加し、[lib/elevenlabs/api.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/api.ts>) で `metadata.phone_call.external_number` を優先補完するようにした。これで通話中に電話番号を話さなくても post-call execute まで進められる。
+- `completed`: live tool 待機中の体験を修正した。[lib/agent-demo-config.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/agent-demo-config.ts>) で、待機文の後に `まだいらっしゃいますか？` や filler を挟まないようにし、[lib/elevenlabs/managed-agent-tools.ts](</C:/Dev/Work/デンタル 一次受付AI/lib/elevenlabs/managed-agent-tools.ts>) に `tool_call_sound=elevator3` / `tool_call_sound_behavior=always` を追加した。
+- `completed`: 最新の失敗通話 `conv_3601kphgt92tfas8kak36ym394js` を再取り込みし、修正が効くことを確認した。再取り込み後は `memo.phone_number=09047064087`, `appointmentDraft.phoneNumber=09047064087`, `scheduledDatetime=2026-10-20 10:00`, `conversationOutcome=auto_booked`, `execution.state=submitted` まで進んだ。通話中 tool call の再現とは別だが、根本原因だった phone metadata 未補完は解消した。
 
 ## テストログ
 ### 2026-04-19
@@ -78,6 +83,14 @@
 - 結果: 38 件 pass / 0 fail。boot prewarm の有効条件と single-schedule 保証を追加で固定化した。
 - `npm test -- tests/integration-plan.test.ts tests/live-availability.test.ts tests/apotool-prewarm.test.ts`
 - 結果: 31 件 pass / 0 fail。患者名・日付 guard 撤去後も integration plan / live availability / prewarm が崩れていないことを確認した。
+- `node --import tsx --test tests/agent-live-booking-guardrails.test.ts tests/managed-agent-tools.test.ts tests/agent-and-apotool-guardrails.test.ts tests/live-availability.test.ts`
+- 結果: 21 件 pass / 0 fail。順序非依存 intake、phone metadata 補完、hold confirm の optional phone、待機文言と tool call sound 設定の回帰を確認した。
+- `npm run agent:apply-demo-config`
+- 結果: 成功。反映先 agent は `agent_2301knc096q9fg5bcq3gj1gmrp4z`。managed webhook tool は 2 本で、`live_availability_lookup` / `live_hold_confirm` の両方が最新 prompt と schema で再適用された。
+- `POST /api/demo/import-last-call {"conversationId":"conv_3601kphgt92tfas8kak36ym394js"}`
+- 結果: `appointmentCompleted=true`, `submissionState=submitted`, `conversationOutcome=auto_booked`。最新失敗通話の再取り込みで phone metadata 補完が実データに効くことを確認した。
+- `POST /api/appointment-tool/prewarm` -> `GET /api/appointment-tool/health` -> public `POST /api/appointment-tool/live-availability`
+- 結果: prewarm は `200 success`。初期化直後は `sessionInitializing=true` のため一時的に `degraded` だったが、数秒後に local/public とも `status=healthy`, `browserReady=true`, `pageReady=true` を確認した。公開 webhook の `live-availability` は `status=resolved`, `source=snapshot_fresh`, `candidateCount=2`, `queueWaitMs=0`, `rpaReadMs=0` を返した。
 - `npm test`
 - 結果: この作業端末では Node の OOM で失敗。デモ前確認では全件一括ではなく、変更点に近い focused command を優先する。
 - live QA 実施時刻:
@@ -114,9 +127,12 @@
 - `f63c2ab` ElevenLabs tool schema 422 修正、実 agent apply、live QA 7 本、simulate-conversation ブロッカー記録を checkpoint commit。
 - `6b0824d` Apotool boot prewarm の wrapper 導入、session init 排他、health 表示追加を checkpoint commit。
 - `2758538` 予約投入の患者名・日付 guard を撤去し、health の warm 状態判定と明日のデモ前確認事項を整理した。
+- `in_progress` 順序非依存 intake、conversation metadata からの phone number 補完、tool call sound 追加、最新失敗通話の再取り込み確認を次の checkpoint commit にまとめる。
 
 ## 未解決事項
 - snapshot prewarm scheduler はまだ未実装。現状は on-demand read と stale snapshot fallback のみ。
 - shared secret は route 認証に使える状態にしたが、現状は header に生値を載せる前提。将来的には ElevenLabs 側の secret locator へ寄せたい。
 - ElevenLabs `simulate-conversation` は managed tool の `system__conversation_id` を満たせず 400 になった。実 agent への apply 自体は成功しているが、tool call end-to-end の無人再現は現時点で実通話または実 Web 会話に寄せる必要がある。
 - `npm run dev` / `npm run start` では boot prewarm が入ったが、プロセスマネージャや別の起動経路から直接 `next dev` / `next start` を叩くと prewarm は走らない。その場合は wrapper と同等の起動導線へ揃える必要がある。
+- 最新修正で post-call 側の phone metadata 補完は解消したが、通話中 live tool の end-to-end 発火は実通話で再確認が必要。`events.ndjson` に `live appointment availability requested/completed` が出るかを本番前にもう一度確認する。
+- prewarm 完了前は public health が `degraded`、public lookup も `pending_followup` になり得る。wrapper 起動後または manual prewarm 後に `sessionInitializing=false` まで待ってからデモを開始する必要がある。

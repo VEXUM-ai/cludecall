@@ -24,6 +24,8 @@ type ManagedWebhookToolConfig = {
   assignments: [];
   disable_interruptions: boolean;
   force_pre_tool_speech: boolean;
+  tool_call_sound: string | null;
+  tool_call_sound_behavior: "auto" | "always";
 };
 
 export type ManagedConvAiToolRecord = {
@@ -87,7 +89,7 @@ export function buildManagedAppointmentWebhookTools(args: {
     {
       name: LIVE_AVAILABILITY_TOOL_NAME,
       description:
-        "Check current routine appointment candidates after collecting an exact preferred date. Use only for routine booking intake after you have YYYY-MM-DD and a rough time range. Returns status resolved/manual_only/pending_followup with up to three provisional candidates. Candidates are not confirmed until live_hold_confirm succeeds. " +
+        "Check current routine appointment candidates after collecting an exact preferred date. Use only for routine booking intake after you have YYYY-MM-DD and a rough time range. Patient name and phone number are optional at this stage. Returns status resolved/manual_only/pending_followup with up to three provisional candidates. Candidates are not confirmed until live_hold_confirm succeeds. " +
         MANAGED_AGENT_TOOL_DESCRIPTION_MARKER,
       type: "webhook",
       api_schema: {
@@ -128,11 +130,13 @@ export function buildManagedAppointmentWebhookTools(args: {
       assignments: [],
       disable_interruptions: true,
       force_pre_tool_speech: false,
+      tool_call_sound: "elevator3",
+      tool_call_sound_behavior: "always",
     },
     {
       name: LIVE_HOLD_CONFIRM_TOOL_NAME,
       description:
-        "Recheck a caller-selected candidate and attempt booking. Use immediately after the caller chooses one candidate returned by live_availability_lookup. Only say the booking is confirmed when this tool returns status confirmed. If status is rejected or pending_finalize_post_call, do not promise confirmation. " +
+        "Recheck a caller-selected candidate and attempt booking. Use after the caller chooses one candidate returned by live_availability_lookup and you have the caller name. Phone number may be omitted for telephony calls when it was not spoken aloud. Only say the booking is confirmed when this tool returns status confirmed. If status is rejected or pending_finalize_post_call, do not promise confirmation. " +
         MANAGED_AGENT_TOOL_DESCRIPTION_MARKER,
       type: "webhook",
       api_schema: {
@@ -148,7 +152,6 @@ export function buildManagedAppointmentWebhookTools(args: {
             "preferredDate",
             "selectedTcStartTime",
             "patientName",
-            "phoneNumber",
           ],
           properties: {
             conversationId: buildStringProperty(
@@ -168,7 +171,9 @@ export function buildManagedAppointmentWebhookTools(args: {
               "Optional original preferred time range from the caller."
             ),
             patientName: buildStringProperty("Caller name as currently collected."),
-            phoneNumber: buildStringProperty("Callback phone number as currently collected."),
+            phoneNumber: buildStringProperty(
+              "Optional callback phone number as currently collected. Telephony metadata may be used when omitted."
+            ),
             isNewPatient: buildBooleanProperty(
               "Whether this caller is a new patient."
             ),
@@ -188,6 +193,8 @@ export function buildManagedAppointmentWebhookTools(args: {
       assignments: [],
       disable_interruptions: true,
       force_pre_tool_speech: false,
+      tool_call_sound: "elevator3",
+      tool_call_sound_behavior: "always",
     },
   ];
 }

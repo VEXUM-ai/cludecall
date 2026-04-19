@@ -19,6 +19,7 @@ import { buildLatencySample, writeLatencySample } from "@/lib/latency";
 import {
   maskPhoneNumber,
   normalizeConversationAnalysis,
+  normalizePhoneNumberForMemo,
   normalizeReservationMemo,
   normalizeTranscript,
 } from "@/lib/elevenlabs/memo";
@@ -345,14 +346,25 @@ function toNullableString(value: unknown): string | null {
 function buildBaseAnalyzeResponse(details: ConversationDetails) {
   const transcript = normalizeTranscript(details.transcript);
   const analysis = normalizeConversationAnalysis(details.analysis);
+  const metadata =
+    details.metadata && typeof details.metadata === "object" ? details.metadata : {};
+  const phoneCall =
+    typeof metadata.phone_call === "object" && metadata.phone_call !== null
+      ? (metadata.phone_call as Record<string, unknown>)
+      : null;
   const memo = normalizeReservationMemo(details.analysis?.data_collection_results);
+  const phoneNumber =
+    memo.phone_number ?? normalizePhoneNumberForMemo(phoneCall?.external_number);
 
   return {
     conversationId: details.conversation_id,
     status: details.status ?? "unknown",
     transcript,
     analysis,
-    memo,
+    memo: {
+      ...memo,
+      phone_number: phoneNumber,
+    },
   };
 }
 

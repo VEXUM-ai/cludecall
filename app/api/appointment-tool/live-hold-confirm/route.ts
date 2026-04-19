@@ -5,6 +5,8 @@ import { confirmLiveHold } from "@/lib/appointment-tool/live-availability";
 import { isAuthorizedAppointmentToolWebhookRequest } from "@/lib/appointment-tool/live-tool-webhook";
 import { writeStoredAppointmentDraft } from "@/lib/appointment-store";
 import { syncStoredAppointmentDraft } from "@/lib/demo-runs";
+import { getConversationDetails } from "@/lib/elevenlabs/api";
+import { normalizePhoneNumberForMemo } from "@/lib/elevenlabs/memo";
 import { getServerConfig } from "@/lib/env";
 import { appendLiveMonitorEvent } from "@/lib/live-monitor";
 
@@ -26,7 +28,7 @@ const requestSchema = z.object({
   selectedTcStartTime: z.string().regex(/^\d{2}:\d{2}$/, "selectedTcStartTime must be HH:MM."),
   preferredTimeRange: z.string().trim().min(1).nullable().optional(),
   patientName: z.string().trim().min(1, "patientName is required."),
-  phoneNumber: z.string().trim().min(1, "phoneNumber is required."),
+  phoneNumber: z.string().trim().min(1).nullable().optional(),
   isNewPatient: z.boolean().nullable().optional(),
   visitReason: z.string().trim().min(1).nullable().optional(),
 });
@@ -46,6 +48,26 @@ export async function POST(request: Request) {
     }
 
     const body = requestSchema.parse(await request.json());
+    let resolvedPhoneNumber = body.phoneNumber ?? null;
+    if (!resolvedPhoneNumber) {
+      try {
+        const details = await getConversationDetails(body.conversationId);
+        const metadata =
+          details.metadata && typeof details.metadata === "object" ? details.metadata : {};
+        const phoneCall =
+          metadata &&
+          typeof metadata === "object" &&
+          "phone_call" in metadata &&
+          typeof metadata.phone_call === "object" &&
+          metadata.phone_call !== null
+            ? (metadata.phone_call as Record<string, unknown>)
+            : null;
+        resolvedPhoneNumber = normalizePhoneNumberForMemo(phoneCall?.external_number);
+      } catch {
+        resolvedPhoneNumber = null;
+      }
+    }
+
     await appendLiveMonitorEvent({
       kind: "appointment",
       channel: "phone",
@@ -66,7 +88,7 @@ export async function POST(request: Request) {
       selectedTcStartTime: body.selectedTcStartTime,
       preferredTimeRange: body.preferredTimeRange ?? null,
       patientName: body.patientName,
-      phoneNumber: body.phoneNumber,
+      phoneNumber: resolvedPhoneNumber,
       isNewPatient: body.isNewPatient ?? null,
       visitReason: body.visitReason ?? null,
     });

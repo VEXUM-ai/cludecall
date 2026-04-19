@@ -59,7 +59,7 @@ export type LiveHoldConfirmInput = {
   selectedTcStartTime: string;
   preferredTimeRange: string | null;
   patientName: string;
-  phoneNumber: string;
+  phoneNumber: string | null;
   isNewPatient: boolean | null;
   visitReason: string | null;
 };
@@ -150,7 +150,7 @@ function buildLiveDraft(args: {
   preferredDate: string;
   preferredTimeRange: string | null;
   patientName: string;
-  phoneNumber: string;
+  phoneNumber: string | null;
   isNewPatient: boolean | null;
   visitReason: string | null;
 }) {

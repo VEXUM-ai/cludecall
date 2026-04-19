@@ -121,6 +121,28 @@ function toNullableBoolean(value: unknown): boolean | null {
   return null;
 }
 
+export function normalizePhoneNumberForMemo(value: unknown): string | null {
+  const phone = toNullableString(value);
+  if (!phone) {
+    return null;
+  }
+
+  const normalized = phone.replace(/[^\d+]/g, "");
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.startsWith("+81") && normalized.length > 3) {
+    return `0${normalized.slice(3)}`;
+  }
+
+  if (normalized.startsWith("81") && normalized.length >= 10) {
+    return `0${normalized.slice(2)}`;
+  }
+
+  return normalized;
+}
+
 function extractMessageText(value: unknown): string | null {
   if (typeof value === "string") {
     return value.trim() || null;
@@ -255,7 +277,7 @@ export function normalizeReservationMemo(dataCollectionResults: unknown): Reserv
   return {
     patient_name: toNullableString(source.patient_name),
     patient_name_yomi: null,
-    phone_number: toNullableString(source.phone_number),
+    phone_number: normalizePhoneNumberForMemo(source.phone_number),
     is_new_patient: isNewPatient,
     visit_reason: visitReason,
     symptom_summary: symptomSummary,
