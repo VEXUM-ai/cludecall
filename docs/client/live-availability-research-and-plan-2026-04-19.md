@@ -127,7 +127,7 @@
 - `f63c2ab` ElevenLabs tool schema 422 修正、実 agent apply、live QA 7 本、simulate-conversation ブロッカー記録を checkpoint commit。
 - `6b0824d` Apotool boot prewarm の wrapper 導入、session init 排他、health 表示追加を checkpoint commit。
 - `2758538` 予約投入の患者名・日付 guard を撤去し、health の warm 状態判定と明日のデモ前確認事項を整理した。
-- `in_progress` 順序非依存 intake、conversation metadata からの phone number 補完、tool call sound 追加、最新失敗通話の再取り込み確認を次の checkpoint commit にまとめる。
+- `67bc797` 順序非依存 intake、conversation metadata からの phone number 補完、tool call sound 追加、最新失敗通話の再取り込み確認を checkpoint commit。
 
 ## 未解決事項
 - snapshot prewarm scheduler はまだ未実装。現状は on-demand read と stale snapshot fallback のみ。
